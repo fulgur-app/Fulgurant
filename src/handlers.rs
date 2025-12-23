@@ -118,6 +118,7 @@ pub struct AppState {
     pub mailer: Mailer,
     pub is_prod: bool,
     pub can_register: bool,
+    pub share_validity_days: i64,
 }
 
 /// GET / - Returns the index page

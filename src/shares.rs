@@ -12,6 +12,13 @@ pub const SHARE_VALIDITY_DAYS: i64 = 3;
 // Max file size: 1 MB
 pub const MAX_FILE_SIZE: usize = 1_048_576; // 1 MB in bytes
 
+pub fn get_share_validity_days() -> i64 {
+    std::env::var("SHARE_VALIDITY_DAYS")
+        .unwrap_or(SHARE_VALIDITY_DAYS.to_string())
+        .parse()
+        .unwrap_or(SHARE_VALIDITY_DAYS)
+}
+
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct Share {
     pub id: String,

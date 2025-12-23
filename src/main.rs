@@ -66,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
         mailer: mail::Mailer::new(),
         is_prod,
         can_register: auth::handlers::can_register(),
+        share_validity_days: shares::get_share_validity_days(),
     };
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store).with_secure(true);
