@@ -1,0 +1,32 @@
+<tr class="share-row" id="share-{{ share.id }}">
+    <td class="share-cell">{{ share.file_name }}</td>
+    <td class="share-cell">{{ share.from }}</td>
+    <td class="share-cell">{{ share.to }}</td>
+    <td class="share-cell">{{ share.created_at }}</td>
+    <td class="share-cell">{{ share.expires_at }}</td>
+    <td>
+       <div class="actions" role="group">
+            <button 
+                class="action-button"
+                hx-delete="/share/{{ share.id }}" 
+                hx-target="#share-{{ share.id }}"
+                hx-swap="outerHTML swap:0.5s"
+                hx-confirm="Are you sure you want to delete this share?">
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                </svg>
+            </button>
+            </div>
+    </td>
+</tr>

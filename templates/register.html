@@ -1,0 +1,40 @@
+{% extends "layout.html" %}
+
+{% block title %}Login{% endblock %}
+
+{% block head %}
+    <style>
+        .start-over {
+            margin-top: 1rem;
+        }
+        .email-sent-to, .registration-instructions {
+            margin-bottom: 2rem;
+        }
+        .password-requirements {
+            font-size: 0.8rem;
+            color: var(--muted-color);
+            margin-top: 0.25rem;
+            margin-bottom: 0.25rem;
+        }
+        .password-container {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+        }
+    </style>
+{% endblock %}
+{% block content %}
+    <div class="login-container">
+        <div class="login-card">
+            <article>
+                <header>
+                    <h2>Register</h2>
+                    <div>Create a new Fulgur account</div>
+                </header>
+                {% include "partials/auth/registration_step_1.html" %}
+            </article>
+        </div>
+    </div>
+    {% call super() %}
+{% endblock %}

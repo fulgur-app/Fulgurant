@@ -1,0 +1,98 @@
+use crate::{devices::Device, shares::DisplayShare};
+use askama::Template;
+
+/// Main page template
+#[derive(Template)]
+#[template(path = "index.html")]
+pub struct IndexTemplate {
+    pub devices: Vec<Device>,
+    pub shares: Vec<DisplayShare>,
+    pub user_id: i32,
+    pub first_name: String,
+}
+
+/// Individual device row template (for HTMX updates)
+#[derive(Template)]
+#[template(path = "partials/devices/device_row.html")]
+pub struct DeviceRowTemplate {
+    pub device: Device,
+}
+
+/// Error message template
+#[derive(Template)]
+#[template(path = "error.html")]
+pub struct ErrorTemplate {
+    pub title: String,
+    pub message: String,
+    pub link: Option<String>,
+    pub link_text: Option<String>,
+}
+
+/// Edit form template (for HTMX inline editing)
+#[derive(Template)]
+#[template(path = "partials/devices/device_edit_form.html")]
+pub struct DeviceEditFormTemplate {
+    pub device: Device,
+}
+
+/// Empty state template
+#[derive(Template)]
+#[template(path = "partials/devices/empty_state.html")]
+pub struct DeviceEmptyStateTemplate;
+
+/// Error message template
+#[derive(Template)]
+#[template(path = "partials/error_message.html")]
+pub struct ErrorMessageTemplate {
+    pub message: String,
+}
+
+/// Device creation response template (includes device row and API key panel)
+#[derive(Template)]
+#[template(path = "partials/devices/device_creation_response.html")]
+pub struct DeviceCreationResponseTemplate {
+    pub device: Device,
+    pub api_key: String,
+}
+
+/// Empty state template
+#[derive(Template)]
+#[template(path = "login.html")]
+pub struct LoginTemplate {
+    pub can_register: bool,
+}
+
+/// Register template
+#[derive(Template)]
+#[template(path = "register.html")]
+pub struct RegisterTemplate {
+    pub error_message: String,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+}
+
+/// Register step 2 template
+#[derive(Template)]
+#[template(path = "partials/auth/registration_step_1.html")]
+pub struct RegisterStep1Template {
+    pub error_message: String,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+}
+
+/// Register step 2 template
+#[derive(Template)]
+#[template(path = "partials/auth/registration_step_2.html")]
+pub struct RegisterStep2Template {
+    pub email: String,
+    pub error_message: String,
+}
+
+/// Registration step 3 template
+#[derive(Template)]
+#[template(path = "partials/auth/registration_step_3.html")]
+pub struct RegisterStep3Template {
+    pub first_name: String,
+}

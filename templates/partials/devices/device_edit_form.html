@@ -1,0 +1,24 @@
+<tr class="device-row" id="device-{{ device.id }}">
+    <td>
+        <input type="text" name="name" value="{{ device.name }}" form="edit-form-{{ device.id }}" required>
+        <input type="text" name="device_type" value="{{ device.device_type }}" form="edit-form-{{ device.id }}" required>
+    </td>
+    <td>
+        <form id="edit-form-{{ device.id }}"
+              hx-put="/device/{{ device.id }}"
+              hx-target="#device-{{ device.id }}"
+              hx-swap="outerHTML">
+            <div class="actions">
+                <button type="submit">Save</button>
+                <button 
+                    type="button"
+                    class="secondary"
+                    hx-get="/device/{{ device.id }}/cancel"
+                    hx-target="#device-{{ device.id }}"
+                    hx-swap="outerHTML">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </td>
+</tr>

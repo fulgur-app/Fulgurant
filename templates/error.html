@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+
+{% block title %}Error{% endblock %}
+
+{% block head %}
+
+{% endblock %}
+
+{% block content %}
+
+    <div class="error-container">
+        <h2>{{ title }}</h2>
+        <p>{{ message }}</p>
+        {% if let Some(link) = link  %}
+{% if let Some(link_text) = link_text  %}
+            <a href="{{ link }}">{{ link_text }}</a>
+        {% endif %}
+        {% endif %}
+    </div>
+    
+    {% call super() %}
+{% endblock %}  

@@ -1,0 +1,43 @@
+{% extends "layout.html" %}
+
+{% block title %}Login{% endblock %}
+
+{% block head %}
+
+{% endblock %}
+
+{% block content %}
+
+
+    <div class="login-container">
+        <div class="login-card">
+            <article>
+                <header>
+                    <h2>Log in</h2>
+                    <div>Manage your devices and shares</div>
+                </header>
+                <div id="error-message" role="alert"></div>
+                <form id="login-form"
+                    hx-post="/login"
+                    hx-target="#error-message"
+                    hx-swap="innerHTML">
+                    <label for="email">
+                        Email
+                        <input type="email" id="email" name="email" required autocomplete="email" />
+                    </label>
+                    <label for="password">
+                        Password
+                        <input type="password" id="password" name="password" required autocomplete="password" />
+                    </label>
+                    <button type="submit">Login</button>
+                </form>
+                {% if can_register %}
+                <div class="center">
+                        No account yet?&nbsp;<a href="/register">Register</a>.
+                    </div>
+                {% endif %}
+            </article>
+        </div>
+    </div>
+    {% call super() %}
+{% endblock %}

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>{% block title %}{{ title }} - Fulgur{% endblock %}</title>
+    {% block head %}{% endblock %}
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+    >
+    <style>
+        
+        :root {
+            --pico-font-size: 1rem;
+            --pico-form-element-spacing-vertical: 0.5rem;
+            --pico-form-element-spacing-horizontal: 0.75rem;
+            --pico-form-element-border-radius: 0.25rem;
+            --error-text: #C52F21;
+            --danger-background: #C52F21;
+            --danger-background-hover: #f74134;
+            --danger-border: #8B1F18;
+        }
+        td, tr, th {
+            padding: 0.25rem 0.5rem;
+        }
+        .center {
+            text-align: center;
+        }
+        .container-centered {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .htmx-swapping {
+            opacity: 0;
+            transition: opacity 0.2s ease-out;
+        }
+        .htmx-added {
+            opacity: 0;
+        }
+        .htmx-settling {
+            opacity: 1;
+            transition: opacity 0.3s ease-in;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--muted-color);
+        }
+        .actions {
+            display: flex;
+            align-items: center;
+            margin: 0;
+            /* gap: 0.5rem; */
+        }
+        .actions button,
+        .actions a {
+            margin: 0;
+            padding: 0.25rem 0.5rem;
+        }
+        table {
+            margin-top: 0;
+            padding: 1rem;
+        }
+        th {
+            height: 46px;
+        }
+        #add-car-form {
+            margin-bottom: 2rem;
+        }
+        .container-max-width {
+            max-width: 1280px !important;
+            margin: 0 auto;
+        }
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 50vh;
+            padding: 2rem;
+        }
+        .login-card {
+            max-width: 400px;
+            width: 100%;
+        }
+        .error-message {
+            padding: 1rem;
+            margin: 1rem 0;
+            color: var(--error-text);
+            border: 1px solid var(--danger-border);
+            margin-bottom: 1rem;
+            border-radius: 5px;
+        }
+        .full-width {
+            width: 100%;
+        }
+
+        button.danger {
+            background-color: var(--danger-background);
+            color: #fff;
+            border: 1px solid var(--danger-border);
+        }
+        button.danger:hover {
+            background-color: var(--danger-background-hover);
+        }
+
+        article > header {
+            padding: 1.5rem 1rem;
+        }
+    </style>
+
+  </head>
+  <body>
+    <main id="content" class="container-fluid container-max-width">
+      <nav>
+        <ul>
+          <li><h1>Fulgur</h1></li>
+        </ul>
+        <ul>
+          {% if user_id is defined %}
+          <li><a href="/" class="contrast">Settings</a></li>
+          <li><a href="/logout" class="contrast">Logout</a></li>
+          {% endif %}
+        </ul>
+      </nav>
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

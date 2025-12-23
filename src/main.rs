@@ -1,0 +1,174 @@
+use axum::{
+    middleware,
+    routing::{delete, get, post, put},
+    Router,
+};
+use dotenvy::dotenv;
+use sqlx::sqlite::SqlitePoolOptions;
+use std::net::SocketAddr;
+use tower_http::trace::TraceLayer;
+use tower_sessions::{MemoryStore, SessionManagerLayer};
+
+use crate::shares::ShareRepository;
+
+mod api_key;
+mod auth {
+    pub(crate) mod handlers;
+    pub(crate) mod middleware;
+}
+mod api {
+    pub(crate) mod handlers;
+    pub(crate) mod middleware;
+    pub(crate) mod rate_limit;
+}
+pub mod devices;
+mod handlers;
+mod logging;
+mod mail;
+pub mod shares;
+mod templates;
+mod users;
+mod verification_code;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    dotenv().ok();
+    let is_prod = std::env::var("IS_PROD").unwrap_or("false".to_string()) == "true";
+    let log_folder = logging::get_log_folder();
+    let _log_guard = logging::init_logging(log_folder.clone(), is_prod)?;
+    tracing::info!("========================================");
+    tracing::info!("Starting Fulgur server v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!(
+        "Running in {} environment",
+        if is_prod { "PRODUCTION" } else { "DEVELOPMENT" }
+    );
+    tracing::info!("Log folder: {}", log_folder.display());
+    tracing::info!("========================================");
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let connection = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await?;
+    tracing::info!("Database connection established");
+    tracing::info!("Running migrations...");
+    sqlx::migrate!("./data/migrations").run(&connection).await?;
+    tracing::info!("Migrations completed successfully");
+    let device_repository = devices::DeviceRepository::new(connection.clone());
+    let user_repository = users::UserRepository::new(connection.clone());
+    let verification_code_repository =
+        verification_code::VerificationCodeRepository::new(connection.clone());
+    let share_repository = shares::ShareRepository::new(connection.clone());
+    let app_state = handlers::AppState {
+        device_repository,
+        user_repository,
+        verification_code_repository,
+        share_repository,
+        mailer: mail::Mailer::new(),
+        is_prod,
+        can_register: auth::handlers::can_register(),
+    };
+    let session_store = MemoryStore::default();
+    let session_layer = SessionManagerLayer::new(session_store).with_secure(true);
+    let public_routes = Router::new()
+        .route("/auth/register", post(auth::handlers::register_step_1))
+        .route(
+            "/auth/register/step2",
+            post(auth::handlers::register_step_2),
+        )
+        .route("/login", get(auth::handlers::get_login_page))
+        .route("/login", post(auth::handlers::login))
+        .route("/logout", get(auth::handlers::logout))
+        .route("/register", get(auth::handlers::get_register_page))
+        .with_state(app_state.clone());
+    // Build router
+    let protected_routes = Router::new()
+        // Main page
+        .route("/", get(handlers::index))
+        .route("/device/{user_id}/create", post(handlers::create_device))
+        .route("/device/{id}/edit", get(handlers::get_device_edit_form))
+        .route("/device/{id}", put(handlers::update_device))
+        .route("/device/{id}", delete(handlers::delete_device))
+        .route("/device/{id}/cancel", get(handlers::cancel_edit_device))
+        .route("/share/{id}", delete(handlers::delete_share))
+        // Add state
+        .with_state(app_state.clone())
+        // Add tracing
+        .layer(TraceLayer::new_for_http())
+        .layer(axum::middleware::from_fn_with_state(
+            app_state.clone(),
+            auth::middleware::require_auth,
+        ));
+
+    // All API routes require authentication and rate limiting
+    let api_routes = Router::new()
+        // Health check endpoint
+        .route("/api/ping", get(api::handlers::ping))
+        // Begin session endpoint - returns encryption key and pending shares
+        .route("/api/begin", get(api::handlers::begin))
+        // API devices endpoint - returns all devices for authenticated user
+        .route("/api/devices", get(api::handlers::get_devices))
+        // Encryption key endpoint - returns user's encryption key for E2E encryption
+        .route(
+            "/api/encryption-key",
+            get(api::handlers::get_encryption_key),
+        )
+        // Share file endpoint - creates a new share with deduplication
+        .route("/api/share", post(api::handlers::share_file))
+        // Get shares endpoint - returns all pending shares for the authenticated device
+        .route("/api/shares", get(api::handlers::get_shares))
+        // Future authenticated API routes will go here
+        // .route("/api/sync", post(api::handlers::sync))
+        // .route("/api/files", get(api::handlers::list_files))
+        // Apply authentication middleware to all API routes
+        .layer(middleware::from_fn_with_state(
+            app_state.clone(),
+            api::middleware::require_api_auth,
+        ))
+        // Apply rate limiting (5 requests per minute per IP)
+        .layer(middleware::from_fn(api::rate_limit::rate_limit_middleware))
+        .with_state(app_state.clone());
+
+    let app = Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
+        .merge(api_routes)
+        .layer(session_layer);
+
+    let cleanup_share_repo = app_state.share_repository.clone();
+    make_share_cleanup_task(cleanup_share_repo);
+
+    // Start server
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    tracing::info!("Server starting on http://{}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
+
+    Ok(())
+}
+
+fn make_share_cleanup_task(share_repository: ShareRepository) {
+    tracing::info!("Starting share cleanup task (runs every hour)");
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // 1 hour
+        loop {
+            interval.tick().await;
+            match share_repository.delete_expired().await {
+                Ok(count) => {
+                    if count > 0 {
+                        tracing::info!("Cleaned up {} expired share(s)", count);
+                    } else {
+                        tracing::debug!("Share cleanup check complete - no expired shares found");
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Error cleaning up expired shares: {:?}", e);
+                }
+            }
+        }
+    });
+}

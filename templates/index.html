@@ -1,0 +1,171 @@
+{% extends "layout.html" %}
+
+{% block title %}Devices{% endblock %}
+
+{% block head %}
+    <style>
+        .api-key-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background-color: #006D46;
+        }
+        .api-key-display {
+            display: flex;
+            flex-direction: row;
+            gap: 0.25rem;
+            align-items: center;
+        }
+        .device-api-key {
+            padding: 0;
+        }
+        .device-api-key code {
+            background-color: #042C1B;
+        }
+        .device-row {
+            transition: all 0.3s ease;
+        }
+        .submit-container {
+            display: flex;
+            align-items: flex-end;
+            margin-bottom: calc(var(--pico-spacing) * .375);
+            
+        }
+    </style>
+
+{% endblock %}
+
+{% block content %}
+    <!-- Add Device Form --> 
+    <article id="add-device-form">
+        <header><strong>Add New Device</strong></header>
+        <form hx-post="/device/{{ user_id }}/create" 
+                hx-target="#device-list" 
+                hx-swap="afterbegin"
+                hx-on::after-request="document.getElementById('device-empty-state')?.remove(); this.reset();">
+            <div class="grid">
+                <label>
+                    Name
+                    <input type="text" name="name" placeholder="e.g., My Laptop" required>
+                </label>
+                <label>
+                    Device Type
+                    <select name="device_type" required>
+                        <option value="Laptop">Laptop</option>
+                        <option value="Desktop">Desktop</option>
+                        <option value="AllInOne">All-In-One</option>
+                        <option value="Tower">Tower</option>
+                        <option value="Server">Server</option>
+                    </select>
+                </label>
+                <label>
+                    API Key Lifetime
+                    <select name="api_key_lifetime" required>
+                        <option value="30">30 days</option>
+                        <option value="90">90 days</option>
+                        <option value="180" selected>180 days</option>
+                        <option value="365">365 days</option>
+                        <option value="36500">No expiration</option>
+                    </select>
+                </label>
+                <div class="submit-container">
+                    <button type="submit">Add Device</button>
+                </div>
+            </div>
+        </form>
+    </article>
+
+    <!-- Devices List -->
+    <article>
+        <header><strong>{{ first_name }}'s Devices Inventory</strong></header>
+        
+        <div class="overflow-auto">
+            <table role="grid">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Created at</th>
+                        <th>Last access at</th>
+                        <th>Expires at</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="device-list">
+                    {% if devices.is_empty() %}
+                        <tr id="device-empty-state">
+                            <td colspan="6">
+                                {% include "partials/devices/empty_state.html" %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        {% for device in devices %}
+                            {% include "partials/devices/device_row.html" %}
+                        {% endfor %}
+                    {% endif %}
+                </tbody>
+                </table>
+        </div>
+    </article>
+
+    <!-- Shares List -->
+    <article>
+        <header><strong>{{ first_name }}'s Ongoing Shares</strong></header>
+        
+        <div class="overflow-auto">
+            <table role="grid">
+                <thead>
+                    <tr>
+                        <th>File Name</th>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Created at</th>
+                        <th>Expires at</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="share-list">
+                    {% if shares.is_empty() %}
+                        <tr id="share-empty-state">
+                            <td colspan="6">
+                                {% include "partials/shares/empty_state.html" %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        {% for share in shares %}
+                            {% include "partials/shares/share_row.html" %}
+                        {% endfor %}
+                    {% endif %}
+                </tbody>
+                </table>
+        </div>
+    </article>
+
+    <script>
+        function copyApiKey(button) {
+            const apiKeyElement = button.parentElement.querySelector('.api-key-value');
+            if (apiKeyElement) {
+                navigator.clipboard.writeText(apiKeyElement.textContent.trim()).then(() => {
+                    console.log('API key copied to clipboard');
+                    // Scroll to the API key panel to ensure user sees it
+                    const container = document.getElementById('device-api-key-container');
+                    if (container) {
+                        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }).catch(err => {
+                    console.error('Failed to copy API key:', err);
+                });
+            }
+        }
+        
+        function dismissApiKey() {
+            const container = document.getElementById('device-api-key-container');
+            if (container) {
+                container.innerHTML = '';
+            }
+        }
+    </script>
+
+    {% call super() %}
+{% endblock %}
