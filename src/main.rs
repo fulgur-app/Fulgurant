@@ -91,6 +91,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/device/{id}", delete(handlers::delete_device))
         .route("/device/{id}/cancel", get(handlers::cancel_edit_device))
         .route("/share/{id}", delete(handlers::delete_share))
+        // Settings routes
+        .route("/settings", get(handlers::get_settings))
+        .route("/settings/update-name", post(handlers::update_name))
+        .route("/settings/update-email", post(handlers::update_email_step_1))
+        .route("/settings/verify-email-change", post(handlers::update_email_step_2))
         // Add state
         .with_state(app_state.clone())
         // Add tracing

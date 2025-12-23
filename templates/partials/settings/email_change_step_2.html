@@ -1,0 +1,37 @@
+<div class="center" style="margin-bottom: 2rem;">
+    <h4>Check your email!</h4>
+    <div>We've sent a 6-digit verification code to:</div>
+    <div><strong>{{ new_email }}</strong></div>
+</div>
+
+{% if error_message != "" %}
+    <div class="error-message" role="alert">{{ error_message }}</div>
+{% endif %}
+
+<form hx-post="/settings/verify-email-change"
+      hx-target="#email-update-container"
+      hx-swap="innerHTML">
+    <input type="hidden" name="email" value="{{ new_email }}">
+    <label>
+        Verification Code
+        <input type="text"
+               name="code"
+               placeholder="000000"
+               class="verification-code-input"
+               minlength="6"
+               maxlength="6"
+               pattern="[0-9]{6}"
+               required
+               autofocus>
+    </label>
+    <button type="submit">Verify & Update Email</button>
+</form>
+
+<div class="center" style="margin-top: 1rem;">
+    <button class="secondary outline full-width"
+            hx-get="/settings"
+            hx-target="main#content"
+            hx-swap="innerHTML">
+        Cancel
+    </button>
+</div>

@@ -1,0 +1,17 @@
+<div class="success-message" role="alert">
+    <strong>Email successfully updated!</strong>
+    <div style="margin-top: 0.5rem;">Your new email address is: <strong>{{ email }}</strong></div>
+</div>
+
+<form hx-post="/settings/update-email"
+      hx-target="#email-update-container"
+      hx-swap="innerHTML">
+    <label>
+        Email
+        <input type="email" name="email" value="{{ email }}" required>
+    </label>
+    <button type="submit">Update Email</button>
+    <p class="password-note">
+        Changing your email will require verification. A 6-digit code will be sent to your new email address.
+    </p>
+</form>

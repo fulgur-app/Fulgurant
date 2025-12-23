@@ -96,3 +96,36 @@ pub struct RegisterStep2Template {
 pub struct RegisterStep3Template {
     pub first_name: String,
 }
+
+/// Settings page template
+#[derive(Template)]
+#[template(path = "settings.html")]
+pub struct SettingsTemplate {
+    pub user_id: i32,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+}
+
+/// Update name success message template
+#[derive(Template)]
+#[template(path = "partials/settings/update_name_success.html")]
+pub struct UpdateNameSuccessTemplate {
+    pub first_name: String,
+    pub last_name: String,
+}
+
+/// Email change step 2 template (verification code entry)
+#[derive(Template)]
+#[template(path = "partials/settings/email_change_step_2.html")]
+pub struct EmailChangeStep2Template {
+    pub new_email: String,
+    pub error_message: String,
+}
+
+/// Email change success template
+#[derive(Template)]
+#[template(path = "partials/settings/email_change_success.html")]
+pub struct EmailChangeSuccessTemplate {
+    pub email: String,
+}

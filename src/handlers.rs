@@ -14,7 +14,7 @@ use crate::{
     shares::{DisplayShare, ShareRepository},
     templates::{self, ErrorMessageTemplate},
     users::UserRepository,
-    verification_code::VerificationCodeRepository,
+    verification_code::{self, VerificationCodeRepository},
 };
 
 const SESSION_USER_ID: &str = "user_id";
@@ -134,7 +134,7 @@ pub async fn index(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<Html<String>, AppError> {
-    let user_id = session.get(SESSION_USER_ID).await.map_err(|e| {
+    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
         AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
     })?;
     let user_id = match user_id {
@@ -296,6 +296,250 @@ pub async fn delete_share(
         Err(e) => {
             tracing::error!("Error deleting share: {:?}", e);
             return Err(AppError::DatabaseError(e));
+        }
+    }
+}
+
+/// GET /settings - Returns the settings page
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The settings page
+/// - `Err(AppError)`: Error that occurred while rendering the template
+pub async fn get_settings(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Html<String>, AppError> {
+    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
+        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
+    })?;
+    let user_id = match user_id {
+        Some(id) => id,
+        None => return Err(AppError::Unauthorized),
+    };
+    let user = state.user_repository.get_by_id(user_id).await?;
+    let user = match user {
+        Some(user) => user,
+        None => return Err(AppError::Unauthorized),
+    };
+    let template = templates::SettingsTemplate {
+        user_id,
+        email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+    };
+    Ok(Html(template.render()?))
+}
+
+#[derive(serde::Deserialize)]
+pub struct UpdateNameRequest {
+    first_name: String,
+    last_name: String,
+}
+
+/// POST /settings/update-name - Updates user's name
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+/// - `request`: The update name request
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: Success message
+/// - `Err(AppError)`: Error that occurred while updating the name
+pub async fn update_name(
+    State(state): State<AppState>,
+    session: Session,
+    Form(request): Form<UpdateNameRequest>,
+) -> Result<Html<String>, AppError> {
+    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
+        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
+    })?;
+    let user_id = match user_id {
+        Some(id) => id,
+        None => return Err(AppError::Unauthorized),
+    };
+    state
+        .user_repository
+        .update_name(
+            user_id,
+            request.first_name.clone(),
+            request.last_name.clone(),
+        )
+        .await?;
+    tracing::info!("User {} updated their name", user_id);
+    let template = templates::UpdateNameSuccessTemplate {
+        first_name: request.first_name,
+        last_name: request.last_name,
+    };
+    Ok(Html(template.render()?))
+}
+
+#[derive(serde::Deserialize)]
+pub struct UpdateEmailRequest {
+    email: String,
+}
+
+/// POST /settings/update-email - Initiates email update process
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+/// - `request`: The update email request
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: Verification code form
+/// - `Err(AppError)`: Error that occurred while initiating email update
+pub async fn update_email_step_1(
+    State(state): State<AppState>,
+    session: Session,
+    Form(request): Form<UpdateEmailRequest>,
+) -> Result<Html<String>, AppError> {
+    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
+        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
+    })?;
+    let user_id = match user_id {
+        Some(id) => id,
+        None => return Err(AppError::Unauthorized),
+    };
+    if !request.email.contains('@') || !request.email.contains('.') {
+        let template = templates::EmailChangeStep2Template {
+            new_email: request.email,
+            error_message: "Invalid email format".to_string(),
+        };
+        return Ok(Html(template.render()?));
+    }
+    if let Ok(Some(_)) = state
+        .user_repository
+        .get_by_email(request.email.clone())
+        .await
+    {
+        let template = templates::EmailChangeStep2Template {
+            new_email: request.email,
+            error_message: "This email is already registered".to_string(),
+        };
+        return Ok(Html(template.render()?));
+    }
+    let code = verification_code::generate_code();
+    state
+        .verification_code_repository
+        .create(
+            request.email.clone(),
+            code.clone(),
+            "email_change".to_string(),
+        )
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to create verification code: {}", e))
+        })?;
+    if state.is_prod {
+        state
+            .mailer
+            .send_verification_email(request.email.clone(), code.clone())
+            .await
+            .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to send email: {}", e)))?;
+        tracing::info!("Verification email sent to {}", request.email);
+    } else {
+        tracing::info!(
+            "Not sending verification email in non-production environment\nVerification code: {}",
+            code
+        );
+    }
+    let template = templates::EmailChangeStep2Template {
+        new_email: request.email,
+        error_message: String::new(),
+    };
+    Ok(Html(template.render()?))
+}
+
+#[derive(serde::Deserialize)]
+pub struct VerifyEmailChangeRequest {
+    email: String,
+    code: String,
+}
+
+/// POST /settings/verify-email-change - Verifies email change code
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+/// - `request`: The verification request
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: Success message
+/// - `Err(AppError)`: Error that occurred while verifying the code
+pub async fn update_email_step_2(
+    State(state): State<AppState>,
+    session: Session,
+    Form(request): Form<VerifyEmailChangeRequest>,
+) -> Result<Html<String>, AppError> {
+    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
+        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
+    })?;
+    let user_id = match user_id {
+        Some(id) => id,
+        None => return Err(AppError::Unauthorized),
+    };
+    let result = state
+        .verification_code_repository
+        .verify_code(
+            request.code.clone(),
+            request.email.clone(),
+            "email_change".to_string(),
+        )
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to verify code: {}", e)))?;
+    match result {
+        verification_code::VerificationResult::Verified => {
+            state
+                .user_repository
+                .update_email(user_id, request.email.clone())
+                .await?;
+            tracing::info!("User {} changed their email to {}", user_id, request.email);
+            let template = templates::EmailChangeSuccessTemplate {
+                email: request.email,
+            };
+            Ok(Html(template.render()?))
+        }
+        verification_code::VerificationResult::Invalid { attempts_remaining } => {
+            let error_msg = if attempts_remaining > 0 {
+                format!(
+                    "Invalid verification code. {} attempts remaining.",
+                    attempts_remaining
+                )
+            } else {
+                "Too many failed attempts. Please request a new code.".to_string()
+            };
+            let template = templates::EmailChangeStep2Template {
+                new_email: request.email,
+                error_message: error_msg,
+            };
+            Ok(Html(template.render()?))
+        }
+        verification_code::VerificationResult::TooManyAttempts => {
+            let template = templates::EmailChangeStep2Template {
+                new_email: request.email,
+                error_message: "Too many failed attempts. Please request a new code.".to_string(),
+            };
+            Ok(Html(template.render()?))
+        }
+        verification_code::VerificationResult::Expired => {
+            let template = templates::EmailChangeStep2Template {
+                new_email: request.email,
+                error_message: "Verification code has expired. Please request a new code."
+                    .to_string(),
+            };
+            Ok(Html(template.render()?))
+        }
+        verification_code::VerificationResult::NotFound => {
+            let template = templates::EmailChangeStep2Template {
+                new_email: request.email,
+                error_message: "No verification code found. Please request a new code.".to_string(),
+            };
+            Ok(Html(template.render()?))
         }
     }
 }

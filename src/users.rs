@@ -140,4 +140,47 @@ impl UserRepository {
             .await?;
         Ok(())
     }
+
+    /// Update user's first and last name
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the user
+    /// - `first_name`: The new first name
+    /// - `last_name`: The new last name
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The result of the operation if the user's name was updated successfully
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn update_name(
+        &self,
+        id: i32,
+        first_name: String,
+        last_name: String,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE users SET first_name = ?, last_name = ? WHERE id = ?")
+            .bind(first_name)
+            .bind(last_name)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Update user's email after it's been verified
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the user
+    /// - `email`: The new email address
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The result of the operation if the user's email was updated successfully
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn update_email(&self, id: i32, email: String) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE users SET email = ?, email_verified = TRUE WHERE id = ?")
+            .bind(email)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
 }
