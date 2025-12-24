@@ -1,7 +1,20 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Pool, Sqlite, SqlitePool};
+use sqlx::{Pool, Row, Sqlite, SqlitePool};
 use uuid::Uuid;
+
+pub const MAX_DEVICES_PER_USER: i32 = 99;
+
+/// Get the maximum number of devices per user from the environment variable, defaults to 99
+///
+/// ### Returns
+/// - `i32`: The maximum number of devices per user
+pub fn get_max_devices_per_user() -> i32 {
+    std::env::var("MAX_DEVICES_PER_USER")
+        .unwrap_or(MAX_DEVICES_PER_USER.to_string())
+        .parse()
+        .unwrap_or(MAX_DEVICES_PER_USER)
+}
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct Device {
@@ -228,5 +241,21 @@ impl DeviceRepository {
             .bind(device_key)
             .fetch_one(&self.pool)
             .await
+    }
+
+    /// Count the number of devices for a user
+    ///
+    /// ### Arguments
+    /// - `user_id`: The ID of the user
+    ///
+    /// ### Returns
+    /// - `Ok(i32)`: The number of devices for the user
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn count_devices_for_user(&self, user_id: i32) -> Result<i32, sqlx::Error> {
+        sqlx::query("SELECT COUNT(*) FROM devices WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_one(&self.pool)
+            .await
+            .and_then(|row| row.try_get::<i32, _>(0))
     }
 }

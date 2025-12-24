@@ -67,7 +67,9 @@ async fn main() -> anyhow::Result<()> {
         is_prod,
         can_register: auth::handlers::can_register(),
         share_validity_days: shares::get_share_validity_days(),
+        max_devices_per_user: devices::get_max_devices_per_user(),
     };
+    tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store).with_secure(true);
     let public_routes = Router::new()
@@ -94,8 +96,14 @@ async fn main() -> anyhow::Result<()> {
         // Settings routes
         .route("/settings", get(handlers::get_settings))
         .route("/settings/update-name", post(handlers::update_name))
-        .route("/settings/update-email", post(handlers::update_email_step_1))
-        .route("/settings/verify-email-change", post(handlers::update_email_step_2))
+        .route(
+            "/settings/update-email",
+            post(handlers::update_email_step_1),
+        )
+        .route(
+            "/settings/verify-email-change",
+            post(handlers::update_email_step_2),
+        )
         // Add state
         .with_state(app_state.clone())
         // Add tracing

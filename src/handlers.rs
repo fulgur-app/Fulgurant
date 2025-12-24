@@ -9,7 +9,7 @@ use tower_sessions::Session;
 
 use crate::{
     api_key::{self},
-    devices::{CreateDevice, Device, DeviceRepository, UpdateDevice},
+    devices::{self, CreateDevice, Device, DeviceRepository, UpdateDevice},
     mail::Mailer,
     shares::{DisplayShare, ShareRepository},
     templates::{self, ErrorMessageTemplate},
@@ -26,6 +26,7 @@ pub enum AppError {
     ApiKeyError(anyhow::Error),
     InternalError(anyhow::Error),
     Unauthorized,
+    MaxDevicesPerUserReached(i32),
 }
 
 impl IntoResponse for AppError {
@@ -68,6 +69,10 @@ impl IntoResponse for AppError {
                 )
             }
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
+            AppError::MaxDevicesPerUserReached(max_number_of_devices) => (
+                StatusCode::FORBIDDEN,
+                format!("Max number of devices per user reached: {max_number_of_devices}"),
+            ),
         };
 
         let template = ErrorMessageTemplate {
@@ -119,6 +124,7 @@ pub struct AppState {
     pub is_prod: bool,
     pub can_register: bool,
     pub share_validity_days: i64,
+    pub max_devices_per_user: i32,
 }
 
 /// GET / - Returns the index page
@@ -169,6 +175,11 @@ pub async fn index(
         shares,
         user_id,
         first_name: user.first_name,
+        max_devices_per_user: if state.max_devices_per_user == devices::MAX_DEVICES_PER_USER {
+            None
+        } else {
+            Some(state.max_devices_per_user)
+        },
     };
     Ok(Html(template.render()?))
 }
@@ -188,6 +199,16 @@ pub async fn create_device(
     Path(user_id): Path<i32>,
     Form(request): Form<CreateDevice>,
 ) -> Result<Html<String>, AppError> {
+    let devices_number = state
+        .device_repository
+        .count_devices_for_user(user_id)
+        .await?;
+    if devices_number >= state.max_devices_per_user {
+        tracing::error!("Max devices per user reached for user: {}", user_id);
+        return Err(AppError::MaxDevicesPerUserReached(
+            state.max_devices_per_user,
+        ));
+    }
     let api_key = api_key::generate_api_key();
     let hash = api_key::hash_api_key(&api_key)
         .map_err(|e| AppError::ApiKeyError(anyhow::anyhow!("Failed to hash API key: {}", e)))?;

@@ -6,6 +6,7 @@ use askama::Template;
 #[template(path = "index.html")]
 pub struct IndexTemplate {
     pub devices: Vec<Device>,
+    pub max_devices_per_user: Option<i32>,
     pub shares: Vec<DisplayShare>,
     pub user_id: i32,
     pub first_name: String,

@@ -37,13 +37,23 @@
 {% endblock %}
 
 {% block content %}
-    <!-- Add Device Form --> 
+    <!-- Add Device Form -->
     <article id="add-device-form">
         <header><strong>Add New Device</strong></header>
-        <form hx-post="/device/{{ user_id }}/create" 
-                hx-target="#device-list" 
+        <div id="device-error-message"></div>
+        <form id="add-device-form-element"
+                hx-post="/device/{{ user_id }}/create"
+                hx-target="#device-list"
                 hx-swap="afterbegin"
-                hx-on::after-request="document.getElementById('device-empty-state')?.remove(); this.reset();">
+                hx-on::after-request="
+                    if (event.detail.successful) {
+                        document.getElementById('device-error-message').innerHTML = '';
+                        this.reset();
+                        document.getElementById('device-empty-state')?.remove();
+                    } else {
+                        document.getElementById('device-error-message').innerHTML = event.detail.xhr.responseText;
+                    }
+                ">
             <div class="grid">
                 <label>
                     Name
@@ -78,7 +88,16 @@
 
     <!-- Devices List -->
     <article>
-        <header><strong>{{ first_name }}'s Devices Inventory</strong></header>
+        <header>
+            <div class="container-between">
+                <strong>{{ first_name }}'s Devices Inventory</strong>
+                {% if let Some(max_devices_per_user) = max_devices_per_user %}
+                <div class="info">
+                        You can add up to {{ max_devices_per_user }} devices.
+                    </div>
+                {% endif %}
+            </div>
+        </header>
         
         <div class="overflow-auto">
             <table role="grid">
@@ -158,7 +177,7 @@
                 });
             }
         }
-        
+
         function dismissApiKey() {
             const container = document.getElementById('device-api-key-container');
             if (container) {
