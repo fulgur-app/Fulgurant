@@ -71,7 +71,7 @@ pub async fn login(
         Ok(None) => {
             tracing::warn!("Login attempt for non-existent user: {}", email);
             let template = templates::ErrorMessageTemplate {
-                message: "Invalid email or code. Please try again.".to_string(),
+                message: "Invalid email or password. Please try again.".to_string(),
             };
             let rendered = template
                 .render()
