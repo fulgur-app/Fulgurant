@@ -52,6 +52,7 @@ BEGIN
     WHERE id = NEW.id;
 END;
 
+-- Create API keys table for device authentication
 CREATE TABLE api_keys (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -62,8 +63,10 @@ CREATE TABLE api_keys (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Index for API keys expiration
 CREATE INDEX idx_api_keys_expires ON api_keys(expires_at) WHERE expires_at IS NOT NULL;
 
+-- Create verification codes table for email verification and password reset
 CREATE TABLE verification_codes (
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL,
@@ -75,3 +78,28 @@ CREATE TABLE verification_codes (
     verified_at TEXT,
     purpose TEXT DEFAULT 'registration'
 );
+
+-- Create shares table for file sharing between devices
+CREATE TABLE IF NOT EXISTS shares (
+    id TEXT PRIMARY KEY,  -- UUID v4
+    user_id INTEGER NOT NULL,
+    source_device_id TEXT NOT NULL,  -- UUID of source device
+    destination_device_id TEXT NOT NULL,  -- UUID of destination device
+    file_hash TEXT NOT NULL,  -- SHA256 hex (for deduplication)
+    file_name TEXT NOT NULL,
+    file_size INTEGER NOT NULL CHECK(file_size <= 1048576),  -- max 1 MB (1048576 bytes)
+    content TEXT NOT NULL,  -- text file content
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,  -- created_at + validity days 
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_device_id) REFERENCES devices(device_id) ON DELETE CASCADE
+);
+
+-- Index for listing shares by user
+CREATE INDEX IF NOT EXISTS idx_shares_user_id ON shares(user_id);
+
+-- Index for cleanup expired shares
+CREATE INDEX IF NOT EXISTS idx_shares_expires_at ON shares(expires_at);
+
+-- Index for finding shares from a specific device
+CREATE INDEX IF NOT EXISTS idx_shares_source_device ON shares(source_device_id);
