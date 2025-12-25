@@ -10,8 +10,10 @@ use tower_http::trace::TraceLayer;
 use tower_sessions::{MemoryStore, SessionManagerLayer};
 
 use crate::shares::ShareRepository;
+use crate::verification_code::VerificationCodeRepository;
 
 mod api_key;
+mod errors;
 mod auth {
     pub(crate) mod handlers;
     pub(crate) mod middleware;
@@ -82,6 +84,27 @@ async fn main() -> anyhow::Result<()> {
         .route("/login", post(auth::handlers::login))
         .route("/logout", get(auth::handlers::logout))
         .route("/register", get(auth::handlers::get_register_page))
+        // Forgot password routes
+        .route(
+            "/auth/forgot-password",
+            get(auth::handlers::get_forgot_password_page),
+        )
+        .route(
+            "/auth/forgot-password",
+            post(auth::handlers::forgot_password_step_1),
+        )
+        .route(
+            "/auth/forgot-password/verify",
+            post(auth::handlers::forgot_password_step_2),
+        )
+        .route(
+            "/auth/forgot-password/reset",
+            post(auth::handlers::forgot_password_step_3),
+        )
+        .route(
+            "/auth/forgot-password/resend",
+            get(auth::handlers::resend_forgot_password_code),
+        )
         .with_state(app_state.clone());
     // Build router
     let protected_routes = Router::new()
@@ -151,6 +174,9 @@ async fn main() -> anyhow::Result<()> {
     let cleanup_share_repo = app_state.share_repository.clone();
     make_share_cleanup_task(cleanup_share_repo);
 
+    let cleanup_verification_repo = app_state.verification_code_repository.clone();
+    make_verification_code_cleanup_task(cleanup_verification_repo);
+
     // Start server
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     tracing::info!("Server starting on http://{}", addr);
@@ -166,7 +192,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn make_share_cleanup_task(share_repository: ShareRepository) {
-    tracing::info!("Starting share cleanup task (runs every hour)");
+    tracing::info!("Starting share cleanup task (runs every 1 hour)");
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // 1 hour
         loop {
@@ -181,6 +207,30 @@ fn make_share_cleanup_task(share_repository: ShareRepository) {
                 }
                 Err(e) => {
                     tracing::error!("Error cleaning up expired shares: {:?}", e);
+                }
+            }
+        }
+    });
+}
+
+fn make_verification_code_cleanup_task(verification_code_repository: VerificationCodeRepository) {
+    tracing::info!("Starting verification code cleanup task (runs every 1 minute)");
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60)); // 1 minutes
+        loop {
+            interval.tick().await;
+            match verification_code_repository.delete_expired().await {
+                Ok(count) => {
+                    if count > 0 {
+                        tracing::info!("Cleaned up {} expired verification code(s)", count);
+                    } else {
+                        tracing::debug!(
+                            "Verification code cleanup check complete - no expired codes found"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Error cleaning up expired verification codes: {:?}", e);
                 }
             }
         }

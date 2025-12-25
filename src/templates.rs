@@ -130,3 +130,41 @@ pub struct EmailChangeStep2Template {
 pub struct EmailChangeSuccessTemplate {
     pub email: String,
 }
+
+/// Forgot password step 1 template (full page)
+#[derive(Template)]
+#[template(path = "forgot_password.html")]
+pub struct ForgotPasswordStep1Template {
+    pub error_message: String,
+    pub email: String,
+}
+
+/// Forgot password step 1 partial template (form only, for HTMX responses)
+#[derive(Template)]
+#[template(path = "partials/auth/forgot_password_step_1.html")]
+pub struct ForgotPasswordStep1PartialTemplate {
+    pub error_message: String,
+    pub email: String,
+}
+
+/// Forgot password step 2 template (verification code)
+#[derive(Template)]
+#[template(path = "partials/auth/forgot_password_step_2.html")]
+pub struct ForgotPasswordStep2Template {
+    pub email: String,
+    pub error_message: String,
+    pub success_message: String,
+}
+
+/// Forgot password step 3 template (new password)
+#[derive(Template)]
+#[template(path = "partials/auth/forgot_password_step_3.html")]
+pub struct ForgotPasswordStep3Template {
+    pub email: String,
+    pub error_message: String,
+}
+
+/// Forgot password success template
+#[derive(Template)]
+#[template(path = "partials/auth/forgot_password_success.html")]
+pub struct ForgotPasswordSuccessTemplate {}

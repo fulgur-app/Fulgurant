@@ -4,8 +4,7 @@ use argon2::{
 };
 use askama::Template;
 use axum::{
-    extract::State,
-    http::StatusCode,
+    extract::{Query, State},
     response::{Html, IntoResponse, Response},
     Form,
 };
@@ -13,9 +12,10 @@ use serde::Deserialize;
 use tower_sessions::Session;
 
 use crate::{
+    errors::AppError,
     handlers::AppState,
     templates::{self, LoginTemplate},
-    verification_code::{generate_code, VerificationResult},
+    verification_code::{self, generate_code, VerificationResult},
 };
 
 const SESSION_USER_ID: &str = "user_id";
@@ -46,9 +46,7 @@ pub async fn get_login_page(State(state): State<AppState>) -> Result<Html<String
     let template = LoginTemplate {
         can_register: state.can_register,
     };
-    Ok(Html(template.render().map_err(|e| {
-        AppError::Internal(format!("Template error: {}", e))
-    })?))
+    Ok(Html(template.render()?))
 }
 
 /// POST /login - Logs in a user
@@ -77,11 +75,11 @@ pub async fn login(
             };
             let rendered = template
                 .render()
-                .map_err(|e| AppError::Internal(format!("Template error: {}", e)))?;
+                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?;
             return Ok(Html(rendered).into_response());
         }
         Err(e) => {
-            return Err(AppError::Database(format!(
+            return Err(AppError::InternalError(anyhow::anyhow!(
                 "Failed to get user by email: {:?}",
                 e.to_string()
             )));
@@ -96,14 +94,14 @@ pub async fn login(
         return Ok(Html(
             template
                 .render()
-                .map_err(|e| AppError::Internal(format!("Template error: {}", e)))?,
+                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?,
         )
         .into_response());
     }
     session
         .insert(SESSION_USER_ID, user.id)
         .await
-        .map_err(|_| AppError::Internal("Session error".into()))?;
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
     let mut response = Html("").into_response();
     response
         .headers_mut()
@@ -128,7 +126,7 @@ pub async fn get_register_page(State(state): State<AppState>) -> Result<Html<Str
             link_text: Some("Login".to_string()),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::Internal(format!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
         })?));
     }
     let template = templates::RegisterTemplate {
@@ -137,9 +135,7 @@ pub async fn get_register_page(State(state): State<AppState>) -> Result<Html<Str
         first_name: "".to_string(),
         last_name: "".to_string(),
     };
-    Ok(Html(template.render().map_err(|e| {
-        AppError::Internal(format!("Template error: {}", e))
-    })?))
+    Ok(Html(template.render()?))
 }
 
 /// POST /logout - Logs out a user
@@ -158,13 +154,11 @@ pub async fn logout(
     session
         .delete()
         .await
-        .map_err(|_| AppError::Internal("Session error".into()))?;
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
     let template = templates::LoginTemplate {
         can_register: state.can_register,
     };
-    Ok(Html(template.render().map_err(|e| {
-        AppError::Internal(format!("Template error: {}", e))
-    })?))
+    Ok(Html(template.render()?))
 }
 
 #[derive(Deserialize)]
@@ -227,7 +221,7 @@ pub async fn register_step_1(
             last_name: last_name.to_string(),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::Internal(format!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
         })?));
     }
     match state.user_repository.get_by_email(email.clone()).await {
@@ -239,12 +233,12 @@ pub async fn register_step_1(
                 last_name: last_name.to_string(),
             };
             return Ok(Html(template.render().map_err(|e| {
-                AppError::Internal(format!("Template error: {}", e))
+                AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
             })?));
         }
         Ok(None) => (),
         Err(e) => {
-            return Err(AppError::Database(format!(
+            return Err(AppError::InternalError(anyhow::anyhow!(
                 "Failed to get user by email: {:?}",
                 e.to_string()
             )))
@@ -258,27 +252,24 @@ pub async fn register_step_1(
             last_name: last_name.to_string(),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::Internal(format!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
         })?));
     }
-    let code = generate_code();
-    let _verification_code = match state
-        .verification_code_repository
-        .create(email.clone(), code.clone(), "registration".to_string())
-        .await
-    {
-        Ok(verification_code) => verification_code,
-        Err(e) => {
-            tracing::error!("Failed to create verification code: {}", e);
-            return Err(AppError::Internal(format!(
-                "Failed to create verification code: {}",
-                e
-            )));
-        }
-    };
+    if let Err(e) = check_verification_code_rate_limit(&state, &email, "registration").await {
+        let template = templates::RegisterStep1Template {
+            error_message: e.to_string(),
+            email: email.clone(),
+            first_name: first_name.to_string(),
+            last_name: last_name.to_string(),
+        };
+        return Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+        })?));
+    }
+    let _code = create_and_send_verification_code(&state, &email, "registration").await?;
     let password_hash = hash_password(password)
-        .map_err(|e| AppError::Internal(format!("Failed to hash password: {}", e)))?;
-    let _user_id = match state
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {}", e)))?;
+    let _user_id = state
         .user_repository
         .create(
             email.clone(),
@@ -287,39 +278,15 @@ pub async fn register_step_1(
             password_hash,
         )
         .await
-    {
-        Ok(user_id) => user_id,
-        Err(e) => {
+        .map_err(|e| {
             tracing::error!("Failed to create user: {}", e);
-            return Err(AppError::Internal(format!("Failed to create user: {}", e)));
-        }
-    };
-    if state.is_prod {
-        match state
-            .mailer
-            .send_verification_email(email.clone(), code)
-            .await
-        {
-            Ok(_) => (),
-            Err(e) => {
-                return Err(AppError::Internal(format!(
-                    "Failed to send verification email: {}",
-                    e
-                )))
-            }
-        }
-    } else {
-        tracing::info!("Development mode - verification email not sent");
-        tracing::info!("Verification code for {}: {}", email, code.clone());
-    }
-
+            AppError::InternalError(anyhow::anyhow!("Failed to create user: {}", e))
+        })?;
     let template = templates::RegisterStep2Template {
         email: email.clone(),
         error_message: "".to_string(),
     };
-    Ok(Html(template.render().map_err(|e| {
-        AppError::Internal(format!("Template error: {}", e))
-    })?))
+    Ok(Html(template.render()?))
 }
 
 /// POST /register/step-2 - Registers a user
@@ -343,7 +310,7 @@ pub async fn register_step_2(
         Ok(Some(user)) => user,
         Ok(None) => return Err(AppError::Unauthorized),
         Err(e) => {
-            return Err(AppError::Database(format!(
+            return Err(AppError::InternalError(anyhow::anyhow!(
                 "Failed to get user by email: {:?}",
                 e.to_string()
             )))
@@ -357,74 +324,374 @@ pub async fn register_step_2(
         Ok(verification_result) => verification_result,
         Err(e) => {
             tracing::error!("Failed to verify verification code: {}", e);
-            return Err(AppError::Internal(format!(
+            return Err(AppError::InternalError(anyhow::anyhow!(
                 "Failed to verify verification code: {}",
                 e
             )));
         }
     };
-    let error_message = match verification_result {
+    let _error_message = match verification_result {
         VerificationResult::Verified => {
             state
                 .user_repository
                 .mark_as_verified(user.id)
                 .await
                 .map_err(|e| {
-                    AppError::Database(format!(
+                    AppError::InternalError(anyhow::anyhow!(
                         "Failed to mark user as verified: {:?}",
                         e.to_string()
                     ))
                 })?;
             "Yeah! You're registered!".to_string()
         }
-        VerificationResult::NotFound => "Verification code not found".to_string(),
-        VerificationResult::Expired => "Verification code expired".to_string(),
-        VerificationResult::Invalid { attempts_remaining } => format!(
-            "Invalid verification code. {} attempts remaining.",
-            attempts_remaining
-        ),
-        VerificationResult::TooManyAttempts => {
-            "Too many failed attempts. Please request a new code.".to_string()
-        }
+        _ => format_verification_error(&verification_result),
     };
     let template = templates::RegisterStep3Template {
         first_name: user.first_name,
     };
-    Ok(Html(template.render().map_err(|e| {
-        AppError::Internal(format!("Template error: {}", e))
-    })?))
+    Ok(Html(template.render()?))
 }
 
-/// Error handling
-///
-/// ### Arguments
-/// - `self`: The AppError
+/// GET /auth/forgot-password - Returns the forgot password page
 ///
 /// ### Returns
-/// - `Response`: The response
-#[derive(Debug)]
-pub enum AppError {
-    Unauthorized,
-    Internal(String),
-    Database(String),
+/// - `Ok(Html<String>)`: The forgot password page
+/// - `Err(AppError)`: Error that occurred while rendering the template
+pub async fn get_forgot_password_page() -> Result<Html<String>, AppError> {
+    let template = templates::ForgotPasswordStep1Template {
+        error_message: String::new(),
+        email: String::new(),
+    };
+    Ok(Html(template.render()?))
 }
 
-impl IntoResponse for AppError {
-    /// Converts an AppError to a response
-    ///
-    /// ### Arguments
-    /// - `self`: The AppError
-    ///
-    /// ### Returns
-    /// - `Response`: The response
-    fn into_response(self) -> Response {
-        let (status, message) = match self {
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".into()),
-            AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::Database(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-        };
+#[derive(Deserialize)]
+pub struct ForgotPasswordStep1Request {
+    email: String,
+}
 
-        (status, message).into_response()
+/// POST /auth/forgot-password - Step 1: Send verification code to email
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `request`: The forgot password step 1 request
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The verification code form
+/// - `Err(AppError)`: Error that occurred while processing the request
+pub async fn forgot_password_step_1(
+    State(state): State<AppState>,
+    Form(request): Form<ForgotPasswordStep1Request>,
+) -> Result<Html<String>, AppError> {
+    let user = match state
+        .user_repository
+        .get_by_email(request.email.clone())
+        .await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            let template = templates::ForgotPasswordStep2Template {
+                email: request.email,
+                error_message: String::new(),
+                success_message: String::new(),
+            };
+            return Ok(Html(template.render().map_err(|e| {
+                AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            })?));
+        }
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            return Err(AppError::InternalError(anyhow::anyhow!("Database error")));
+        }
+    };
+    if let Err(e) = check_verification_code_rate_limit(&state, &user.email, "password_reset").await
+    {
+        let template = templates::ForgotPasswordStep1PartialTemplate {
+            email: request.email,
+            error_message: e.to_string(),
+        };
+        return Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+        })?));
+    }
+    let _code = create_and_send_verification_code(&state, &user.email, "password_reset").await?;
+    let template = templates::ForgotPasswordStep2Template {
+        email: request.email,
+        error_message: String::new(),
+        success_message: String::new(),
+    };
+    Ok(Html(template.render()?))
+}
+
+#[derive(Deserialize)]
+pub struct ForgotPasswordStep2Request {
+    email: String,
+    code: String,
+}
+
+/// POST /auth/forgot-password/verify - Step 2: Verify code and show password form
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `request`: The verification request
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The password reset form
+/// - `Err(AppError)`: Error that occurred while verifying the code
+pub async fn forgot_password_step_2(
+    State(state): State<AppState>,
+    Form(request): Form<ForgotPasswordStep2Request>,
+) -> Result<Html<String>, AppError> {
+    let result = state
+        .verification_code_repository
+        .verify_code(
+            request.code.clone(),
+            request.email.clone(),
+            "password_reset".to_string(),
+        )
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to verify code: {}", e)))?;
+    match result {
+        VerificationResult::Verified => {
+            let _ = state
+                .verification_code_repository
+                .delete_for(request.email.clone(), "password_reset".to_string())
+                .await;
+            let template = templates::ForgotPasswordStep3Template {
+                email: request.email,
+                error_message: String::new(),
+            };
+            Ok(Html(template.render().map_err(|e| {
+                AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            })?))
+        }
+        _ => {
+            let template = templates::ForgotPasswordStep2Template {
+                email: request.email,
+                error_message: format_verification_error(&result),
+                success_message: String::new(),
+            };
+            Ok(Html(template.render().map_err(|e| {
+                AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            })?))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ForgotPasswordStep3Request {
+    email: String,
+    password: String,
+}
+
+/// POST /auth/forgot-password/reset - Step 3: Reset password
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `request`: The password reset request
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: Success message
+/// - `Err(AppError)`: Error that occurred while resetting the password
+pub async fn forgot_password_step_3(
+    State(state): State<AppState>,
+    Form(request): Form<ForgotPasswordStep3Request>,
+) -> Result<Html<String>, AppError> {
+    if !is_password_valid(&request.password) {
+        let template = templates::ForgotPasswordStep3Template {
+            email: request.email,
+            error_message: "Password must be 8-64 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.".to_string(),
+        };
+        return Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+        })?));
+    }
+    let user = match state
+        .user_repository
+        .get_by_email(request.email.clone())
+        .await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            return Err(AppError::InternalError(anyhow::anyhow!("User not found")));
+        }
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            return Err(AppError::InternalError(anyhow::anyhow!("Database error")));
+        }
+    };
+    let password_hash = hash_password(&request.password)
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {}", e)))?;
+    match state
+        .user_repository
+        .update_password(user.id, password_hash)
+        .await
+    {
+        Ok(_) => {
+            tracing::info!("Password reset for user: {}", user.email);
+        }
+        Err(e) => {
+            tracing::error!("Failed to update password: {}", e);
+            return Err(AppError::InternalError(anyhow::anyhow!(
+                "Failed to update password"
+            )));
+        }
+    }
+    let template = templates::ForgotPasswordSuccessTemplate {};
+    Ok(Html(template.render()?))
+}
+
+#[derive(Deserialize)]
+pub struct ResendCodeQuery {
+    email: String,
+}
+
+/// GET /auth/forgot-password/resend - Resend verification code for password reset
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `query`: The resend code query containing the email
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The verification code form with success message
+/// - `Err(AppError)`: Error that occurred while resending the code
+pub async fn resend_forgot_password_code(
+    State(state): State<AppState>,
+    Query(query): Query<ResendCodeQuery>,
+) -> Result<Html<String>, AppError> {
+    let email = query.email.trim().to_lowercase();
+    if let Err(e) = check_verification_code_rate_limit(&state, &email, "password_reset").await {
+        let template = templates::ForgotPasswordStep2Template {
+            email,
+            error_message: e.to_string(),
+            success_message: String::new(),
+        };
+        return Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+        })?));
+    }
+    let user_exists = match state.user_repository.get_by_email(email.clone()).await {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            return Err(AppError::InternalError(anyhow::anyhow!("Database error")));
+        }
+    };
+    if user_exists {
+        let _code = create_and_send_verification_code(&state, &email, "password_reset").await?;
+    }
+    let template = templates::ForgotPasswordStep2Template {
+        email,
+        error_message: String::new(),
+        success_message: "A new verification code has been sent to your email.".to_string(),
+    };
+    Ok(Html(template.render()?))
+}
+
+/// Check if verification code rate limit has been exceeded
+///
+/// ### Arguments
+/// - `state`: The application state
+/// - `email`: The user's email
+/// - `purpose`: The verification code purpose
+///
+/// ### Returns
+/// - `Ok(())`: Rate limit not exceeded
+/// - `Err(AppError)`: Rate limit exceeded
+async fn check_verification_code_rate_limit(
+    state: &AppState,
+    email: &str,
+    purpose: &str,
+) -> Result<(), AppError> {
+    let active_count = state
+        .verification_code_repository
+        .count_active_codes(email.to_string(), purpose.to_string())
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to count verification codes: {}", e))
+        })?;
+    if active_count >= verification_code::VERIFICATION_CODE_MAX_ATTEMPTS {
+        return Err(AppError::InternalError(anyhow::anyhow!(
+            "You've reached the maximum number of verification codes. Please wait 5 minutes before requesting a new code."
+        )));
+    }
+    Ok(())
+}
+
+/// Create verification code and send email
+///
+/// ### Arguments
+/// - `state`: The application state
+/// - `email`: The user's email
+/// - `purpose`: The verification code purpose
+///
+/// ### Returns
+/// - `Ok(String)`: The generated verification code
+/// - `Err(AppError)`: Error occurred during creation or sending
+async fn create_and_send_verification_code(
+    state: &AppState,
+    email: &str,
+    purpose: &str,
+) -> Result<String, AppError> {
+    let code = generate_code();
+    state
+        .verification_code_repository
+        .create(email.to_string(), code.clone(), purpose.to_string())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to create verification code: {}", e);
+            AppError::InternalError(anyhow::anyhow!("Failed to create verification code: {}", e))
+        })?;
+    if state.is_prod {
+        state
+            .mailer
+            .send_verification_email(email.to_string(), code.clone())
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to send email: {}", e);
+                AppError::InternalError(anyhow::anyhow!("Failed to send email: {}", e))
+            })?;
+        tracing::info!("Verification email sent to {}", email);
+    } else {
+        tracing::info!(
+            "Development mode - verification email not sent\nVerification code for {}: {}",
+            email,
+            code
+        );
+    }
+    Ok(code)
+}
+
+/// Format verification result into user-friendly error message
+///
+/// ### Arguments
+/// - `result`: The verification result
+///
+/// ### Returns
+/// - `String`: User-friendly error message
+fn format_verification_error(result: &VerificationResult) -> String {
+    match result {
+        VerificationResult::Invalid { attempts_remaining } => {
+            if *attempts_remaining > 0 {
+                format!(
+                    "Invalid verification code. {} attempt(s) remaining.",
+                    attempts_remaining
+                )
+            } else {
+                "Too many failed attempts. Please request a new code.".to_string()
+            }
+        }
+        VerificationResult::TooManyAttempts => {
+            "Too many failed attempts. Please request a new code.".to_string()
+        }
+        VerificationResult::Expired => {
+            "Verification code has expired. Please request a new code.".to_string()
+        }
+        VerificationResult::NotFound => {
+            "No verification code found. Please request a new code.".to_string()
+        }
+        _ => "Verification failed".to_string(),
     }
 }
 
@@ -434,7 +701,8 @@ impl IntoResponse for AppError {
 /// - `password`: The password to hash
 ///
 /// ### Returns
-/// - `Result<String, argon2::password_hash::Error>`: The hashed password
+/// - `Ok(String)`: The hashed password
+/// - `Err(argon2::password_hash::Error)`: The error if the password cannot be hashed
 fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
@@ -449,7 +717,7 @@ fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error>
 /// - `password_hash`: The hashed password
 ///
 /// ### Returns
-/// - `true`: True if the password is valid, `false` otherwise
+/// - `true` if the password is valid, `false` otherwise
 fn verify_password(password: &str, password_hash: String) -> bool {
     let password_hash = PasswordHash::new(&password_hash).unwrap();
     let argon2 = Argon2::default();

@@ -73,6 +73,5 @@ CREATE TABLE verification_codes (
     created_at TEXT DEFAULT (datetime('now')),
     expires_at TEXT NOT NULL,
     verified_at TEXT,
-    purpose TEXT DEFAULT 'registration',
-    UNIQUE(email, purpose)
+    purpose TEXT DEFAULT 'registration'
 );

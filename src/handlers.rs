@@ -2,7 +2,7 @@ use askama::Template;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::Html,
     Form,
 };
 use tower_sessions::Session;
@@ -10,109 +10,15 @@ use tower_sessions::Session;
 use crate::{
     api_key::{self},
     devices::{self, CreateDevice, Device, DeviceRepository, UpdateDevice},
+    errors::AppError,
     mail::Mailer,
     shares::{DisplayShare, ShareRepository},
-    templates::{self, ErrorMessageTemplate},
+    templates::{self},
     users::UserRepository,
     verification_code::{self, VerificationCodeRepository},
 };
 
 const SESSION_USER_ID: &str = "user_id";
-
-pub enum AppError {
-    NotFound,
-    DatabaseError(sqlx::Error),
-    TemplateError(askama::Error),
-    ApiKeyError(anyhow::Error),
-    InternalError(anyhow::Error),
-    Unauthorized,
-    MaxDevicesPerUserReached(i32),
-}
-
-impl IntoResponse for AppError {
-    /// Converts an AppError to a response
-    ///
-    /// ### Arguments
-    /// - `self`: The AppError
-    ///
-    /// ### Returns
-    /// - `Response`: The response
-    fn into_response(self) -> Response {
-        let (status, message) = match self {
-            AppError::NotFound => (StatusCode::NOT_FOUND, "Entity not found".to_string()),
-            AppError::DatabaseError(e) => {
-                tracing::error!("Database error: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database error occurred".to_string(),
-                )
-            }
-            AppError::TemplateError(e) => {
-                tracing::error!("Template error: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Template rendering error".to_string(),
-                )
-            }
-            AppError::ApiKeyError(e) => {
-                tracing::error!("API key error: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "API key error".to_string(),
-                )
-            }
-            AppError::InternalError(e) => {
-                tracing::error!("Internal error: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal error".to_string(),
-                )
-            }
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
-            AppError::MaxDevicesPerUserReached(max_number_of_devices) => (
-                StatusCode::FORBIDDEN,
-                format!("Max number of devices per user reached: {max_number_of_devices}"),
-            ),
-        };
-
-        let template = ErrorMessageTemplate {
-            message: message.clone(),
-        };
-        match template.render() {
-            Ok(html) => (status, Html(html)).into_response(),
-            Err(_) => (status, message).into_response(),
-        }
-    }
-}
-
-impl From<sqlx::Error> for AppError {
-    /// Converts a sqlx::Error to an AppError
-    ///
-    /// ### Arguments
-    /// - `err`: The sqlx::Error
-    ///
-    /// ### Returns
-    /// - `AppError`: The AppError
-    fn from(err: sqlx::Error) -> Self {
-        match err {
-            sqlx::Error::RowNotFound => AppError::NotFound,
-            _ => AppError::DatabaseError(err),
-        }
-    }
-}
-
-impl From<askama::Error> for AppError {
-    /// Converts an askama::Error to an AppError
-    ///
-    /// ### Arguments
-    /// - `err`: The askama::Error
-    ///
-    /// ### Returns
-    /// - `AppError`: The AppError
-    fn from(err: askama::Error) -> Self {
-        AppError::TemplateError(err)
-    }
-}
 
 #[derive(Clone)]
 pub struct AppState {

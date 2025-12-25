@@ -21,6 +21,8 @@
             --danger-background: #C52F21;
             --danger-background-hover: #f74134;
             --danger-border: #8B1F18;
+            --success-text: #006D46;
+            --success-border: #006D46;
         }
         td, tr, th {
             padding: 0.25rem 0.5rem;
@@ -91,13 +93,18 @@
             max-width: 400px;
             width: 100%;
         }
-        .error-message {
+        .error-message, .success-message {
             padding: 1rem;
             margin: 1rem 0;
+            border-radius: 5px;
+        }
+        .error-message {
             color: var(--error-text);
             border: 1px solid var(--danger-border);
-            margin-bottom: 1rem;
-            border-radius: 5px;
+        }
+        .success-message {
+            color: var(--success-text);
+            border: 1px solid var(--success-border);
         }
         .full-width {
             width: 100%;
@@ -114,6 +121,13 @@
 
         article > header {
             padding: 1.5rem 1rem;
+        }
+
+        .field-note {
+            font-size: 0.85rem;
+            color: var(--muted-color);
+            margin-top: 0.5rem;
+            margin-bottom: 0.75rem;
         }
     </style>
 

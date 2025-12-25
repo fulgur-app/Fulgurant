@@ -5,8 +5,11 @@ use argon2::{
 use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use sqlx::{Pool, Sqlite, SqlitePool};
+use sqlx::{Pool, Row, Sqlite, SqlitePool};
 use uuid::Uuid;
+
+const VERIFICATION_CODE_EXPIRATION_MINUTES: i64 = 5;
+pub const VERIFICATION_CODE_MAX_ATTEMPTS: i32 = 3;
 
 /// Generate a random 6-digit code
 ///
@@ -130,7 +133,7 @@ impl VerificationCodeRepository {
     ) -> anyhow::Result<VerificationCode> {
         let code_hash = hash_code(&code);
         let id = Uuid::new_v4().to_string();
-        let expires_at = Utc::now() + Duration::days(1);
+        let expires_at = Utc::now() + Duration::minutes(VERIFICATION_CODE_EXPIRATION_MINUTES);
         sqlx::query(
             "INSERT INTO verification_codes (id, email, code_hash, expires_at, purpose) VALUES (?, ?, ?, ?, ?)",
         )
@@ -161,6 +164,7 @@ impl VerificationCodeRepository {
     pub async fn delete_for(&self, email: String, purpose: String) -> anyhow::Result<()> {
         sqlx::query("DELETE FROM verification_codes WHERE email = ? AND purpose = ?")
             .bind(email)
+            .bind(purpose)
             .execute(&self.pool)
             .await?;
         Ok(())
@@ -268,5 +272,45 @@ impl VerificationCodeRepository {
 
         self.mark_as_verified(verification_code.id).await?;
         Ok(VerificationResult::Verified)
+    }
+
+    /// Count active (non-expired) verification codes for an email and purpose
+    ///
+    /// ### Arguments
+    /// - `email`: The email of the user
+    /// - `purpose`: The purpose of the code
+    ///
+    /// ### Returns
+    /// - `Ok(i32)`: The number of active verification codes
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn count_active_codes(
+        &self,
+        email: String,
+        purpose: String,
+    ) -> Result<i32, sqlx::Error> {
+        let now = Utc::now();
+        let result = sqlx::query(
+            "SELECT COUNT(*) FROM verification_codes WHERE email = ? AND purpose = ? AND expires_at > ?"
+        )
+        .bind(email)
+        .bind(purpose)
+        .bind(now)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(result.get::<i32, _>(0))
+    }
+
+    /// Delete all expired verification codes (for cleanup job)
+    ///
+    /// ### Returns
+    /// - `Ok(u64)`: The number of deleted verification codes
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn delete_expired(&self) -> Result<u64, sqlx::Error> {
+        let now = Utc::now();
+        let result = sqlx::query("DELETE FROM verification_codes WHERE expires_at < ?")
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
     }
 }
