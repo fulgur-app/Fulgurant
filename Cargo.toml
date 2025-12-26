@@ -2,6 +2,12 @@
 name = "Fulgurant"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
+license-file = "LICENSE"
+readme = "README.md"
+keywords = ["rust", "web", "api", "server", "fulgur", "sync"]
+categories = ["web", "api", "server"]
+homepage = "https://fulgur.app"
 
 [dependencies]
 # Web framework
