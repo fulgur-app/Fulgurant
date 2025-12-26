@@ -115,6 +115,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/device/{id}", put(handlers::update_device))
         .route("/device/{id}", delete(handlers::delete_device))
         .route("/device/{id}/cancel", get(handlers::cancel_edit_device))
+        .route("/device/{id}/renew", get(handlers::get_device_renew_form))
+        .route("/device/{id}/renew", post(handlers::renew_device))
         .route("/share/{id}", delete(handlers::delete_share))
         // Settings routes
         .route("/settings", get(handlers::get_settings))

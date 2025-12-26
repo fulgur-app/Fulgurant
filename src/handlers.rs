@@ -127,21 +127,21 @@ pub async fn create_device(
     Ok(Html(template.render()?))
 }
 
-/// GET /device/{id}/edit - Returns the device edit form
+/// GET /device/{id}/edit - Returns the inline device edit form
 ///
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `id`: The ID of the device
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The device edit form
+/// - `Ok(Html<String>)`: The inline device edit form
 /// - `Err(AppError)`: Error that occurred while rendering the template
 pub async fn get_device_edit_form(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Html<String>, AppError> {
     let device = state.device_repository.get_by_id(id).await?;
-    let template = templates::DeviceEditFormTemplate { device };
+    let template = templates::InlineEditFormTemplate { device };
     Ok(Html(template.render()?))
 }
 
@@ -185,6 +185,44 @@ pub async fn delete_device(
             return Err(AppError::DatabaseError(e));
         }
     }
+}
+
+/// GET /device/{id}/renew - Returns the inline device renew form
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `id`: The ID of the device
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The inline device renew form
+/// - `Err(AppError)`: Error that occurred while rendering the template
+pub async fn get_device_renew_form(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<Html<String>, AppError> {
+    let device = state.device_repository.get_by_id(id).await?;
+    let template = templates::InlineRenewFormTemplate { device };
+    Ok(Html(template.render()?))
+}
+
+/// POST /device/{id}/renew - Renews a device
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `id`: The ID of the device
+/// - `request`: The renew device request
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The updated device row
+/// - `Err(AppError)`: Error that occurred while renewing the device
+pub async fn renew_device(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+    Form(request): Form<devices::RenewDevice>,
+) -> Result<Html<String>, AppError> {
+    let device = state.device_repository.renew(id, request).await?;
+    let template = templates::DeviceRowTemplate { device };
+    Ok(Html(template.render()?))
 }
 
 /// GET /device/{id}/cancel - Cancels the device edit

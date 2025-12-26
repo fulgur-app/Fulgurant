@@ -36,6 +36,20 @@ pub struct DeviceEditFormTemplate {
     pub device: Device,
 }
 
+/// Inline edit form template (for HTMX inline editing)
+#[derive(Template)]
+#[template(path = "partials/devices/inline_edit_form.html")]
+pub struct InlineEditFormTemplate {
+    pub device: Device,
+}
+
+/// Inline renew form template (for HTMX inline renewing)
+#[derive(Template)]
+#[template(path = "partials/devices/inline_renew_form.html")]
+pub struct InlineRenewFormTemplate {
+    pub device: Device,
+}
+
 /// Empty state template
 #[derive(Template)]
 #[template(path = "partials/devices/empty_state.html")]

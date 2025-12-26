@@ -85,6 +85,11 @@ pub struct UpdateDevice {
     pub device_type: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RenewDevice {
+    pub api_key_lifetime: i64,
+}
+
 #[derive(Clone)]
 pub struct DeviceRepository {
     pool: SqlitePool,
@@ -174,6 +179,30 @@ impl DeviceRepository {
             .bind(name)
             .bind(device_type)
             .bind(now)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        self.get_by_id(id).await
+    }
+
+    /// Renew a device by extending its expiration date
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the device
+    /// - `data`: The renew data containing the new API key lifetime
+    ///
+    /// ### Returns
+    /// - `Ok(Device)`: The renewed device
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn renew(&self, id: i32, data: RenewDevice) -> Result<Device, sqlx::Error> {
+        let now = Utc::now();
+        let RenewDevice { api_key_lifetime } = data;
+        let new_expires_at = now
+            .checked_add_signed(chrono::Duration::days(api_key_lifetime))
+            .unwrap();
+        sqlx::query("UPDATE devices SET expires_at = ?, updated_at = ? WHERE id = ?")
+            .bind(new_expires_at)
+            .bind(now.timestamp())
             .bind(id)
             .execute(&self.pool)
             .await?;

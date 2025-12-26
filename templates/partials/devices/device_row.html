@@ -27,11 +27,14 @@
                     <path d="m6 6 12 12" />
                 </svg>
             </button>
-            <button 
+            <button
                 class="action-button secondary"
-                hx-get="/device/{{ device.id }}/edit" 
+                hx-get="/device/{{ device.id }}/edit"
                 hx-target="#device-{{ device.id }}"
-                hx-swap="outerHTML">
+                hx-swap="afterend"
+                hx-on::before-request="
+                    document.querySelectorAll('.device-inline-form').forEach(el => el.remove());
+                ">
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="16"
@@ -47,11 +50,14 @@
                     <path d="m15 5 4 4" />
                 </svg>
             </button>
-            <button 
+            <button
                 class="action-button"
-                hx-get="/device/{{ device.id }}/edit" 
+                hx-get="/device/{{ device.id }}/renew"
                 hx-target="#device-{{ device.id }}"
-                hx-swap="outerHTML">
+                hx-swap="afterend"
+                hx-on::before-request="
+                    document.querySelectorAll('.device-inline-form').forEach(el => el.remove());
+                ">
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="16"

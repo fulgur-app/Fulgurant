@@ -1,0 +1,37 @@
+<tr class="device-inline-form" id="inline-edit-{{ device.id }}">
+    <td colspan="6">
+        <form hx-put="/device/{{ device.id }}"
+              hx-target="#device-{{ device.id }}"
+              hx-swap="outerHTML"
+              hx-on::after-request="
+                if (event.detail.successful) {
+                    this.closest('tr').remove();
+                }
+              ">
+            <div class="grid">
+                <label>
+                    Name
+                    <input type="text" name="name" value="{{ device.name }}" required>
+                </label>
+                <label>
+                    Device Type
+                    <select name="device_type" required>
+                        <option value="Laptop" {% if device.device_type == "Laptop" %}selected{% endif %}>Laptop</option>
+                        <option value="Desktop" {% if device.device_type == "Desktop" %}selected{% endif %}>Desktop</option>
+                        <option value="AllInOne" {% if device.device_type == "AllInOne" %}selected{% endif %}>All-In-One</option>
+                        <option value="Tower" {% if device.device_type == "Tower" %}selected{% endif %}>Tower</option>
+                        <option value="Server" {% if device.device_type == "Server" %}selected{% endif %}>Server</option>
+                    </select>
+                </label>
+                <div class="submit-container">
+                    <div class="container-row gap-1">
+                        <button type="button" class="secondary" hx-on:click="this.closest('tr').remove()">
+                            Cancel
+                        </button>
+                        <button type="submit" class="inline-submit-button">Save</button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </td>
+</tr>
