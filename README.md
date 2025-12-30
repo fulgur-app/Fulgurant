@@ -1,6 +1,8 @@
 # Fulgurant
 
-Backend API server for **Fulgur**, a multiplatform text editor. Enables file synchronization between devices with end-to-end encryption. Self-hostable to keep user data private.
+Backend API server for [Fulgur](https://github.com/fulgur-app/fulgur), a multiplatform text editor. Enables file synchronization between devices with end-to-end encryption. Self-hostable to keep user data private.
+
+**This server is still in active development and is not yet recommended for production.** There's still some work to be done (which may imply breaking changes), and more testing, for Fulgurant to be given the green light for production with a direct, public access. If you want to test Fulgurant, please run it in a private environment not facing the wild internet yet.
 
 ## Features
 
@@ -13,17 +15,19 @@ Backend API server for **Fulgur**, a multiplatform text editor. Enables file syn
 
 ## Requirements
 
-- Rust 1.70 or later
+- Rust 1.90 or later
 - SQLite
 
 ## Build and Run
 
 Build the project:
+
 ```bash
 cargo build --release
 ```
 
 Run the server:
+
 ```bash
 cargo run
 ```
@@ -31,9 +35,14 @@ cargo run
 The server starts on `http://127.0.0.1:3000`
 
 Run tests:
+
 ```bash
 cargo test
 ```
+
+## Packaging
+
+Proper packaging is yet to be implemented. Until then, Fulgurant must be ran from sources.
 
 ## Configuration
 
@@ -90,10 +99,12 @@ The server runs two background tasks:
 ## Development vs Production
 
 **Development mode** (`IS_PROD=false`):
+
 - Verification codes printed to console instead of emailed
 - Useful for testing without SMTP configuration
 
 **Production mode** (`IS_PROD=true`):
+
 - Emails sent via SMTP (requires email settings)
 - HTTPS-only session cookies
 
@@ -103,9 +114,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
-
-
+http://www.apache.org/licenses/LICENSE-2.0
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
