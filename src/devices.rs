@@ -64,6 +64,7 @@ impl Device {
             .format("%Y-%m-%d")
             .to_string()
             .starts_with("21")
+        // TODO: Remove this once we have a better way to handle expired devices
         {
             "Never".to_string()
         } else {

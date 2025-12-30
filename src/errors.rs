@@ -18,6 +18,13 @@ pub enum AppError {
 }
 
 impl std::fmt::Display for AppError {
+    /// Format an AppError as a string
+    ///
+    /// ### Arguments
+    /// - `f`: The formatter to use
+    ///
+    /// ### Returns
+    /// - `std::fmt::Result`: The result of the formatting
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AppError::NotFound => write!(f, "Entity not found"),
@@ -34,6 +41,10 @@ impl std::fmt::Display for AppError {
 }
 
 impl IntoResponse for AppError {
+    /// Convert an AppError to a Response
+    ///
+    /// ### Returns
+    /// - `Response`: The converted Response
     fn into_response(self) -> Response {
         let (status, message) = match self {
             AppError::NotFound => (StatusCode::NOT_FOUND, "Entity not found".to_string()),
@@ -83,6 +94,13 @@ impl IntoResponse for AppError {
 }
 
 impl From<sqlx::Error> for AppError {
+    /// Convert a sqlx::Error to an AppError
+    ///
+    /// ### Arguments
+    /// - `err`: The sqlx::Error to convert
+    ///
+    /// ### Returns
+    /// - `AppError`: The converted AppError
     fn from(err: sqlx::Error) -> Self {
         match err {
             sqlx::Error::RowNotFound => AppError::NotFound,
@@ -92,6 +110,13 @@ impl From<sqlx::Error> for AppError {
 }
 
 impl From<askama::Error> for AppError {
+    /// Convert an askama::Error to an AppError
+    ///
+    /// ### Arguments
+    /// - `err`: The askama::Error to convert
+    ///
+    /// ### Returns
+    /// - `AppError`: The converted AppError
     fn from(err: askama::Error) -> Self {
         AppError::TemplateError(err)
     }

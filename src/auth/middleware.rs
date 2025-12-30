@@ -10,7 +10,7 @@ use tower_sessions::Session;
 
 const SESSION_USER_ID: &str = "user_id";
 
-/// Middleware that requires authentication for all API calls
+/// Middleware that requires authentication
 ///
 /// ### Arguments
 /// - `session`: The session

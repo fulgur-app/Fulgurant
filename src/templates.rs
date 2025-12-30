@@ -116,7 +116,6 @@ pub struct RegisterStep3Template {
 #[derive(Template)]
 #[template(path = "settings.html")]
 pub struct SettingsTemplate {
-    pub user_id: i32,
     pub email: String,
     pub first_name: String,
     pub last_name: String,

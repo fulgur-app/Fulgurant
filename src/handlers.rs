@@ -291,7 +291,6 @@ pub async fn get_settings(
         None => return Err(AppError::Unauthorized),
     };
     let template = templates::SettingsTemplate {
-        user_id,
         email: user.email,
         first_name: user.first_name,
         last_name: user.last_name,
@@ -366,10 +365,9 @@ pub async fn update_email_step_1(
     let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
         AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
     })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    if user_id.is_none() {
+        return Err(AppError::Unauthorized);
+    }
     if !request.email.contains('@') || !request.email.contains('.') {
         let template = templates::EmailChangeStep2Template {
             new_email: request.email,

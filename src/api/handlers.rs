@@ -44,45 +44,6 @@ impl From<Device> for DeviceResponse {
     }
 }
 
-/// GET /api/devices - Returns all devices for the authenticated user
-/// Authentication is handled by the `require_api_auth` middleware
-///
-/// ### Arguments
-/// - `state`: The state of the application
-/// - `auth_user`: The authenticated user
-///
-/// ### Returns
-/// - `Ok(Json(Vec<DeviceResponse>))`: The response containing the devices
-/// - `Err((StatusCode, Json(ErrorResponse)))`: The error response if the devices retrieval fails
-pub async fn get_all_devices(
-    State(state): State<AppState>,
-    Extension(auth_user): Extension<AuthenticatedUser>,
-) -> Result<Json<Vec<DeviceResponse>>, (StatusCode, Json<ErrorResponse>)> {
-    // Get all devices for the authenticated user
-    let devices = match state
-        .device_repository
-        .get_all_for_user(auth_user.user.id)
-        .await
-    {
-        Ok(devices) => devices,
-        Err(e) => {
-            tracing::error!("Database error getting devices: {:?}", e);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "Internal server error".to_string(),
-                }),
-            ));
-        }
-    };
-
-    // Convert to response format
-    let device_responses: Vec<DeviceResponse> =
-        devices.into_iter().map(DeviceResponse::from).collect();
-
-    Ok(Json(device_responses))
-}
-
 /// GET /api/devices - Returns all devices for the authenticated user, excluding the one used for authentication
 ///
 /// ### Arguments
@@ -96,7 +57,6 @@ pub async fn get_devices(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthenticatedUser>,
 ) -> Result<Json<Vec<DeviceResponse>>, (StatusCode, Json<ErrorResponse>)> {
-    // Get all devices for the authenticated user, excluding the one used for authentication
     let devices: Vec<Device> = match state
         .device_repository
         .get_all_for_user(auth_user.user.id)
@@ -116,8 +76,6 @@ pub async fn get_devices(
             ));
         }
     };
-
-    // Convert to response format
     let device_responses: Vec<DeviceResponse> =
         devices.into_iter().map(DeviceResponse::from).collect();
 
