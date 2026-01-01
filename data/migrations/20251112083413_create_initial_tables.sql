@@ -52,19 +52,8 @@ BEGIN
     WHERE id = NEW.id;
 END;
 
--- Create API keys table for device authentication
-CREATE TABLE api_keys (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    device_name TEXT NOT NULL,
-    key_hash TEXT NOT NULL,
-    expires_at DATETIME,
-    last_used_at DATETIME,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Index for API keys expiration
-CREATE INDEX idx_api_keys_expires ON api_keys(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX idx_api_keys_expires ON devices(expires_at) WHERE expires_at IS NOT NULL;
 
 -- Create verification codes table for email verification and password reset
 CREATE TABLE verification_codes (
