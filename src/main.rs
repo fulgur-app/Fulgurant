@@ -4,8 +4,8 @@ use axum::{
     Router,
 };
 use dotenvy::dotenv;
-use sqlx::sqlite::SqlitePoolOptions;
-use std::net::SocketAddr;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use std::{net::SocketAddr, str::FromStr};
 use tower_http::trace::TraceLayer;
 use tower_sessions::{MemoryStore, SessionManagerLayer};
 
@@ -47,9 +47,13 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Log folder: {}", log_folder.display());
     tracing::info!("========================================");
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let options = SqliteConnectOptions::from_str(database_url.as_str())?
+        .create_if_missing(true)  
+        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+        .busy_timeout(std::time::Duration::from_secs(30));
     let connection = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&database_url)
+        .connect_with(options)
         .await?;
     tracing::info!("Database connection established");
     tracing::info!("Running migrations...");
