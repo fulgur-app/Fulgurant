@@ -26,12 +26,6 @@
         .device-row {
             transition: all 0.3s ease;
         }
-        .submit-container {
-            display: flex;
-            align-items: flex-end;
-            margin-bottom: calc(var(--pico-spacing) * .375);
-            
-        }
         .device-inline-form td {
             padding: 2rem 0rem;
             background-color: #181C25;
@@ -49,7 +43,7 @@
         <header><strong>Add New Device</strong></header>
         <div id="device-error-message"></div>
         <form id="add-device-form-element"
-                hx-post="/device/{{ user_id }}/create"
+                hx-post="/device/{{ user.user_id }}/create"
                 hx-target="#device-list"
                 hx-swap="afterbegin"
                 hx-on::after-request="
@@ -97,7 +91,7 @@
     <article>
         <header>
             <div class="container-between">
-                <strong>{{ first_name }}'s Devices Inventory</strong>
+                <strong>{{ user.first_name }}'s Devices Inventory</strong>
                 {% if let Some(max_devices_per_user) = max_devices_per_user %}
                 <div class="info">
                         You can add up to {{ max_devices_per_user }} devices.
@@ -137,7 +131,7 @@
 
     <!-- Shares List -->
     <article>
-        <header><strong>{{ first_name }}'s Ongoing Shares</strong></header>
+        <header><strong>{{ user.first_name }}'s Ongoing Shares</strong></header>
         
         <div class="overflow-auto">
             <table role="grid">

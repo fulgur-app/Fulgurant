@@ -81,8 +81,7 @@ pub async fn index(
     let template = templates::IndexTemplate {
         devices,
         shares,
-        user_id,
-        first_name: user.first_name,
+        user: templates::UserContext::new(user_id, user.first_name, user.role),
         max_devices_per_user: if state.max_devices_per_user == devices::MAX_DEVICES_PER_USER {
             None
         } else {
@@ -293,6 +292,7 @@ pub async fn get_settings(
         None => return Err(AppError::Unauthorized),
     };
     let template = templates::SettingsTemplate {
+        user: templates::UserContext::new(user_id, user.first_name.clone(), user.role),
         email: user.email,
         first_name: user.first_name,
         last_name: user.last_name,

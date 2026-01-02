@@ -31,6 +31,9 @@ mod setup {
     pub(crate) mod handlers;
     pub(crate) mod middleware;
 }
+mod admin {
+    pub(crate) mod handlers;
+}
 pub mod devices;
 mod handlers;
 mod logging;
@@ -150,6 +153,7 @@ async fn main() -> anyhow::Result<()> {
             "/settings/verify-email-change",
             post(handlers::update_email_step_2),
         )
+        .route("/admin", get(admin::handlers::get_admin))
         .with_state(app_state.clone())
         .layer(TraceLayer::new_for_http())
         .layer(axum::middleware::from_fn_with_state(

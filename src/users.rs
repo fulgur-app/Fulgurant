@@ -18,6 +18,80 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Public-facing User struct that excludes sensitive information (password_hash, encryption_key)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DisplayUser {
+    pub id: i32,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub email_verified: bool,
+    pub role: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl DisplayUser {
+    /// Get the short creation date. Used in the templates to display the creation date in a short format.
+    ///
+    /// ### Returns
+    /// - `String`: The short creation date
+    pub fn get_short_creation_date(&self) -> String {
+        self.created_at.format("%Y-%m-%d").to_string()
+    }
+
+    /// Get the short updated date. Used in the templates to display the updated date in a short format.
+    ///
+    /// ### Returns
+    /// - `String`: The short updated date
+    pub fn get_short_updated_date(&self) -> String {
+        self.updated_at.format("%Y-%m-%d").to_string()
+    }
+
+    /// Get the alternative role of the user. Used in the templates.
+    ///
+    /// ### Returns
+    /// - `String`: The alternative role
+    pub fn toggle_role(&self) -> String {
+        if self.role == "Admin" {
+            "User".to_string()
+        } else {
+            "Admin".to_string()
+        }
+    }
+}
+impl From<User> for DisplayUser {
+    /// Convert a User to a DisplayUser
+    ///
+    /// ### Arguments
+    /// - `user`: The User to convert
+    ///
+    /// ### Returns
+    /// - `DisplayUser`: The DisplayUser
+    fn from(user: User) -> Self {
+        Self {
+            id: user.id,
+            email: user.email,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            email_verified: user.email_verified,
+            role: user.role,
+            created_at: user.created_at,
+            updated_at: user.updated_at,
+        }
+    }
+}
+
+/// Paginated response for user list
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PaginatedUsers {
+    pub users: Vec<DisplayUser>,
+    pub total_count: i32,
+    pub page: i32,
+    pub page_size: i32,
+    pub total_pages: i32,
+}
+
 /// Generate a random 256-bit (32-byte) encryption key encoded as base64
 ///
 /// ### Returns
@@ -228,5 +302,53 @@ impl UserRepository {
         .await?;
         let id = result.last_insert_rowid() as i32;
         Ok(id)
+    }
+
+    /// Get all users with pagination
+    ///
+    /// ### Arguments
+    /// - `page`: The page number (1-indexed)
+    /// - `page_size`: The number of users per page
+    ///
+    /// ### Returns
+    /// - `Ok(PaginatedUsers)`: The paginated list of users (without sensitive information)
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn get_all(
+        &self,
+        page: i32,
+        page_size: i32,
+    ) -> Result<PaginatedUsers, sqlx::Error> {
+        let page = page.max(1);
+        let page_size = page_size.max(1);
+        let offset = (page - 1) * page_size;
+        let total_count = self.count_all().await?;
+        let total_pages = (total_count + page_size - 1) / page_size;
+        let users = sqlx::query_as::<_, User>(
+            "SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        )
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+        let display_users: Vec<DisplayUser> = users.into_iter().map(|u| u.into()).collect();
+        Ok(PaginatedUsers {
+            users: display_users,
+            total_count,
+            page,
+            page_size,
+            total_pages,
+        })
+    }
+
+    /// Count all users
+    ///
+    /// ### Returns
+    /// - `Ok(i32)`: The total number of users
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn count_all(&self) -> Result<i32, sqlx::Error> {
+        let count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count.0)
     }
 }

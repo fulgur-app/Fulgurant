@@ -132,12 +132,16 @@
         article > header {
             padding: 1.5rem 1rem;
         }
-
         .field-note {
             font-size: 0.85rem;
             color: var(--muted-color);
             margin-top: 0.5rem;
             margin-bottom: 0.75rem;
+        }
+        .submit-container {
+            display: flex;
+            align-items: flex-end;
+            margin-bottom: calc(var(--pico-spacing) * .375);
         }
     </style>
 
@@ -149,8 +153,11 @@
           <li><h1><a href="/" class="contrast">Fulgur</a></h1></li>
         </ul>
         <ul>
-          {% if user_id is defined %}
+          {% if user is defined %}
           <li><a href="/" class="contrast">Dashboard</a></li>
+          {% if user.is_admin() %}
+          <li><a href="/admin" class="contrast">Admin</a></li>
+          {% endif %}
           <li><a href="/settings" class="contrast">Settings</a></li>
           <li><a href="/logout" class="contrast">Logout</a></li>
           {% endif %}

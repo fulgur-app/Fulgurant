@@ -1,5 +1,36 @@
-use crate::{devices::Device, shares::DisplayShare};
+use crate::{devices::Device, shares::DisplayShare, users::PaginatedUsers};
 use askama::Template;
+
+/// User context for templates - represents the authenticated user (if any)
+#[derive(Debug, Clone)]
+pub struct UserContext {
+    pub user_id: i32,
+    pub first_name: String,
+    pub role: String,
+}
+
+impl UserContext {
+    /// Create a new UserContext
+    /// 
+    /// ### Arguments
+    /// - `user_id`: The ID of the user
+    /// - `first_name`: The first name of the user
+    /// - `role`: The role of the user
+    ///
+    /// ### Returns
+    /// - `UserContext`: The UserContext
+    pub fn new(user_id: i32, first_name: String, role: String) -> Self {
+        Self { user_id, first_name, role }
+    }
+
+    /// Check if the user is an admin
+    ///
+    /// ### Returns
+    /// - `True` if the user is an admin, `False` otherwise
+    pub fn is_admin(&self) -> bool {
+        self.role == "Admin"
+    }
+}
 
 /// Main page template
 #[derive(Template)]
@@ -8,8 +39,7 @@ pub struct IndexTemplate {
     pub devices: Vec<Device>,
     pub max_devices_per_user: Option<i32>,
     pub shares: Vec<DisplayShare>,
-    pub user_id: i32,
-    pub first_name: String,
+    pub user: UserContext,
 }
 
 /// Individual device row template (for HTMX updates)
@@ -116,6 +146,7 @@ pub struct RegisterStep3Template {
 #[derive(Template)]
 #[template(path = "settings.html")]
 pub struct SettingsTemplate {
+    pub user: UserContext,
     pub email: String,
     pub first_name: String,
     pub last_name: String,
@@ -190,4 +221,13 @@ pub struct SetupTemplate {
     pub email: String,
     pub first_name: String,
     pub last_name: String,
+}
+
+/// Admin page template
+#[derive(Template)]
+#[template(path = "admin.html")]
+pub struct AdminTemplate {
+    pub user: UserContext,
+    pub users: PaginatedUsers,
+    pub total_users: i32,
 }

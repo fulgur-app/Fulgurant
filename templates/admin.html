@@ -1,0 +1,79 @@
+{% extends "layout.html" %}
+
+{% block title %}Fulgur - Admin{% endblock %}
+
+{% block head %}
+    <style>
+
+    </style>
+{% endblock %}
+
+{% block content %}
+     <article>
+        <header>
+            <div class="container-between">
+                <strong>Users</strong>
+                <div class="info">
+                    {{ total_users }} users
+                </div>
+            </div>
+        </header>
+
+            <div class="grid">
+                <label>
+                    E-mail
+                    <input type="text" name="email" placeholder="john.doe@example.com">
+                </label>
+                <label>
+                    First Name
+                    <input type="text" name="first_name" placeholder="John">
+                </label>
+                <label>
+                    Last Name
+                    <input type="text" name="last_name" placeholder="Doe">
+                </label>
+                <label>
+                    Role
+                    <select name="role">
+                        <option value="All" selected>All</option>
+                        <option value="User">User</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                </label>
+                <div class="submit-container">
+                    <button type="submit">Search</button>
+                </div>
+        </div>
+        
+        <div class="overflow-auto">
+            <table role="grid">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Email</th>
+                        <th>First Name</th>
+                        <th>Last Name</th>
+                        <th>Email Verified</th>
+                        <th>Role</th>
+                        <th>Created at</th>
+                        <th>Updated at</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="user-list">
+                    {% if users.users.is_empty() %}
+                        <tr id="user-empty-state">
+                            <td colspan="9">
+                                {% include "partials/admin/empty_state.html" %}
+                            </td>
+                        </tr>
+                    {% else %}
+                        {% for display_user in users.users %}
+                            {% include "partials/admin/user_row.html" %}
+                        {% endfor %}
+                    {% endif %}
+                </tbody>
+                </table>
+        </div>
+    </article>
+{% endblock %}
