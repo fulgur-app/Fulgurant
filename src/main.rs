@@ -5,7 +5,11 @@ use axum::{
 };
 use dotenvy::dotenv;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use std::{net::SocketAddr, str::FromStr};
+use std::{
+    net::SocketAddr,
+    str::FromStr,
+    sync::{atomic::AtomicBool, Arc},
+};
 use tower_http::trace::TraceLayer;
 use tower_sessions::{MemoryStore, SessionManagerLayer};
 
@@ -22,6 +26,10 @@ mod api {
     pub(crate) mod handlers;
     pub(crate) mod middleware;
     pub(crate) mod rate_limit;
+}
+mod setup {
+    pub(crate) mod handlers;
+    pub(crate) mod middleware;
 }
 pub mod devices;
 mod handlers;
@@ -64,6 +72,11 @@ async fn main() -> anyhow::Result<()> {
     let verification_code_repository =
         verification_code::VerificationCodeRepository::new(connection.clone());
     let share_repository = shares::ShareRepository::new(connection.clone());
+    let has_admin = user_repository.has_admin().await?;
+    let setup_needed = !has_admin;
+    if setup_needed {
+        tracing::warn!("No admin user found - initial setup required at /setup");
+    }
     let app_state = handlers::AppState {
         device_repository,
         user_repository,
@@ -72,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
         mailer: mail::Mailer::new(),
         is_prod,
         can_register: auth::handlers::can_register(),
+        setup_needed: Arc::new(AtomicBool::new(setup_needed)),
         share_validity_days: shares::get_share_validity_days(),
         max_devices_per_user: devices::get_max_devices_per_user(),
     };
@@ -88,7 +102,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/login", post(auth::handlers::login))
         .route("/logout", get(auth::handlers::logout))
         .route("/register", get(auth::handlers::get_register_page))
-        // Forgot password routes
         .route(
             "/auth/forgot-password",
             get(auth::handlers::get_forgot_password_page),
@@ -109,10 +122,15 @@ async fn main() -> anyhow::Result<()> {
             "/auth/forgot-password/resend",
             get(auth::handlers::resend_forgot_password_code),
         )
-        .with_state(app_state.clone());
-    // Build router
+        .route("/setup", get(setup::handlers::get_setup_page))
+        .route("/setup", post(setup::handlers::create_admin))
+        .with_state(app_state.clone())
+        .layer(axum::middleware::from_fn_with_state(
+            app_state.clone(),
+            setup::middleware::require_setup_complete,
+        ));
+
     let protected_routes = Router::new()
-        // Main page
         .route("/", get(handlers::index))
         .route("/device/{user_id}/create", post(handlers::create_device))
         .route("/device/{id}/edit", get(handlers::get_device_edit_form))
@@ -122,7 +140,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/device/{id}/renew", get(handlers::get_device_renew_form))
         .route("/device/{id}/renew", post(handlers::renew_device))
         .route("/share/{id}", delete(handlers::delete_share))
-        // Settings routes
         .route("/settings", get(handlers::get_settings))
         .route("/settings/update-name", post(handlers::update_name))
         .route(
@@ -133,60 +150,39 @@ async fn main() -> anyhow::Result<()> {
             "/settings/verify-email-change",
             post(handlers::update_email_step_2),
         )
-        // Add state
         .with_state(app_state.clone())
-        // Add tracing
         .layer(TraceLayer::new_for_http())
         .layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             auth::middleware::require_auth,
         ));
-
-    // All API routes require authentication and rate limiting
     let api_routes = Router::new()
-        // Health check endpoint
         .route("/api/ping", get(api::handlers::ping))
-        // Begin session endpoint - returns encryption key and pending shares
         .route("/api/begin", get(api::handlers::begin))
-        // API devices endpoint - returns all devices for authenticated user
         .route("/api/devices", get(api::handlers::get_devices))
-        // Encryption key endpoint - returns user's encryption key for E2E encryption
         .route(
             "/api/encryption-key",
             get(api::handlers::get_encryption_key),
         )
-        // Share file endpoint - creates a new share with deduplication
         .route("/api/share", post(api::handlers::share_file))
-        // Get shares endpoint - returns all pending shares for the authenticated device
         .route("/api/shares", get(api::handlers::get_shares))
-        // Future authenticated API routes will go here
-        // .route("/api/sync", post(api::handlers::sync))
-        // .route("/api/files", get(api::handlers::list_files))
-        // Apply authentication middleware to all API routes
         .layer(middleware::from_fn_with_state(
             app_state.clone(),
             api::middleware::require_api_auth,
         ))
-        // Apply rate limiting (5 requests per minute per IP)
         .layer(middleware::from_fn(api::rate_limit::rate_limit_middleware))
         .with_state(app_state.clone());
-
     let app = Router::new()
         .merge(public_routes)
         .merge(protected_routes)
         .merge(api_routes)
         .layer(session_layer);
-
     let cleanup_share_repo = app_state.share_repository.clone();
     make_share_cleanup_task(cleanup_share_repo);
-
     let cleanup_verification_repo = app_state.verification_code_repository.clone();
     make_verification_code_cleanup_task(cleanup_verification_repo);
-
-    // Start server
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     tracing::info!("Server starting on http://{}", addr);
-
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(
         listener,

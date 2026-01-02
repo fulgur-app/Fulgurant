@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL UNIQUE,
     email_verified BOOLEAN DEFAULT FALSE,
     password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'User', -- User role: 'Admin' or 'User' (extensible for future roles)
     encryption_key TEXT NOT NULL DEFAULT '', -- Base64-encoded 256-bit AES key for encrypting shared files
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -15,7 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- The WHEN clause prevents infinite loops by only firing when updated_at wasn't changed
 -- Using INSERT OR REPLACE pattern to avoid recursive trigger issues
 CREATE TRIGGER IF NOT EXISTS trg_users_set_updated_at_after_update
-AFTER UPDATE OF first_name, last_name, email, email_verified, password_hash ON users
+AFTER UPDATE OF first_name, last_name, email, email_verified, password_hash, role ON users
 FOR EACH ROW
 WHEN OLD.updated_at = NEW.updated_at
 BEGIN

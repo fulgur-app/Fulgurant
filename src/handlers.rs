@@ -5,6 +5,7 @@ use axum::{
     response::Html,
     Form,
 };
+use std::sync::{atomic::AtomicBool, Arc};
 use tower_sessions::Session;
 
 use crate::{
@@ -29,6 +30,7 @@ pub struct AppState {
     pub mailer: Mailer,
     pub is_prod: bool,
     pub can_register: bool,
+    pub setup_needed: Arc<AtomicBool>,
     pub share_validity_days: i64,
     pub max_devices_per_user: i32,
 }
@@ -98,7 +100,7 @@ pub async fn index(
 /// - `request`: The create device request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The response
+/// - `Ok(Html<String>)`: The response as formatted HTML
 /// - `Err(AppError)`: Error that occurred while creating the device
 pub async fn create_device(
     State(state): State<AppState>,
@@ -134,7 +136,7 @@ pub async fn create_device(
 /// - `id`: The ID of the device
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The inline device edit form
+/// - `Ok(Html<String>)`: The inline device edit form as formatted HTML
 /// - `Err(AppError)`: Error that occurred while rendering the template
 pub async fn get_device_edit_form(
     State(state): State<AppState>,
@@ -153,7 +155,7 @@ pub async fn get_device_edit_form(
 /// - `request`: The update device request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The response
+/// - `Ok(Html<String>)`: The response as formatted HTML
 /// - `Err(AppError)`: Error that occurred while updating the device
 pub async fn update_device(
     State(state): State<AppState>,
@@ -172,7 +174,7 @@ pub async fn update_device(
 /// - `id`: The ID of the device
 ///
 /// ### Returns
-/// - `Ok(StatusCode)`: The response
+/// - `Ok(StatusCode)`: The response as status code
 /// - `Err(AppError)`: Error that occurred while deleting the device
 pub async fn delete_device(
     State(state): State<AppState>,
@@ -194,7 +196,7 @@ pub async fn delete_device(
 /// - `id`: The ID of the device
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The inline device renew form
+/// - `Ok(Html<String>)`: The inline device renew form as formatted HTML
 /// - `Err(AppError)`: Error that occurred while rendering the template
 pub async fn get_device_renew_form(
     State(state): State<AppState>,
@@ -213,7 +215,7 @@ pub async fn get_device_renew_form(
 /// - `request`: The renew device request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The updated device row
+/// - `Ok(Html<String>)`: The updated device row as formatted HTML
 /// - `Err(AppError)`: Error that occurred while renewing the device
 pub async fn renew_device(
     State(state): State<AppState>,
@@ -232,7 +234,7 @@ pub async fn renew_device(
 /// - `id`: The ID of the device
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The response
+/// - `Ok(Html<String>)`: The response as formatted HTML
 /// - `Err(AppError)`: Error that occurred while rendering the template
 pub async fn cancel_edit_device(
     State(state): State<AppState>,
@@ -250,7 +252,7 @@ pub async fn cancel_edit_device(
 /// - `id`: The ID of the device
 ///
 /// ### Returns
-/// - `Ok(StatusCode)`: The response
+/// - `Ok(StatusCode)`: The response as status code
 /// - `Err(AppError)`: Error that occurred while deleting the share
 pub async fn delete_share(
     State(state): State<AppState>,
@@ -272,7 +274,7 @@ pub async fn delete_share(
 /// - `session`: The session
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The settings page
+/// - `Ok(Html<String>)`: The settings page as formatted HTML
 /// - `Err(AppError)`: Error that occurred while rendering the template
 pub async fn get_settings(
     State(state): State<AppState>,
@@ -312,7 +314,7 @@ pub struct UpdateNameRequest {
 /// - `request`: The update name request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: Success message
+/// - `Ok(Html<String>)`: Success message as formatted HTML
 /// - `Err(AppError)`: Error that occurred while updating the name
 pub async fn update_name(
     State(state): State<AppState>,
@@ -355,7 +357,7 @@ pub struct UpdateEmailRequest {
 /// - `request`: The update email request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: Verification code form
+/// - `Ok(Html<String>)`: Verification code form as formatted HTML
 /// - `Err(AppError)`: Error that occurred while initiating email update
 pub async fn update_email_step_1(
     State(state): State<AppState>,
@@ -432,7 +434,7 @@ pub struct VerifyEmailChangeRequest {
 /// - `request`: The verification request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: Success message
+/// - `Ok(Html<String>)`: Success message as formatted HTML
 /// - `Err(AppError)`: Error that occurred while verifying the code
 pub async fn update_email_step_2(
     State(state): State<AppState>,

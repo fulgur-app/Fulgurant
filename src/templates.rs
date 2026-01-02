@@ -181,3 +181,13 @@ pub struct ForgotPasswordStep3Template {
 #[derive(Template)]
 #[template(path = "partials/auth/forgot_password_success.html")]
 pub struct ForgotPasswordSuccessTemplate {}
+
+/// Initial setup template (create first admin user)
+#[derive(Template)]
+#[template(path = "setup.html")]
+pub struct SetupTemplate {
+    pub error_message: String,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+}

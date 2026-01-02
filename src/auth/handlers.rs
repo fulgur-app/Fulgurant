@@ -182,7 +182,7 @@ pub struct RegisterStep2Request {
 ///
 /// ### Returns
 /// - `true` if the password is valid, `false` otherwise
-fn is_password_valid(password: &str) -> bool {
+pub fn is_password_valid(password: &str) -> bool {
     let right_length = password.len() >= 8 && password.len() <= 64;
     let has_uppercase = password.chars().any(|c| c.is_uppercase());
     let has_lowercase = password.chars().any(|c| c.is_lowercase());
@@ -194,7 +194,7 @@ fn is_password_valid(password: &str) -> bool {
     true
 }
 
-/// POST /register/step-1 - Registers a user
+/// POST /register/step-1 - Registers a user, sends a verification code to the email address and shows the form for the second step of the registration process
 ///
 /// ### Arguments
 /// - `state`: The state of the application
@@ -202,7 +202,7 @@ fn is_password_valid(password: &str) -> bool {
 /// - `request`: The register step 1 request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The response
+/// - `Ok(Html<String>)`: The form for the second step of the registration process as formatted HTML
 /// - `Err(AppError)`: An error occurred while registering the user
 pub async fn register_step_1(
     State(state): State<AppState>,
@@ -289,7 +289,7 @@ pub async fn register_step_1(
     Ok(Html(template.render()?))
 }
 
-/// POST /register/step-2 - Registers a user
+/// POST /register/step-2 - Verifies the verification code and marks the user as verified
 ///
 /// ### Arguments
 /// - `state`: The state of the application
@@ -297,7 +297,7 @@ pub async fn register_step_1(
 /// - `request`: The register step 2 request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The response
+/// - `Ok(Html<String>)`: The registration success message as formatted HTML
 /// - `Err(AppError)`: An error occurred while registering the user
 pub async fn register_step_2(
     State(state): State<AppState>,
@@ -355,7 +355,7 @@ pub async fn register_step_2(
 /// GET /auth/forgot-password - Returns the forgot password page
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The forgot password page
+/// - `Ok(Html<String>)`: The forgot password page as formatted HTML
 /// - `Err(AppError)`: Error that occurred while rendering the template
 pub async fn get_forgot_password_page() -> Result<Html<String>, AppError> {
     let template = templates::ForgotPasswordStep1Template {
@@ -370,14 +370,14 @@ pub struct ForgotPasswordStep1Request {
     email: String,
 }
 
-/// POST /auth/forgot-password - Step 1: Send verification code to email
+/// POST /auth/forgot-password - Step 1: Send verification code to email and shows the verification code form
 ///
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `request`: The forgot password step 1 request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The verification code form
+/// - `Ok(Html<String>)`: The verification code form as formatted HTML
 /// - `Err(AppError)`: Error that occurred while processing the request
 pub async fn forgot_password_step_1(
     State(state): State<AppState>,
@@ -429,14 +429,14 @@ pub struct ForgotPasswordStep2Request {
     code: String,
 }
 
-/// POST /auth/forgot-password/verify - Step 2: Verify code and show password form
+/// POST /auth/forgot-password/verify - Step 2: Verify code and show the password form
 ///
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `request`: The verification request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The password reset form
+/// - `Ok(Html<String>)`: The password reset form as formatted HTML
 /// - `Err(AppError)`: Error that occurred while verifying the code
 pub async fn forgot_password_step_2(
     State(state): State<AppState>,
@@ -484,14 +484,14 @@ pub struct ForgotPasswordStep3Request {
     password: String,
 }
 
-/// POST /auth/forgot-password/reset - Step 3: Reset password
+/// POST /auth/forgot-password/reset - Step 3: Reset the password and show the success message
 ///
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `request`: The password reset request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: Success message
+/// - `Ok(Html<String>)`: Success message as formatted HTML
 /// - `Err(AppError)`: Error that occurred while resetting the password
 pub async fn forgot_password_step_3(
     State(state): State<AppState>,
@@ -546,14 +546,14 @@ pub struct ResendCodeQuery {
     email: String,
 }
 
-/// GET /auth/forgot-password/resend - Resend verification code for password reset
+/// GET /auth/forgot-password/resend - Resend the verification code for password reset
 ///
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `query`: The resend code query containing the email
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The verification code form with success message
+/// - `Ok(Html<String>)`: The verification code form with success message as formatted HTML
 /// - `Err(AppError)`: Error that occurred while resending the code
 pub async fn resend_forgot_password_code(
     State(state): State<AppState>,
@@ -703,7 +703,7 @@ fn format_verification_error(result: &VerificationResult) -> String {
 /// ### Returns
 /// - `Ok(String)`: The hashed password
 /// - `Err(argon2::password_hash::Error)`: The error if the password cannot be hashed
-fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
+pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
     let hash = argon2.hash_password(password.as_bytes(), &salt)?;

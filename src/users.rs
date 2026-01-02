@@ -12,6 +12,7 @@ pub struct User {
     pub last_name: String,
     pub email_verified: bool,
     pub password_hash: String,
+    pub role: String, 
     pub encryption_key: String, // Base64-encoded 256-bit AES key for encrypting shared files
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -182,5 +183,50 @@ impl UserRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    /// Check if at least one admin user exists
+    ///
+    /// ### Returns
+    /// - `Ok(bool)`: True if at least one admin exists, false otherwise
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn has_admin(&self) -> Result<bool, sqlx::Error> {
+        let count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'Admin'")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(count.0 > 0)
+    }
+
+    /// Create a new admin user (for initial setup, no email verification required)
+    ///
+    /// ### Arguments
+    /// - `email`: The email of the user
+    /// - `first_name`: The first name of the user
+    /// - `last_name`: The last name of the user
+    /// - `password_hash`: The password hash of the user
+    ///
+    /// ### Returns
+    /// - `Ok(i32)`: The ID of the created admin user
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn create_admin(
+        &self,
+        email: String,
+        first_name: String,
+        last_name: String,
+        password_hash: String,
+    ) -> Result<i32, sqlx::Error> {
+        let encryption_key = generate_encryption_key();
+        let result = sqlx::query(
+            "INSERT INTO users (email, first_name, last_name, password_hash, role, encryption_key, email_verified) VALUES (?, ?, ?, ?, 'Admin', ?, TRUE)",
+        )
+        .bind(email)
+        .bind(first_name)
+        .bind(last_name)
+        .bind(password_hash)
+        .bind(encryption_key)
+        .execute(&self.pool)
+        .await?;
+        let id = result.last_insert_rowid() as i32;
+        Ok(id)
     }
 }
