@@ -231,3 +231,11 @@ pub struct AdminTemplate {
     pub users: PaginatedUsers,
     pub total_users: i32,
 }
+
+/// Admin user list partial template (for search results)
+#[derive(Template)]
+#[template(path = "partials/admin/user_list.html")]
+pub struct AdminUserListTemplate {
+    pub user: UserContext,
+    pub users: Vec<crate::users::DisplayUser>,
+}

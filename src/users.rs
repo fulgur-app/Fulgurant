@@ -351,4 +351,80 @@ impl UserRepository {
             .await?;
         Ok(count.0)
     }
+
+    /// Search users with filters and pagination
+    ///
+    /// ### Arguments
+    /// - `email`: Optional email filter (contains search, case-insensitive)
+    /// - `first_name`: Optional first name filter (contains search, case-insensitive)
+    /// - `last_name`: Optional last name filter (contains search, case-insensitive)
+    /// - `role`: Optional role filter (exact match, or "All" for no filter)
+    /// - `page`: The page number (1-indexed)
+    /// - `page_size`: The number of users per page
+    ///
+    /// ### Returns
+    /// - `Ok(PaginatedUsers)`: The paginated list of filtered users (without sensitive information)
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn search(
+        &self,
+        email: Option<String>,
+        first_name: Option<String>,
+        last_name: Option<String>,
+        role: Option<String>,
+        page: i32,
+        page_size: i32,
+    ) -> Result<PaginatedUsers, sqlx::Error> {
+        let page = page.max(1);
+        let page_size = page_size.max(1);
+        let offset = (page - 1) * page_size;
+        let mut where_clauses = Vec::new();
+        let mut params = Vec::new();
+        if let Some(e) = email.as_ref().filter(|s| !s.trim().is_empty()) {
+            where_clauses.push("email LIKE ?");
+            params.push(format!("%{}%", e.trim()));
+        }
+        if let Some(f) = first_name.as_ref().filter(|s| !s.trim().is_empty()) {
+            where_clauses.push("first_name LIKE ?");
+            params.push(format!("%{}%", f.trim()));
+        }
+        if let Some(l) = last_name.as_ref().filter(|s| !s.trim().is_empty()) {
+            where_clauses.push("last_name LIKE ?");
+            params.push(format!("%{}%", l.trim()));
+        }
+        if let Some(r) = role.as_ref().filter(|s| !s.trim().is_empty() && *s != "All") {
+            where_clauses.push("role = ?");
+            params.push(r.trim().to_string());
+        }
+        let where_clause = if where_clauses.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", where_clauses.join(" AND "))
+        };
+        let count_query = format!("SELECT COUNT(*) FROM users {}", where_clause);
+        let mut count_query_builder = sqlx::query_as::<_, (i32,)>(&count_query);
+        for param in &params {
+            count_query_builder = count_query_builder.bind(param);
+        }
+        let total_count = count_query_builder.fetch_one(&self.pool).await?.0;
+
+        let total_pages = (total_count + page_size - 1) / page_size;
+        let query = format!(
+            "SELECT * FROM users {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            where_clause
+        );
+        let mut query_builder = sqlx::query_as::<_, User>(&query);
+        for param in &params {
+            query_builder = query_builder.bind(param);
+        }
+        query_builder = query_builder.bind(page_size).bind(offset);
+        let users = query_builder.fetch_all(&self.pool).await?;
+        let display_users: Vec<DisplayUser> = users.into_iter().map(|u| u.into()).collect();
+        Ok(PaginatedUsers {
+            users: display_users,
+            total_count,
+            page,
+            page_size,
+            total_pages,
+        })
+    }
 }
