@@ -453,4 +453,22 @@ impl UserRepository {
         let updated_user = updated_user.ok_or(sqlx::Error::RowNotFound)?;
         Ok(updated_user.into())
     }
+
+    /// Delete a user by ID
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the user to delete
+    ///
+    /// ### Returns
+    /// - `Ok(DisplayUser)`: The deleted user information
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn delete(&self, id: i32) -> Result<DisplayUser, sqlx::Error> {
+        let user = self.get_by_id(id).await?;
+        let user = user.ok_or(sqlx::Error::RowNotFound)?;
+        sqlx::query("DELETE FROM users WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(user.into())
+    }
 }

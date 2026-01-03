@@ -156,6 +156,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin", get(admin::handlers::get_admin))
         .route("/admin/users/search", get(admin::handlers::search_users))
         .route("/user/{id}/change-role", get(admin::handlers::change_user_role))
+        .route("/user/{id}", delete(admin::handlers::delete_user))
         .with_state(app_state.clone())
         .layer(TraceLayer::new_for_http())
         .layer(axum::middleware::from_fn_with_state(

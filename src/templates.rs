@@ -247,3 +247,11 @@ pub struct RoleChangeSuccessTemplate {
     pub display_user: crate::users::DisplayUser,
     pub user: UserContext,
 }
+
+/// Delete user success message template
+#[derive(Template)]
+#[template(path = "partials/admin/user_delete_success.html")]
+pub struct DeleteUserSuccessTemplate {
+    pub first_name: String,
+    pub last_name: String,
+}

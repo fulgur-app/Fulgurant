@@ -147,3 +147,36 @@ pub async fn change_user_role(
     };
     Ok(Html(template.render()?))
 }
+
+/// DELETE /user/{id} - Delete a user
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+/// - `id`: The ID of the user to delete
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The delete success message as formatted HTML
+/// - `Err(AppError)`: Error that occurred while deleting the user
+pub async fn delete_user(
+    State(state): State<AppState>,
+    session: Session,
+    axum::extract::Path(id): axum::extract::Path<i32>,
+) -> Result<Html<String>, AppError> {
+    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
+        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
+    })?;
+    let _user_id = match user_id {
+        Some(id) => id,
+        None => return Err(AppError::Unauthorized),
+    };
+    let deleted_user = match state.user_repository.delete(id).await {
+        Ok(deleted) => deleted,
+        Err(e) => return Err(AppError::DatabaseError(e)),
+    };
+    let template = templates::DeleteUserSuccessTemplate {
+        first_name: deleted_user.first_name,
+        last_name: deleted_user.last_name,
+    };
+    Ok(Html(template.render()?))
+}
