@@ -111,3 +111,39 @@ pub async fn search_users(
     };
     Ok(Html(template.render()?))
 }
+
+/// GET /user/{id}/change-role - Toggle a user's role
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+/// - `id`: The ID of the user to change role for
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The role change success message as formatted HTML
+/// - `Err(AppError)`: Error that occurred while changing the role
+pub async fn change_user_role(
+    State(state): State<AppState>,
+    session: Session,
+    axum::extract::Path(id): axum::extract::Path<i32>,
+) -> Result<Html<String>, AppError> {
+    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
+        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
+    })?;
+    let user_id = match user_id {
+        Some(id) => id,
+        None => return Err(AppError::Unauthorized),
+    };
+    let user = state.user_repository.get_by_id(user_id).await?;
+    let user = match user {
+        Some(user) => user,
+        None => return Err(AppError::Unauthorized),
+    };
+    let updated_user = state.user_repository.toggle_role(id).await?;
+
+    let template = templates::RoleChangeSuccessTemplate {
+        display_user: updated_user,
+        user: templates::UserContext::new(user_id, user.first_name, user.role),
+    };
+    Ok(Html(template.render()?))
+}

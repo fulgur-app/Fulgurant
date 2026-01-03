@@ -1,0 +1,12 @@
+{% if users.is_empty() %}
+    <tr id="user-empty-state">
+        <td colspan="9">
+            {% include "partials/admin/empty_state.html" %}
+        </td>
+    </tr>
+{% else %}
+    {% for display_user in users %}
+        {% include "partials/admin/user_row.html" %}
+    {% endfor %}
+{% endif %}
+

@@ -239,3 +239,11 @@ pub struct AdminUserListTemplate {
     pub user: UserContext,
     pub users: Vec<crate::users::DisplayUser>,
 }
+
+/// Role change success message template
+#[derive(Template)]
+#[template(path = "partials/admin/role_change_success.html")]
+pub struct RoleChangeSuccessTemplate {
+    pub display_user: crate::users::DisplayUser,
+    pub user: UserContext,
+}

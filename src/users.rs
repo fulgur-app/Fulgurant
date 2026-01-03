@@ -427,4 +427,30 @@ impl UserRepository {
             total_pages,
         })
     }
+
+    /// Toggle a user's role between Admin and User
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the user
+    ///
+    /// ### Returns
+    /// - `Ok(DisplayUser)`: The updated user with the new role
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn toggle_role(&self, id: i32) -> Result<DisplayUser, sqlx::Error> {
+        let user = self.get_by_id(id).await?;
+        let user = user.ok_or(sqlx::Error::RowNotFound)?;
+        let new_role = if user.role == "Admin" {
+            "User"
+        } else {
+            "Admin"
+        };
+        sqlx::query("UPDATE users SET role = ? WHERE id = ?")
+            .bind(new_role)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        let updated_user = self.get_by_id(id).await?;
+        let updated_user = updated_user.ok_or(sqlx::Error::RowNotFound)?;
+        Ok(updated_user.into())
+    }
 }
