@@ -1,4 +1,4 @@
-use crate::{devices::Device, shares::DisplayShare, users::PaginatedUsers};
+use crate::{devices::Device, shares::DisplayShare, users::{DisplayUser, User}};
 use askama::Template;
 
 /// User context for templates - represents the authenticated user (if any)
@@ -23,6 +23,16 @@ impl UserContext {
         Self { user_id, first_name, role }
     }
 
+    /// Create a new UserContext from a User
+    ///
+    /// ### Arguments
+    /// - `user`: The User to convert
+    ///
+    /// ### Returns
+    /// - `UserContext`: The UserContext
+    pub fn from(user: &User) -> Self {
+        Self::new(user.id, user.first_name.clone(), user.role.clone())
+    }
     /// Check if the user is an admin
     ///
     /// ### Returns
@@ -228,8 +238,14 @@ pub struct SetupTemplate {
 #[template(path = "admin.html")]
 pub struct AdminTemplate {
     pub user: UserContext,
-    pub users: PaginatedUsers,
+    pub users: Vec<DisplayUser>,
     pub total_users: i32,
+    pub page: i32,
+    pub total_pages: i32,
+    pub email: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub role: Option<String>,
 }
 
 /// Admin user list partial template (for search results)
@@ -237,7 +253,13 @@ pub struct AdminTemplate {
 #[template(path = "partials/admin/user_list.html")]
 pub struct AdminUserListTemplate {
     pub user: UserContext,
-    pub users: Vec<crate::users::DisplayUser>,
+    pub users: Vec<DisplayUser>,
+    pub page: i32,
+    pub total_pages: i32,
+    pub email: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub role: Option<String>,
 }
 
 /// Role change success message template

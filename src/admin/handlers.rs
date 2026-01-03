@@ -29,7 +29,7 @@ fn default_page() -> i32 {
 }
 
 fn default_page_size() -> i32 {
-    50
+    20
 }
 
 /// GET /admin - Returns the admin page
@@ -58,11 +58,17 @@ pub async fn get_admin(
         None => return Err(AppError::Unauthorized),
     };
     let total_users = state.user_repository.count_all().await?;
-    let paginated_users = state.user_repository.get_all(1, 50).await?; //TODO: add page size parameter
+    let paginated_users = state.user_repository.get_all(1, 20).await?;
     let template = templates::AdminTemplate {
-        user: templates::UserContext::new(user_id, user.first_name, user.role),
-        users: paginated_users,
+        user: templates::UserContext::from(&user),
+        users: paginated_users.users,
         total_users,
+        page: paginated_users.page,
+        total_pages: paginated_users.total_pages,
+        email: None,
+        first_name: None,
+        last_name: None,
+        role: None,
     };
     Ok(Html(template.render()?))
 }
@@ -97,10 +103,10 @@ pub async fn search_users(
     let paginated_users = state
         .user_repository
         .search(
-            params.email,
-            params.first_name,
-            params.last_name,
-            params.role,
+            params.email.clone(),
+            params.first_name.clone(),
+            params.last_name.clone(),
+            params.role.clone(),
             params.page,
             params.page_size,
         )
@@ -108,6 +114,12 @@ pub async fn search_users(
     let template = templates::AdminUserListTemplate {
         user: templates::UserContext::new(user_id, user.first_name, user.role),
         users: paginated_users.users,
+        page: paginated_users.page,
+        total_pages: paginated_users.total_pages,
+        email: params.email,
+        first_name: params.first_name,
+        last_name: params.last_name,
+        role: params.role,
     };
     Ok(Html(template.render()?))
 }
