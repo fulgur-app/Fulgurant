@@ -7,6 +7,7 @@ pub struct UserContext {
     pub user_id: i32,
     pub first_name: String,
     pub role: String,
+    pub shares: i32,
 }
 
 impl UserContext {
@@ -19,8 +20,8 @@ impl UserContext {
     ///
     /// ### Returns
     /// - `UserContext`: The UserContext
-    pub fn new(user_id: i32, first_name: String, role: String) -> Self {
-        Self { user_id, first_name, role }
+    pub fn new(user_id: i32, first_name: String, role: String, shares: i32) -> Self {
+        Self { user_id, first_name, role, shares }
     }
 
     /// Create a new UserContext from a User
@@ -31,7 +32,7 @@ impl UserContext {
     /// ### Returns
     /// - `UserContext`: The UserContext
     pub fn from(user: &User) -> Self {
-        Self::new(user.id, user.first_name.clone(), user.role.clone())
+        Self::new(user.id, user.first_name.clone(), user.role.clone(), user.shares)
     }
     /// Check if the user is an admin
     ///

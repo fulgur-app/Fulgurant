@@ -28,6 +28,12 @@
 {% endblock %}
 
 {% block content %}
+    <div>
+        <hgroup>
+            <h2>Welcome, {{ user.first_name }}!</h2>
+            <p>You have created {{ user.shares }} shares so far.</p>
+        </hgroup>
+    </div>
     <!-- Add Device Form -->
     <article id="add-device-form">
         <header><strong>Add New Device</strong></header>
@@ -81,7 +87,7 @@
     <article>
         <header>
             <div class="container-between">
-                <strong>{{ user.first_name }}'s Devices Inventory</strong>
+                <strong>Devices inventory</strong>
                 {% if let Some(max_devices_per_user) = max_devices_per_user %}
                 <div class="info">
                         You can add up to {{ max_devices_per_user }} devices.
@@ -121,7 +127,7 @@
 
     <!-- Shares List -->
     <article>
-        <header><strong>{{ user.first_name }}'s Ongoing Shares</strong></header>
+        <header><strong>Ongoing Shares</strong></header>
         
         <div class="overflow-auto">
             <table role="grid">

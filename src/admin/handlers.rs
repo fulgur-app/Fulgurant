@@ -112,7 +112,7 @@ pub async fn search_users(
         )
         .await?;
     let template = templates::AdminUserListTemplate {
-        user: templates::UserContext::new(user_id, user.first_name, user.role),
+        user: templates::UserContext::from(&user),
         users: paginated_users.users,
         page: paginated_users.page,
         total_pages: paginated_users.total_pages,
@@ -155,7 +155,7 @@ pub async fn change_user_role(
 
     let template = templates::RoleChangeSuccessTemplate {
         display_user: updated_user,
-        user: templates::UserContext::new(user_id, user.first_name, user.role),
+        user: templates::UserContext::from(&user),
     };
     Ok(Html(template.render()?))
 }
