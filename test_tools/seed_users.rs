@@ -1,3 +1,4 @@
+use chrono::{Duration, Utc};
 use dotenvy::dotenv;
 use fulgurant::api_key::hash_api_key;
 use fulgurant::users::generate_encryption_key;
@@ -46,8 +47,11 @@ async fn main() -> anyhow::Result<()> {
         let encryption_key = generate_encryption_key();
         let email_verified = rng.random_bool(0.7); // 70% chance of being verified
         let role = if rng.random_bool(0.2) { "Admin" } else { "User" }; // 20% chance of being admin
+        let days_ago = rng.random_range(0..30);
+        let last_activity = Utc::now() - Duration::days(days_ago);
+        let shares = rng.random_range(0..51);
         match sqlx::query(
-            "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, role) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, role, last_activity, shares) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&email)
         .bind(first_name)
@@ -56,6 +60,8 @@ async fn main() -> anyhow::Result<()> {
         .bind(&encryption_key)
         .bind(email_verified)
         .bind(role)
+        .bind(last_activity)
+        .bind(shares)
         .execute(&pool)
         .await
         {

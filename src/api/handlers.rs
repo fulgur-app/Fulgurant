@@ -153,7 +153,6 @@ pub async fn share_file(
             }
         }
     }
-
     if is_error {
         Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -162,6 +161,14 @@ pub async fn share_file(
             }),
         ))
     } else {
+        if let Err(e) = state
+            .user_repository
+            .increment_shares(auth_user.user.id)
+            .await
+        {
+            tracing::error!("Failed to increment shares count: {}", e);
+        }
+
         Ok(Json(ShareFileResponse {
             message: "Share created successfully".to_string(),
             expiration_date: expiration_date.format("%Y-%m-%d").to_string(),
@@ -271,6 +278,15 @@ pub async fn begin(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthenticatedUser>,
 ) -> Result<Json<BeginResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Update last_activity timestamp
+    if let Err(e) = state
+        .user_repository
+        .update_last_activity(auth_user.user.id)
+        .await
+    {
+        tracing::error!("Failed to update last_activity: {}", e);
+    }
+
     let encryption_key = auth_user.user.encryption_key.clone();
     let shares: Vec<SharedFileResponse> = match state
         .share_repository

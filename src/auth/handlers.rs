@@ -98,6 +98,14 @@ pub async fn login(
         )
         .into_response());
     }
+    state
+        .user_repository
+        .update_last_activity(user.id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to update last_activity: {}", e);
+            AppError::InternalError(anyhow::anyhow!("Failed to update last_activity"))
+        })?;
     session
         .insert(SESSION_USER_ID, user.id)
         .await

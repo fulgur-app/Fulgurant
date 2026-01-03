@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'User', -- User role: 'Admin' or 'User' (extensible for future roles)
     encryption_key TEXT NOT NULL DEFAULT '', -- Base64-encoded 256-bit AES key for encrypting shared files
+    last_activity DATETIME DEFAULT CURRENT_TIMESTAMP, 
+    shares INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

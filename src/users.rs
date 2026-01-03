@@ -12,8 +12,10 @@ pub struct User {
     pub last_name: String,
     pub email_verified: bool,
     pub password_hash: String,
-    pub role: String, 
+    pub role: String,
     pub encryption_key: String, // Base64-encoded 256-bit AES key for encrypting shared files
+    pub last_activity: DateTime<Utc>, 
+    pub shares: i32, 
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -27,6 +29,8 @@ pub struct DisplayUser {
     pub last_name: String,
     pub email_verified: bool,
     pub role: String,
+    pub last_activity: DateTime<Utc>,
+    pub shares: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -48,6 +52,14 @@ impl DisplayUser {
         self.updated_at.format("%Y-%m-%d").to_string()
     }
 
+    /// Get the short last activity date. Used in the templates to display the last activity date in a short format.
+    ///
+    /// ### Returns
+    /// - `String`: The short last activity date
+    pub fn get_short_last_activity_date(&self) -> String {
+        self.last_activity.format("%Y-%m-%d").to_string()
+    }
+
     /// Get the alternative role of the user. Used in the templates.
     ///
     /// ### Returns
@@ -57,6 +69,19 @@ impl DisplayUser {
             "User".to_string()
         } else {
             "Admin".to_string()
+        }
+    }
+
+
+    /// Get the prettyn value of the email_verified field. Used in the templates.
+    ///
+    /// ### Returns
+    /// - `String`: The pretty value of the email_verified field
+    pub fn is_email_verified(&self) -> String {
+        if self.email_verified {
+            "Yes".to_string()
+        } else {
+            "No".to_string()
         }
     }
 }
@@ -76,6 +101,8 @@ impl From<User> for DisplayUser {
             last_name: user.last_name,
             email_verified: user.email_verified,
             role: user.role,
+            last_activity: user.last_activity,
+            shares: user.shares,
             created_at: user.created_at,
             updated_at: user.updated_at,
         }
@@ -470,5 +497,37 @@ impl UserRepository {
             .execute(&self.pool)
             .await?;
         Ok(user.into())
+    }
+
+    /// Update user's last_activity to current timestamp
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the user
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The result of the operation if the last_activity was updated successfully
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn update_last_activity(&self, id: i32) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE users SET last_activity = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Increment user's shares count and update last_activity
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the user
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The result of the operation if the shares count was incremented successfully
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn increment_shares(&self, id: i32) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE users SET shares = shares + 1, last_activity = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 }
