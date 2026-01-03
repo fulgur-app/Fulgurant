@@ -96,7 +96,7 @@ pub struct PaginatedUsers {
 ///
 /// ### Returns
 /// - `String`: The generated encryption key
-fn generate_encryption_key() -> String {
+pub fn generate_encryption_key() -> String {
     let mut rng = rand::rng();
     let key_bytes: [u8; 32] = rng.random();
     BASE64.encode(key_bytes)
