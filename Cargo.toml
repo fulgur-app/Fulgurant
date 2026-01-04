@@ -23,6 +23,8 @@ axum = { version = "0.8.8", features = ["macros"] }
 tokio = { version = "1.48.0", features = ["full"] }
 tower = "0.5.2"
 tower-http = { version = "0.6.8", features = ["fs", "trace"] }
+tower_governor = "0.8.0"
+tower-sessions = "0.14.0"
 
 # Types
 fulgur-common = { path = "../Fulgur-common" }
@@ -56,7 +58,6 @@ rand_core = "0.9.3"
 base64 = "0.22.1"
 argon2 = "0.5.3"
 totp-rs = { version = "5.7.0", features = ["qr", "otpauth", "gen_secret"] }
-tower-sessions = "0.14.0"
 lettre = "0.11.19"
 regex = "1.12.2"
 sha2 = "0.10.9"

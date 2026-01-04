@@ -25,7 +25,6 @@ mod auth {
 mod api {
     pub(crate) mod handlers;
     pub(crate) mod middleware;
-    pub(crate) mod rate_limit;
 }
 mod setup {
     pub(crate) mod handlers;
@@ -81,6 +80,7 @@ async fn main() -> anyhow::Result<()> {
     if setup_needed {
         tracing::warn!("No admin user found - initial setup required at /setup");
     }
+
     let app_state = handlers::AppState {
         device_repository,
         user_repository,
@@ -94,6 +94,7 @@ async fn main() -> anyhow::Result<()> {
         max_devices_per_user: devices::get_max_devices_per_user(),
     };
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
+    tracing::info!("Rate limiter configured: 100 requests per minute per IP (tower-governor)");
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store).with_secure(true);
     let public_routes = Router::new()
@@ -172,6 +173,14 @@ async fn main() -> anyhow::Result<()> {
             app_state.clone(),
             auth::middleware::require_auth,
         ));
+    let governor_conf = Arc::new(
+        tower_governor::governor::GovernorConfigBuilder::default()
+            .period(std::time::Duration::from_millis(600)) // 100 requests/min = 1 per 600ms
+            .burst_size(20)
+            .use_headers()
+            .finish()
+            .expect("Failed to build governor config"),
+    );
     let api_routes = Router::new()
         .route("/api/ping", get(api::handlers::ping))
         .route("/api/begin", get(api::handlers::begin))
@@ -186,7 +195,7 @@ async fn main() -> anyhow::Result<()> {
             app_state.clone(),
             api::middleware::require_api_auth,
         ))
-        .layer(middleware::from_fn(api::rate_limit::rate_limit_middleware))
+        .layer(tower_governor::GovernorLayer::new(governor_conf))
         .with_state(app_state.clone());
     let app = Router::new()
         .merge(public_routes)
