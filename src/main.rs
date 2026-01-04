@@ -33,6 +33,7 @@ mod setup {
 }
 mod admin {
     pub(crate) mod handlers;
+    pub(crate) mod middleware;
 }
 pub mod devices;
 mod handlers;
@@ -133,6 +134,17 @@ async fn main() -> anyhow::Result<()> {
             setup::middleware::require_setup_complete,
         ));
 
+    let admin_routes = Router::new()
+        .route("/admin", get(admin::handlers::get_admin))
+        .route("/admin/users/search", get(admin::handlers::search_users))
+        .route("/user/{id}/change-role", get(admin::handlers::change_user_role))
+        .route("/user/{id}", delete(admin::handlers::delete_user))
+        .with_state(app_state.clone())
+        .layer(axum::middleware::from_fn_with_state(
+            app_state.clone(),
+            admin::middleware::require_admin,
+        ));
+
     let protected_routes = Router::new()
         .route("/", get(handlers::index))
         .route("/device/{user_id}/create", post(handlers::create_device))
@@ -153,10 +165,7 @@ async fn main() -> anyhow::Result<()> {
             "/settings/verify-email-change",
             post(handlers::update_email_step_2),
         )
-        .route("/admin", get(admin::handlers::get_admin))
-        .route("/admin/users/search", get(admin::handlers::search_users))
-        .route("/user/{id}/change-role", get(admin::handlers::change_user_role))
-        .route("/user/{id}", delete(admin::handlers::delete_user))
+        .merge(admin_routes)
         .with_state(app_state.clone())
         .layer(TraceLayer::new_for_http())
         .layer(axum::middleware::from_fn_with_state(
