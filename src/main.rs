@@ -206,8 +206,21 @@ async fn main() -> anyhow::Result<()> {
     make_share_cleanup_task(cleanup_share_repo);
     let cleanup_verification_repo = app_state.verification_code_repository.clone();
     make_verification_code_cleanup_task(cleanup_verification_repo);
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let bind_host = std::env::var("BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()); // default to localhost only for safety
+    let bind_port = std::env::var("BIND_PORT")
+        .unwrap_or_else(|_| "3000".to_string())
+        .parse::<u16>()
+        .expect("BIND_PORT must be a valid port number");
+    let addr = format!("{}:{}", bind_host, bind_port)
+        .parse::<SocketAddr>()
+        .expect("Failed to parse bind address");
     tracing::info!("Server starting on http://{}", addr);
+    if bind_host == "0.0.0.0" {
+        tracing::warn!("Server is listening on all interfaces (0.0.0.0)");
+    } else if bind_host == "127.0.0.1" {
+        tracing::info!("Server is listening on localhost only");
+    }
+
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(
         listener,
