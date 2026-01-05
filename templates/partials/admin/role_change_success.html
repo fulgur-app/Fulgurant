@@ -3,10 +3,11 @@
     <td class="user-cell">{{ display_user.email }}</td>
     <td class="user-cell">{{ display_user.first_name }}</td>
     <td class="user-cell">{{ display_user.last_name }}</td>
+    <td class="user-cell">{{ display_user.shares }}</td>
     <td class="user-cell">{{ display_user.email_verified }}</td>
     <td class="user-cell">{{ display_user.role }}</td>
     <td class="user-cell"><span data-tooltip="{{ display_user.created_at }}">{{ display_user.get_short_creation_date() }}</span></td>
-    <td class="user-cell"><span data-tooltip="{{ display_user.updated_at }}">{{ display_user.get_short_updated_date() }}</span></td>
+    <td class="user-cell"><span data-tooltip="{{ display_user.last_activity }}">{{ display_user.get_short_last_activity_date() }}</span></td>
     <td>
         {% if display_user.id != user.user_id %}
         <div class="actions" role="group">
@@ -33,7 +34,7 @@
             </button>
             <button
                 class="action-button secondary"
-                hx-get="/user/{{ display_user.id }}/change-role"
+                hx-post="/user/{{ display_user.id }}/change-role"
                 hx-target="#user-{{ display_user.id }}"
                 hx-swap="outerHTML"
                 hx-on::before-request="
@@ -72,7 +73,7 @@
     </td>
 </tr>
 <tr>
-    <td colspan="9" class="no-padding">
+    <td colspan="10" class="no-padding">
         <div class="success-message-container">
             <div>
                 Role successfully changed to <strong>{{ display_user.role }}</strong> for {{ display_user.first_name }} {{ display_user.last_name }}. This will take effect at the user's next login.

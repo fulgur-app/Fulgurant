@@ -43,7 +43,7 @@ fn default_page_size() -> i32 {
 /// - `Err(AppError)`: Error that occurred while rendering the template
 pub async fn get_admin(
     State(state): State<AppState>,
-    session: Session,   
+    session: Session,
 ) -> Result<Html<String>, AppError> {
     let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
         AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
@@ -57,6 +57,9 @@ pub async fn get_admin(
         Some(user) => user,
         None => return Err(AppError::Unauthorized),
     };
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
     let total_users = state.user_repository.count_all().await?;
     let paginated_users = state.user_repository.get_all(1, 20).await?;
     let template = templates::AdminTemplate {
@@ -69,6 +72,7 @@ pub async fn get_admin(
         first_name: None,
         last_name: None,
         role: None,
+        csrf_token,
     };
     Ok(Html(template.render()?))
 }
@@ -124,7 +128,7 @@ pub async fn search_users(
     Ok(Html(template.render()?))
 }
 
-/// GET /user/{id}/change-role - Toggle a user's role
+/// POST /user/{id}/change-role - Toggle a user's role
 ///
 /// ### Arguments
 /// - `state`: The state of the application

@@ -138,7 +138,7 @@ async fn main() -> anyhow::Result<()> {
     let admin_routes = Router::new()
         .route("/admin", get(admin::handlers::get_admin))
         .route("/admin/users/search", get(admin::handlers::search_users))
-        .route("/user/{id}/change-role", get(admin::handlers::change_user_role))
+        .route("/user/{id}/change-role", post(admin::handlers::change_user_role))
         .route("/user/{id}", delete(admin::handlers::delete_user))
         .with_state(app_state.clone())
         .layer(axum::middleware::from_fn_with_state(
@@ -197,11 +197,16 @@ async fn main() -> anyhow::Result<()> {
         ))
         .layer(tower_governor::GovernorLayer::new(governor_conf))
         .with_state(app_state.clone());
-    let app = Router::new()
+    let web_routes = Router::new()
         .merge(public_routes)
         .merge(protected_routes)
-        .merge(api_routes)
+        .layer(axum::middleware::from_fn(
+            axum_tower_sessions_csrf::CsrfMiddleware::middleware,
+        ))
         .layer(session_layer);
+    let app = Router::new()
+        .merge(web_routes)
+        .merge(api_routes);
     let cleanup_share_repo = app_state.share_repository.clone();
     make_share_cleanup_task(cleanup_share_repo);
     let cleanup_verification_repo = app_state.verification_code_repository.clone();

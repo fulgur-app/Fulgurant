@@ -60,6 +60,9 @@ pub async fn index(
         Some(user) => user,
         None => return Err(AppError::Unauthorized),
     };
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
     let devices = match state.device_repository.get_all_for_user(user_id).await {
         Ok(devices) => devices.into_iter().rev().collect::<Vec<Device>>(),
         Err(e) => {
@@ -87,6 +90,7 @@ pub async fn index(
         } else {
             Some(state.max_devices_per_user)
         },
+        csrf_token,
     };
     Ok(Html(template.render()?))
 }
@@ -291,11 +295,15 @@ pub async fn get_settings(
         Some(user) => user,
         None => return Err(AppError::Unauthorized),
     };
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
     let template = templates::SettingsTemplate {
         user: templates::UserContext::from(&user),
         email: user.email,
         first_name: user.first_name,
         last_name: user.last_name,
+        csrf_token,
     };
     Ok(Html(template.render()?))
 }

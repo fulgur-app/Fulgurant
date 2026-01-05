@@ -4,6 +4,18 @@
     <title>{% block title %}{{ title }} - Fulgur{% endblock %}</title>
     {% block head %}{% endblock %}
     <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    {% if csrf_token is defined %}
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <script>
+        // Configure HTMX to include CSRF token in all requests
+        document.addEventListener('DOMContentLoaded', function() {
+            document.body.addEventListener('htmx:configRequest', function(event) {
+                const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+                event.detail.headers['x-csrf-token'] = token;
+            });
+        });
+    </script>
+    {% endif %}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <link

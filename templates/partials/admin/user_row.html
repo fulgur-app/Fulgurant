@@ -34,7 +34,7 @@
             </button>
             <button
                 class="action-button secondary"
-                hx-get="/user/{{ display_user.id }}/change-role"
+                hx-post="/user/{{ display_user.id }}/change-role"
                 hx-target="#user-{{ display_user.id }}"
                 hx-swap="outerHTML"
                 hx-on::before-request="

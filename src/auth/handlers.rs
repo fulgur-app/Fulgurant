@@ -42,9 +42,16 @@ pub struct LoginRequest {
 /// ### Returns
 /// - `Ok(Html<String>)`: The login page
 /// - `Err(AppError)`: An error occurred while rendering the template
-pub async fn get_login_page(State(state): State<AppState>) -> Result<Html<String>, AppError> {
+pub async fn get_login_page(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Html<String>, AppError> {
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
     let template = LoginTemplate {
         can_register: state.can_register,
+        csrf_token,
     };
     Ok(Html(template.render()?))
 }
@@ -121,11 +128,15 @@ pub async fn login(
 ///
 /// ### Arguments
 /// - `state`: The state of the application
+/// - `session`: The session
 ///
 /// ### Returns
 /// - `Ok(Html<String>)`: The register page
 /// - `Err(AppError)`: An error occurred while rendering the template
-pub async fn get_register_page(State(state): State<AppState>) -> Result<Html<String>, AppError> {
+pub async fn get_register_page(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Html<String>, AppError> {
     if !state.can_register {
         let template = templates::ErrorTemplate {
             title: "Registration not allowed".to_string(),
@@ -137,11 +148,15 @@ pub async fn get_register_page(State(state): State<AppState>) -> Result<Html<Str
             AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
         })?));
     }
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
     let template = templates::RegisterTemplate {
         error_message: "".to_string(),
         email: "".to_string(),
         first_name: "".to_string(),
         last_name: "".to_string(),
+        csrf_token,
     };
     Ok(Html(template.render()?))
 }
@@ -163,8 +178,12 @@ pub async fn logout(
         .delete()
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
     let template = templates::LoginTemplate {
         can_register: state.can_register,
+        csrf_token,
     };
     Ok(Html(template.render()?))
 }
@@ -362,13 +381,20 @@ pub async fn register_step_2(
 
 /// GET /auth/forgot-password - Returns the forgot password page
 ///
+/// ### Arguments
+/// - `session`: The session
+///
 /// ### Returns
 /// - `Ok(Html<String>)`: The forgot password page as formatted HTML
 /// - `Err(AppError)`: Error that occurred while rendering the template
-pub async fn get_forgot_password_page() -> Result<Html<String>, AppError> {
+pub async fn get_forgot_password_page(session: Session) -> Result<Html<String>, AppError> {
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
     let template = templates::ForgotPasswordStep1Template {
         error_message: String::new(),
         email: String::new(),
+        csrf_token,
     };
     Ok(Html(template.render()?))
 }

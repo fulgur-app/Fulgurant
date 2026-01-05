@@ -28,11 +28,15 @@ pub struct SetupRequest {
 ///
 /// ### Arguments
 /// - `state`: The state of the application
+/// - `session`: The session
 ///
 /// ### Returns
 /// - `Ok(Html<String>)`: The setup page
 /// - `Err(AppError)`: An error occurred while rendering the template
-pub async fn get_setup_page(State(state): State<AppState>) -> Result<Response, AppError> {
+pub async fn get_setup_page(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Response, AppError> {
     let has_admin = state.user_repository.has_admin().await.map_err(|e| {
         AppError::InternalError(anyhow::anyhow!("Failed to check for admin: {}", e))
     })?;
@@ -40,11 +44,15 @@ pub async fn get_setup_page(State(state): State<AppState>) -> Result<Response, A
         tracing::warn!("Attempted access to /setup but admin already exists - redirecting to /login");
         return Ok(Redirect::to("/login").into_response());
     }
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
     let template = templates::SetupTemplate {
         error_message: String::new(),
         email: String::new(),
         first_name: String::new(),
         last_name: String::new(),
+        csrf_token,
     };
     Ok(Html(template.render()?).into_response())
 }
@@ -72,6 +80,9 @@ pub async fn create_admin(
         tracing::warn!("Attempted to create admin via /setup but admin already exists - rejecting request");
         return Ok(Redirect::to("/login").into_response());
     }
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
     let first_name = request.first_name.trim();
     let last_name = request.last_name.trim();
     let password = request.password.trim();
@@ -82,6 +93,7 @@ pub async fn create_admin(
             email: email.clone(),
             first_name: first_name.to_string(),
             last_name: last_name.to_string(),
+            csrf_token: csrf_token.clone(),
         };
         return Ok(Html(template.render()?).into_response());
     }
@@ -91,6 +103,7 @@ pub async fn create_admin(
             email: email.clone(),
             first_name: first_name.to_string(),
             last_name: last_name.to_string(),
+            csrf_token: csrf_token.clone(),
         };
         return Ok(Html(template.render()?).into_response());
     }
@@ -100,6 +113,7 @@ pub async fn create_admin(
             email: email.clone(),
             first_name: first_name.to_string(),
             last_name: last_name.to_string(),
+            csrf_token,
         };
         return Ok(Html(template.render()?).into_response());
     }

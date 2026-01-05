@@ -51,6 +51,7 @@ pub struct IndexTemplate {
     pub max_devices_per_user: Option<i32>,
     pub shares: Vec<DisplayShare>,
     pub user: UserContext,
+    pub csrf_token: String,
 }
 
 /// Individual device row template (for HTMX updates)
@@ -116,6 +117,7 @@ pub struct DeviceCreationResponseTemplate {
 #[template(path = "login.html")]
 pub struct LoginTemplate {
     pub can_register: bool,
+    pub csrf_token: String,
 }
 
 /// Register template
@@ -126,6 +128,7 @@ pub struct RegisterTemplate {
     pub email: String,
     pub first_name: String,
     pub last_name: String,
+    pub csrf_token: String,
 }
 
 /// Register step 2 template
@@ -161,6 +164,7 @@ pub struct SettingsTemplate {
     pub email: String,
     pub first_name: String,
     pub last_name: String,
+    pub csrf_token: String,
 }
 
 /// Update name success message template
@@ -192,6 +196,7 @@ pub struct EmailChangeSuccessTemplate {
 pub struct ForgotPasswordStep1Template {
     pub error_message: String,
     pub email: String,
+    pub csrf_token: String,
 }
 
 /// Forgot password step 1 partial template (form only, for HTMX responses)
@@ -232,6 +237,7 @@ pub struct SetupTemplate {
     pub email: String,
     pub first_name: String,
     pub last_name: String,
+    pub csrf_token: String,
 }
 
 /// Admin page template
@@ -247,6 +253,7 @@ pub struct AdminTemplate {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub role: Option<String>,
+    pub csrf_token: String,
 }
 
 /// Admin user list partial template (for search results)
