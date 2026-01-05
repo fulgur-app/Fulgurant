@@ -1,15 +1,15 @@
 use askama::Template;
 use axum::{
     extract::State,
-    http::{header, HeaderValue, StatusCode},
+    http::{HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
 use serde::Deserialize;
 use tower_sessions::Session;
-
+use fulgurant::utils::{is_valid_email, is_password_valid};
 use crate::{
-    auth::handlers::{hash_password, is_password_valid},
+    auth::handlers::hash_password,
     errors::AppError,
     handlers::AppState,
     templates,
@@ -96,7 +96,7 @@ pub async fn create_admin(
     let last_name = request.last_name.trim();
     let password = request.password.trim();
     let email = request.email.trim().to_lowercase();
-    if email.is_empty() || !email.contains('@') {//TODO: Improve email validation
+    if !is_valid_email(&email) {
         let template = templates::SetupFormTemplate {
             error_message: "Invalid email address".to_string(),
             email: email.clone(),

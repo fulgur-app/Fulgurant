@@ -17,6 +17,7 @@ dependencies = [
  "dotenvy",
  "fulgur-common",
  "http-body-util",
+ "lazy_static",
  "lettre",
  "rand 0.9.2",
  "rand_core 0.9.3",

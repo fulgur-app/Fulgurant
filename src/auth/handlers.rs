@@ -8,6 +8,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
     Form,
 };
+use fulgurant::utils::{is_password_valid, is_valid_email};
 use serde::Deserialize;
 use tower_sessions::Session;
 
@@ -202,25 +203,6 @@ pub struct RegisterStep2Request {
     code: String,
 }
 
-/// Checks if the password is valid
-///
-/// ### Arguments
-/// - `password`: The password to check
-///
-/// ### Returns
-/// - `true` if the password is valid, `false` otherwise
-pub fn is_password_valid(password: &str) -> bool {
-    let right_length = password.len() >= 8 && password.len() <= 64;
-    let has_uppercase = password.chars().any(|c| c.is_uppercase());
-    let has_lowercase = password.chars().any(|c| c.is_lowercase());
-    let has_digit = password.chars().any(|c| c.is_digit(10));
-    let has_special = password.chars().any(|c| !c.is_alphanumeric());
-    if !right_length || !has_uppercase || !has_lowercase || !has_digit || !has_special {
-        return false;
-    }
-    true
-}
-
 /// POST /register/step-1 - Registers a user, sends a verification code to the email address and shows the form for the second step of the registration process
 ///
 /// ### Arguments
@@ -240,7 +222,8 @@ pub async fn register_step_1(
     let last_name = request.last_name.trim();
     let password = request.password.trim();
     let email = request.email.trim().to_lowercase();
-    if email.is_empty() || !email.contains('@') {
+    tracing::debug!("Email: {}, is_valid_email: {}", email, is_valid_email(&email));
+    if !is_valid_email(&email) {
         let template = templates::RegisterStep1Template {
             error_message: "Invalid email".to_string(),
             email: email.clone(),
