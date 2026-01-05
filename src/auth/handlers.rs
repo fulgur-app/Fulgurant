@@ -15,6 +15,7 @@ use tower_sessions::Session;
 use crate::{
     errors::AppError,
     handlers::AppState,
+    logging::sanitize_for_log,
     templates::{self, LoginTemplate},
     verification_code::{self, generate_code, VerificationResult},
 };
@@ -77,7 +78,7 @@ pub async fn login(
     let user = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(user)) => user,
         Ok(None) => {
-            tracing::warn!("Login attempt for non-existent user: {}", email);
+            tracing::warn!("Login attempt for non-existent user: {}", sanitize_for_log(&email));
             let template = templates::ErrorMessageTemplate {
                 message: "Invalid email or password. Please try again.".to_string(),
             };
@@ -222,7 +223,6 @@ pub async fn register_step_1(
     let last_name = request.last_name.trim();
     let password = request.password.trim();
     let email = request.email.trim().to_lowercase();
-    tracing::debug!("Email: {}, is_valid_email: {}", email, is_valid_email(&email));
     if !is_valid_email(&email) {
         let template = templates::RegisterStep1Template {
             error_message: "Invalid email".to_string(),
@@ -669,12 +669,12 @@ async fn create_and_send_verification_code(
                 tracing::error!("Failed to send email: {}", e);
                 AppError::InternalError(anyhow::anyhow!("Failed to send email: {}", e))
             })?;
-        tracing::info!("Verification email sent to {}", email);
+        tracing::info!("Verification email sent to {}", sanitize_for_log(&email));
     } else {
         tracing::info!(
             "Development mode - verification email not sent\nVerification code for {}: {}",
-            email,
-            code
+            sanitize_for_log(&email),
+            &code
         );
     }
     Ok(code)

@@ -9,14 +9,7 @@ use std::sync::{atomic::AtomicBool, Arc};
 use tower_sessions::Session;
 
 use crate::{
-    api_key::{self},
-    devices::{self, CreateDevice, Device, DeviceRepository, UpdateDevice},
-    errors::AppError,
-    mail::Mailer,
-    shares::{DisplayShare, ShareRepository},
-    templates::{self},
-    users::UserRepository,
-    verification_code::{self, VerificationCodeRepository},
+    api_key::{self}, devices::{self, CreateDevice, Device, DeviceRepository, UpdateDevice}, errors::AppError, logging::sanitize_for_log, mail::Mailer, shares::{DisplayShare, ShareRepository}, templates::{self}, users::UserRepository, verification_code::{self, VerificationCodeRepository}
 };
 
 const SESSION_USER_ID: &str = "user_id";
@@ -127,7 +120,7 @@ pub async fn create_device(
         .device_repository
         .create(user_id, hash, request.clone())
         .await?;
-    tracing::info!("Device created: {:?}", device);
+    tracing::info!("Device created: name={}, id={} for user {}", sanitize_for_log(&device.name), device.id, user_id);
     let template = templates::DeviceCreationResponseTemplate { device, api_key };
     Ok(Html(template.render()?))
 }
@@ -336,6 +329,7 @@ pub async fn update_name(
         Some(id) => id,
         None => return Err(AppError::Unauthorized),
     };
+    //TODO: add validation for first and last name
     state
         .user_repository
         .update_name(
@@ -378,7 +372,7 @@ pub async fn update_email_step_1(
     if user_id.is_none() {
         return Err(AppError::Unauthorized);
     }
-    if !request.email.contains('@') || !request.email.contains('.') {
+    if !request.email.contains('@') || !request.email.contains('.') { //TODO: improve email validation
         let template = templates::EmailChangeStep2Template {
             new_email: request.email,
             error_message: "Invalid email format".to_string(),
@@ -414,7 +408,7 @@ pub async fn update_email_step_1(
             .send_verification_email(request.email.clone(), code.clone())
             .await
             .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to send email: {}", e)))?;
-        tracing::info!("Verification email sent to {}", request.email);
+        tracing::info!("Verification email sent to {}", sanitize_for_log(&request.email.clone()));
     } else {
         tracing::info!(
             "Not sending verification email in non-production environment\nVerification code: {}",
@@ -471,7 +465,7 @@ pub async fn update_email_step_2(
                 .user_repository
                 .update_email(user_id, request.email.clone())
                 .await?;
-            tracing::info!("User {} changed their email to {}", user_id, request.email);
+            tracing::info!("User {} changed their email to {}", user_id, sanitize_for_log(&request.email));
             let template = templates::EmailChangeSuccessTemplate {
                 email: request.email,
             };

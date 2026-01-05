@@ -12,6 +12,20 @@ pub fn get_log_folder() -> PathBuf {
         .into()
 }
 
+/// Sanitizes the input for logging by removing control characters and taking the first 100 characters
+/// 
+/// ### Arguments
+/// * `input`: The input string to sanitize
+///
+/// ### Returns
+/// * `String`: The sanitized string
+pub fn sanitize_for_log(input: &str) -> String {
+    input.chars()
+        .filter(|c| !c.is_control())
+        .take(100)
+        .collect()
+}
+
 /// Initializes the logging system with file and console output
 ///
 /// ### Description
