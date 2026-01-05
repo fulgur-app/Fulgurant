@@ -24,3 +24,10 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Certificates
+*.pem
+*.crt
+*.key
+*.p12
+*.pfx

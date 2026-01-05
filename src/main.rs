@@ -120,20 +120,42 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{}:{}", bind_host, bind_port)
         .parse::<SocketAddr>()
         .expect("Failed to parse bind address");
-    tracing::info!("Server starting on http://{}", addr);
+    let tls_cert_path = std::env::var("TLS_CERT_PATH").ok();
+    let tls_key_path = std::env::var("TLS_KEY_PATH").ok();
     if bind_host == "0.0.0.0" {
         tracing::warn!("Server is listening on all interfaces (0.0.0.0)");
     } else if bind_host == "127.0.0.1" {
         tracing::info!("Server is listening on localhost only");
     }
-
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await?;
-
+    match (tls_cert_path, tls_key_path) {
+        (Some(cert_path), Some(key_path)) => {
+            tracing::info!("TLS enabled - loading certificate and key");
+            tracing::info!("Certificate: {}", cert_path);
+            tracing::info!("Private key: {}", key_path);
+            let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+            let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+                cert_path,
+                key_path,
+            )
+            .await
+            .expect("Failed to load TLS certificate and key");
+            tracing::info!("Server starting on https://{}", addr);
+            axum_server::bind_rustls(addr, tls_config)
+                .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+                .await?;
+        }
+        _ => {
+            tracing::info!("TLS disabled - running HTTP only");
+            tracing::warn!("For production, configure TLS_CERT_PATH and TLS_KEY_PATH environment variables");
+            tracing::info!("Server starting on http://{}", addr);
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await?;
+        }
+    }
     Ok(())
 }
 
