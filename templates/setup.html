@@ -37,32 +37,12 @@
                 <div class="setup-info">
                     <h4>Welcome to Fulgurant!</h4>
                     <p>No admin user exists yet. Please create the initial admin account to get started.</p>
-                    <p>This account will have full administrative privileges and will be automatically marked asverified.</p>
+                    <p>This account will have full administrative privileges and will be automatically marked as verified.</p>
                 </div>
 
-                {% if error_message != "" %}
-                    <div class="error-message" role="alert">{{ error_message }}</div>
-                {% endif %}
-                <form id="setup-form" method="POST" action="/setup">
-                    <label for="email">
-                        Email
-                        <input type="email" id="email" name="email" required autocomplete="email" placeholder="admin@example.com" value="{{ email }}" autofocus />
-                    </label>
-                    <label for="first_name">
-                        First Name
-                        <input type="text" id="first_name" name="first_name" required autocomplete="given-name" placeholder="John" value="{{ first_name }}" />
-                    </label>
-                    <label for="last_name">
-                        Last Name
-                        <input type="text" id="last_name" name="last_name" required autocomplete="family-name" placeholder="Doe" value="{{ last_name }}" />
-                    </label>
-                    <label for="password">
-                        Password
-                        <div class="password-requirements">Minimum 8 characters, at least one uppercase letter, one lowercase letter, one number and one special character</div>
-                        <input type="password" id="password" name="password" required autocomplete="new-password" minlength="8" />
-                    </label>
-                    <button type="submit">Create Admin Account</button>
-                </form>
+                <div id="container">
+                    {% include "partials/setup_form.html" %}
+                </div>
             </article>
         </div>
     </div>

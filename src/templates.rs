@@ -240,6 +240,17 @@ pub struct SetupTemplate {
     pub csrf_token: String,
 }
 
+/// Setup form partial template (for HTMX responses)
+#[derive(Template)]
+#[template(path = "partials/setup_form.html")]
+pub struct SetupFormTemplate {
+    pub error_message: String,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub csrf_token: String,
+}
+
 /// Admin page template
 #[derive(Template)]
 #[template(path = "admin.html")]

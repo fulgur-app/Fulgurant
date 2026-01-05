@@ -1,6 +1,7 @@
 use askama::Template;
 use axum::{
     extract::State,
+    http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
@@ -72,43 +73,51 @@ pub async fn create_admin(
     session: Session,
     Form(request): Form<SetupRequest>,
 ) -> Result<Response, AppError> {
-    let has_admin = state.user_repository.has_admin().await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to check for admin: {}", e))
-    })?;
-
-    if has_admin {
-        tracing::warn!("Attempted to create admin via /setup but admin already exists - rejecting request");
-        return Ok(Redirect::to("/login").into_response());
-    }
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
+    
+    let has_admin = state.user_repository.has_admin().await.map_err(|e| {
+        AppError::InternalError(anyhow::anyhow!("Failed to check for admin: {}", e))
+    })?;
+    if has_admin {
+        tracing::warn!("Attempted to create admin via /setup but admin already exists - rejecting request");
+        let mut response = Response::builder()
+            .status(StatusCode::OK)
+            .body("".to_string())
+            .unwrap();
+        response.headers_mut().insert(
+            "HX-Redirect",
+            HeaderValue::from_static("/login")
+        );
+        return Ok(response.into_response());
+    }
     let first_name = request.first_name.trim();
     let last_name = request.last_name.trim();
     let password = request.password.trim();
     let email = request.email.trim().to_lowercase();
     if email.is_empty() || !email.contains('@') {//TODO: Improve email validation
-        let template = templates::SetupTemplate {
+        let template = templates::SetupFormTemplate {
             error_message: "Invalid email address".to_string(),
             email: email.clone(),
             first_name: first_name.to_string(),
             last_name: last_name.to_string(),
-            csrf_token: csrf_token.clone(),
+            csrf_token,
         };
         return Ok(Html(template.render()?).into_response());
     }
     if !is_password_valid(password) {
-        let template = templates::SetupTemplate {
+        let template = templates::SetupFormTemplate {
             error_message: "Password must be 8-64 characters long and contain at least one uppercase letter, one lowercase letter, one digit, and one special character".to_string(),
             email: email.clone(),
             first_name: first_name.to_string(),
             last_name: last_name.to_string(),
-            csrf_token: csrf_token.clone(),
+            csrf_token,
         };
         return Ok(Html(template.render()?).into_response());
     }
     if first_name.is_empty() || last_name.is_empty() {
-        let template = templates::SetupTemplate {
+        let template = templates::SetupFormTemplate {
             error_message: "First name and last name are required".to_string(),
             email: email.clone(),
             first_name: first_name.to_string(),
@@ -122,15 +131,20 @@ pub async fn create_admin(
     let user_id = state
         .user_repository
         .create_admin(
-            email,
+            email.clone(),
             first_name.to_string(),
             last_name.to_string(),
             password_hash,
         )
         .await
         .map_err(|e| {
-            tracing::error!("Failed to create admin user: {}", e);
-            AppError::InternalError(anyhow::anyhow!("Failed to create admin user: {}", e))
+            if matches!(e, sqlx::Error::RowNotFound) {
+                tracing::warn!("Admin already exists, rejecting duplicate creation");
+                AppError::InternalError(anyhow::anyhow!("Admin user already exists"))
+            } else {
+                tracing::error!("Failed to create admin user: {}", e);
+                AppError::InternalError(anyhow::anyhow!("Failed to create admin user: {}", e))
+            }
         })?;
     tracing::info!("Initial admin user created with ID: {}", user_id);
     session
@@ -140,5 +154,13 @@ pub async fn create_admin(
             AppError::InternalError(anyhow::anyhow!("Failed to set user id in session: {}", e))
         })?;
     state.setup_needed.store(false, std::sync::atomic::Ordering::Relaxed);
-    Ok(Redirect::to("/").into_response())
+    let mut response = Response::builder()
+        .status(StatusCode::OK)
+        .body("".to_string())
+        .unwrap();
+    response.headers_mut().insert(
+        "HX-Redirect",
+        HeaderValue::from_static("/")
+    );
+    Ok(response.into_response())
 }

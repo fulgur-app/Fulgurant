@@ -316,6 +316,15 @@ impl UserRepository {
         last_name: String,
         password_hash: String,
     ) -> Result<i32, sqlx::Error> {
+        // Use transaction to prevent race condition
+        let mut tx = self.pool.begin().await?;
+        let count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'Admin'")
+            .fetch_one(&mut *tx)
+            .await?;
+        if count.0 > 0 {
+            tx.rollback().await?;
+            return Err(sqlx::Error::RowNotFound);
+        }
         let encryption_key = generate_encryption_key();
         let result = sqlx::query(
             "INSERT INTO users (email, first_name, last_name, password_hash, role, encryption_key, email_verified) VALUES (?, ?, ?, ?, 'Admin', ?, TRUE)",
@@ -325,8 +334,9 @@ impl UserRepository {
         .bind(last_name)
         .bind(password_hash)
         .bind(encryption_key)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
         let id = result.last_insert_rowid() as i32;
         Ok(id)
     }
