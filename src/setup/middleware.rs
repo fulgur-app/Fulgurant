@@ -39,7 +39,7 @@ pub async fn require_setup_complete(
     }
     let has_admin = !state.setup_needed.load(std::sync::atomic::Ordering::Relaxed);
     if !has_admin {
-        let user_id: Option<i64> = session
+        let user_id: Option<i32> = session
             .get(SESSION_USER_ID)
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

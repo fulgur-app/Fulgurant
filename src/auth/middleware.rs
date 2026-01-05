@@ -25,7 +25,7 @@ pub async fn require_auth(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let user_id: Option<i64> = session
+    let user_id: Option<i32> = session
         .get(SESSION_USER_ID)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
