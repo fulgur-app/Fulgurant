@@ -8,10 +8,10 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::{
     net::SocketAddr,
     str::FromStr,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
 };
 use tower_http::trace::TraceLayer;
-use tower_sessions::{MemoryStore, SessionManagerLayer};
+use tower_sessions::{cookie::time::Duration as CookieDuration, Expiry, MemoryStore, SessionManagerLayer};
 
 use crate::shares::ShareRepository;
 use crate::verification_code::VerificationCodeRepository;
@@ -94,23 +94,27 @@ async fn main() -> anyhow::Result<()> {
         max_devices_per_user: devices::get_max_devices_per_user(),
     };
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
-    tracing::info!("Rate limiter configured: 100 requests per minute per IP (tower-governor)");
+    tracing::info!("API rate limiter: 100 requests per minute per IP");
+    tracing::info!("Auth rate limiter: 10 requests per minute per IP");
     let session_store = MemoryStore::default();
-    let session_layer = SessionManagerLayer::new(session_store).with_secure(true);
-    let public_routes = Router::new()
+    let session_layer = SessionManagerLayer::new(session_store)
+        .with_secure(true)
+        .with_expiry(Expiry::OnInactivity(CookieDuration::hours(1)));
+    let auth_governor_conf = Arc::new(
+        tower_governor::governor::GovernorConfigBuilder::default()
+            .period(std::time::Duration::from_secs(6)) // 10 requests/min = 1 per 6s
+            .burst_size(5)
+            .use_headers()
+            .finish()
+            .expect("Failed to build auth governor config"),
+    );
+    let auth_routes = Router::new()
         .route("/auth/register", post(auth::handlers::register_step_1))
         .route(
             "/auth/register/step2",
             post(auth::handlers::register_step_2),
         )
-        .route("/login", get(auth::handlers::get_login_page))
         .route("/login", post(auth::handlers::login))
-        .route("/logout", get(auth::handlers::logout))
-        .route("/register", get(auth::handlers::get_register_page))
-        .route(
-            "/auth/forgot-password",
-            get(auth::handlers::get_forgot_password_page),
-        )
         .route(
             "/auth/forgot-password",
             post(auth::handlers::forgot_password_step_1),
@@ -127,14 +131,31 @@ async fn main() -> anyhow::Result<()> {
             "/auth/forgot-password/resend",
             get(auth::handlers::resend_forgot_password_code),
         )
-        .route("/setup", get(setup::handlers::get_setup_page))
         .route("/setup", post(setup::handlers::create_admin))
         .with_state(app_state.clone())
         .layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             setup::middleware::require_setup_complete,
+        ))
+        .layer(axum::middleware::from_fn(
+            axum_tower_sessions_csrf::CsrfMiddleware::middleware,
+        ))
+        .layer(session_layer.clone())
+        .layer(tower_governor::GovernorLayer::new(auth_governor_conf.clone()));
+    let public_routes = Router::new()
+        .route("/login", get(auth::handlers::get_login_page))
+        .route("/logout", get(auth::handlers::logout))
+        .route("/register", get(auth::handlers::get_register_page))
+        .route(
+            "/auth/forgot-password",
+            get(auth::handlers::get_forgot_password_page),
+        )
+        .route("/setup", get(setup::handlers::get_setup_page))
+        .with_state(app_state.clone())
+        .layer(axum::middleware::from_fn_with_state(
+            app_state.clone(),
+            setup::middleware::require_setup_complete,
         ));
-
     let admin_routes = Router::new()
         .route("/admin", get(admin::handlers::get_admin))
         .route("/admin/users/search", get(admin::handlers::search_users))
@@ -145,7 +166,6 @@ async fn main() -> anyhow::Result<()> {
             app_state.clone(),
             admin::middleware::require_admin,
         ));
-
     let protected_routes = Router::new()
         .route("/", get(handlers::index))
         .route("/device/{user_id}/create", post(handlers::create_device))
@@ -205,6 +225,7 @@ async fn main() -> anyhow::Result<()> {
         ))
         .layer(session_layer);
     let app = Router::new()
+        .merge(auth_routes)
         .merge(web_routes)
         .merge(api_routes);
     let cleanup_share_repo = app_state.share_repository.clone();
