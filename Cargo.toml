@@ -22,7 +22,7 @@ path = "test_tools/seed_users.rs"
 axum = { version = "0.8.8", features = ["macros"] }
 tokio = { version = "1.48.0", features = ["full"] }
 tower = "0.5.2"
-tower-http = { version = "0.6.8", features = ["fs", "trace"] }
+tower-http = { version = "0.6.8", features = ["fs", "trace", "set-header"] }
 tower_governor = "0.8.0"
 tower-sessions = "0.14.0"
 axum-tower-sessions-csrf = "0.1.1"

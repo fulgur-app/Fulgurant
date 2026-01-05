@@ -1,4 +1,5 @@
 use axum::{
+    http::{header, HeaderValue},
     middleware,
     routing::{delete, get, post, put},
     Router,
@@ -10,7 +11,7 @@ use std::{
     str::FromStr,
     sync::{Arc, atomic::AtomicBool},
 };
-use tower_http::trace::TraceLayer;
+use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tower_sessions::{cookie::time::Duration as CookieDuration, Expiry, MemoryStore, SessionManagerLayer};
 
 use crate::shares::ShareRepository;
@@ -261,11 +262,11 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
 }
 
 /// Make the web routes
-/// 
+///
 /// ### Arguments
 /// - `app_state`: The state of the application
 /// - `session_layer`: The session layer
-/// 
+///
 /// ### Returns
 /// - `Router`: The router that handles the web routes
 fn make_web_routes(app_state: &handlers::AppState, session_layer: SessionManagerLayer<MemoryStore>) -> Router {
@@ -276,6 +277,28 @@ fn make_web_routes(app_state: &handlers::AppState, session_layer: SessionManager
             axum_tower_sessions_csrf::CsrfMiddleware::middleware,
         ))
         .layer(session_layer)
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::HeaderName::from_static("x-xss-protection"),
+            HeaderValue::from_static("1; mode=block"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(
+                "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;"
+            ),
+        ))
 }
 
 /// Make the protected routes
