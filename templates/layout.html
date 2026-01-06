@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>{% block title %}{{ title }} - Fulgur{% endblock %}</title>
+    <title>Fulgurant - {% block page_title %}{% endblock %}</title>
     {% block head %}{% endblock %}
     <script src="https://unpkg.com/htmx.org@1.9.6"></script>
     {% if csrf_token is defined %}
@@ -35,6 +35,7 @@
             --danger-border: #8B1F18;
             --success-text: #006D46;
             --success-border: #006D46;
+            --muted-color: #b9b9b9;
         }
         td, tr, th {
             padding: 0.25rem 0.5rem;
@@ -165,6 +166,9 @@
         .no-padding {
             padding: 0;
         }
+        .primary {
+            color: var(--pico-primary);
+        }
     </style>
 
   </head>
@@ -172,7 +176,7 @@
     <main id="content" class="container-fluid container-max-width">
       <nav>
         <ul>
-          <li><h1>Fulgur</h1></li>
+          <li><h1>Fulgur<span class="primary">ant</span></h1></li>
         </ul>
         <ul>
           {% if user is defined %}
