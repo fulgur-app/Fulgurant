@@ -4,6 +4,14 @@ Backend API server for [Fulgur](https://github.com/fulgur-app/fulgur), a multipl
 
 Despite already having all the needed features to be perfectly effective together with Fulgur, **this server is still in active development and is not yet recommended for production.** There's still some work to be done (which may imply breaking changes), and more testing, for Fulgurant to be given the green light for production with a direct, public access. If you want to test Fulgurant, please run it in a private environment not facing the wild internet yet.
 
+The main dashboard (for all users): allows to manage the user's devices and ongoing shares, refresh the API keys' validity.
+
+![Fulgurant Dashboard](assets/fulgurant_dashboard.png)
+
+The Admin dashboard (for Admin users only): allows to manage the users (edit the role, deletion).
+
+![Fulgurant Admin](assets/fulgurant_admin.png)
+
 ## Features
 
 - User authentication with email verification
