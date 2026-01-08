@@ -26,6 +26,7 @@ mod auth {
 mod api {
     pub(crate) mod handlers;
     pub(crate) mod middleware;
+    pub(crate) mod sse;
 }
 mod setup {
     pub(crate) mod handlers;
@@ -81,7 +82,13 @@ async fn main() -> anyhow::Result<()> {
     if setup_needed {
         tracing::warn!("No admin user found - initial setup required at /setup");
     }
-
+    let sse_heartbeat_seconds = std::env::var("SSE_HEARTBEAT_SECONDS")
+        .unwrap_or_else(|_| "30".to_string())
+        .parse::<u64>()
+        .expect("SSE_HEARTBEAT_SECONDS must be a valid number");
+    tracing::info!("SSE heartbeat interval: {} seconds", sse_heartbeat_seconds);
+    let sse_manager = Arc::new(api::sse::SseChannelManager::new());
+    tracing::info!("SSE channel manager initialized");
     let app_state = handlers::AppState {
         device_repository,
         user_repository,
@@ -93,6 +100,8 @@ async fn main() -> anyhow::Result<()> {
         setup_needed: Arc::new(AtomicBool::new(setup_needed)),
         share_validity_days: shares::get_share_validity_days(),
         max_devices_per_user: devices::get_max_devices_per_user(),
+        sse_manager,
+        sse_heartbeat_seconds,
     };
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     tracing::info!("API rate limiter: 100 requests per minute per IP");
@@ -275,6 +284,7 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
         )
         .route("/api/share", post(api::handlers::share_file))
         .route("/api/shares", get(api::handlers::get_shares))
+        .route("/api/sse", get(api::sse::handle_sse_connection))
         .layer(middleware::from_fn_with_state(
             app_state.clone(),
             api::middleware::require_api_auth,

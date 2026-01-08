@@ -54,6 +54,11 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 tracing-appender = "0.2"
 
+# SSE
+tagged-channels = "0.1.0"
+async-stream = "0.3"
+futures = "0.3"
+
 # Utilities
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
 dotenvy = "0.15.7"

@@ -9,7 +9,7 @@ use std::sync::{atomic::AtomicBool, Arc};
 use tower_sessions::Session;
 
 use crate::{
-    api_key::{self}, devices::{self, CreateDevice, Device, DeviceRepository, UpdateDevice}, errors::AppError, logging::sanitize_for_log, mail::Mailer, shares::{DisplayShare, ShareRepository}, templates::{self}, users::UserRepository, verification_code::{self, VerificationCodeRepository}
+    api::{sse::SseChannelManager}, api_key::{self}, devices::{self, CreateDevice, Device, DeviceRepository, UpdateDevice}, errors::AppError, logging::sanitize_for_log, mail::Mailer, shares::{DisplayShare, ShareRepository}, templates::{self}, users::UserRepository, verification_code::{self, VerificationCodeRepository}
 };
 
 const SESSION_USER_ID: &str = "user_id";
@@ -26,6 +26,8 @@ pub struct AppState {
     pub setup_needed: Arc<AtomicBool>,
     pub share_validity_days: i64,
     pub max_devices_per_user: i32,
+    pub sse_manager: Arc<SseChannelManager>,
+    pub sse_heartbeat_seconds: u64,
 }
 
 /// GET / - Returns the index page

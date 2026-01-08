@@ -10,6 +10,7 @@ dependencies = [
  "argon2",
  "askama 0.15.1",
  "askama_axum",
+ "async-stream",
  "axum",
  "axum-server",
  "axum-tower-sessions-csrf",
@@ -17,6 +18,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "fulgur-common",
+ "futures",
  "http-body-util",
  "lazy_static",
  "lettre",
@@ -28,6 +30,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlx",
+ "tagged-channels",
  "thiserror 2.0.17",
  "tokio",
  "totp-rs",
@@ -224,6 +227,28 @@ dependencies = [
  "serde_derive",
  "unicode-ident",
  "winnow",
+]
+
+[[package]]
+name = "async-stream"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5a71a6f37880a80d1d7f19efd781e4b5de42c88f0722cc13bcb6cc2cfe8476"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c24de15d275a1ecfd47a380fb4d5ec9bfe0933f309ed5e705b775596a3574d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -907,6 +932,7 @@ checksum = "65bc07b1a8bc7c85c5f2e110c476c7389b4554ba72af57d8445ea63a576b0876"
 dependencies = [
  "futures-channel",
  "futures-core",
+ "futures-executor",
  "futures-io",
  "futures-sink",
  "futures-task",
@@ -992,6 +1018,7 @@ version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fa08315bb612088cc391249efdc3bc77536f16c91f6cf495e6fbe85b20a4a81"
 dependencies = [
+ "futures-channel",
  "futures-core",
  "futures-io",
  "futures-macro",
@@ -2732,6 +2759,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tagged-channels"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d24f816872b001ba9c3f730259e214569e6c542505fb128b06527c07b32f3884"
+dependencies = [
+ "parking_lot",
+ "tokio",
 ]
 
 [[package]]

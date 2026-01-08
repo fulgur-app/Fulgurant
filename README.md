@@ -24,6 +24,7 @@ The Admin dashboard (for Admin users only): allows to manage the users (edit the
 - SQLite database
 - HTTPS support
 - REST API for desktop app integration
+- SSE support for notifying a Fulgur instance of available shares
 
 ## In the backlog
 
@@ -87,6 +88,9 @@ SHARE_VALIDITY_DAYS=3
 
 # Maximum devices per user (default: unlimited)
 MAX_DEVICES_PER_USER=10
+
+# SSE Heartbeat in seconds (default: 30 seconds)
+SSE_HEARTBEAT_SECONDS=30
 
 # Logging
 RUST_LOG=Fulgurant=debug,tower_http=debug,sqlx=info

@@ -1,5 +1,6 @@
 // src/api/handlers.rs
 use crate::{
+    api::sse::{ChannelTag, ShareNotification},
     devices::Device,
     handlers::AppState,
     shares::{CreateShare, Share, MAX_FILE_SIZE},
@@ -126,6 +127,7 @@ pub async fn share_file(
         ));
     }
     let mut is_error = false;
+    let mut created_shares: Vec<Share> = Vec::new();
     let expiration_date = Utc::now() + Duration::days(crate::shares::SHARE_VALIDITY_DAYS);
     for device_id in &payload.device_ids {
         let create_share = CreateShare {
@@ -146,6 +148,7 @@ pub async fn share_file(
                     auth_user.user.email,
                     device_id
                 );
+                created_shares.push(share);
             }
             Err(e) => {
                 tracing::error!("Error creating share: {:?}", e);
@@ -161,6 +164,26 @@ pub async fn share_file(
             }),
         ))
     } else {
+        for share in &created_shares {
+            let notification = ShareNotification {
+                share_id: share.id.clone(),
+                source_device_id: share.source_device_id.clone(),
+                destination_device_id: share.destination_device_id.clone(),
+                file_name: share.file_name.clone(),
+                file_size: share.file_size as i64,
+                file_hash: share.file_hash.clone(),
+                content: share.content.clone(),
+                created_at: share.created_at.to_rfc3339(),
+                expires_at: share.expires_at.to_rfc3339(),
+            };
+            let tag = ChannelTag::DeviceId(share.destination_device_id.clone());
+            state.sse_manager.send_by_tag(&tag, notification).await;
+            tracing::info!(
+                share_id = ?share.id,
+                device_id = ?share.destination_device_id,
+                "Share notification sent via SSE"
+            );
+        }
         if let Err(e) = state
             .user_repository
             .increment_shares(auth_user.user.id)
@@ -168,7 +191,6 @@ pub async fn share_file(
         {
             tracing::error!("Failed to increment shares count: {}", e);
         }
-
         Ok(Json(ShareFileResponse {
             message: "Share created successfully".to_string(),
             expiration_date: expiration_date.format("%Y-%m-%d").to_string(),
