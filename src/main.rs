@@ -11,7 +11,7 @@ use std::{
     str::FromStr,
     sync::{Arc, atomic::AtomicBool},
 };
-use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
+use tower_http::{services::ServeDir, set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tower_sessions::{cookie::time::Duration as CookieDuration, Expiry, MemoryStore, SessionManagerLayer};
 
 use crate::shares::ShareRepository;
@@ -121,10 +121,12 @@ async fn main() -> anyhow::Result<()> {
     let auth_routes = make_auth_routes(&app_state, session_layer.clone());
     let api_routes = make_api_routes(&app_state);
     let web_routes = make_web_routes(&app_state, session_layer.clone());
+    let assets_service = ServeDir::new("assets");
     let app = Router::new()
         .merge(auth_routes)
         .merge(web_routes)
-        .merge(api_routes);
+        .merge(api_routes)
+        .nest_service("/assets", assets_service);
     let cleanup_share_repo = app_state.share_repository.clone();
     make_share_cleanup_task(cleanup_share_repo);
     let cleanup_verification_repo = app_state.verification_code_repository.clone();
