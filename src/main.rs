@@ -106,10 +106,18 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     tracing::info!("API rate limiter: 100 requests per minute per IP");
     tracing::info!("Auth rate limiter: 10 requests per minute per IP");
+    let tls_cert_path = std::env::var("TLS_CERT_PATH").ok();
+    let tls_key_path = std::env::var("TLS_KEY_PATH").ok();
+    let tls_enabled = tls_cert_path.is_some() && tls_key_path.is_some();
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store)
-        .with_secure(true)
+        .with_secure(tls_enabled)
         .with_expiry(Expiry::OnInactivity(CookieDuration::hours(1)));
+    if tls_enabled {
+        tracing::info!("Session cookies configured with secure flag (HTTPS only)");
+    } else {
+        tracing::warn!("Session cookies configured without secure flag (HTTP mode)");
+    }
     let auth_routes = make_auth_routes(&app_state, session_layer.clone());
     let api_routes = make_api_routes(&app_state);
     let web_routes = make_web_routes(&app_state, session_layer.clone());
@@ -129,8 +137,6 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{}:{}", bind_host, bind_port)
         .parse::<SocketAddr>()
         .expect("Failed to parse bind address");
-    let tls_cert_path = std::env::var("TLS_CERT_PATH").ok();
-    let tls_key_path = std::env::var("TLS_KEY_PATH").ok();
     if bind_host == "0.0.0.0" {
         tracing::warn!("Server is listening on all interfaces (0.0.0.0)");
     } else if bind_host == "127.0.0.1" {
