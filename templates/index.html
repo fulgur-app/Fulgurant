@@ -50,16 +50,7 @@
         <form id="add-device-form-element"
                 hx-post="/device/{{ user.user_id }}/create"
                 hx-target="#device-list"
-                hx-swap="afterbegin"
-                hx-on::after-request="
-                    if (event.detail.successful) {
-                        document.getElementById('device-error-message').innerHTML = '';
-                        this.reset();
-                        document.getElementById('device-empty-state')?.remove();
-                    } else {
-                        document.getElementById('device-error-message').innerHTML = event.detail.xhr.responseText;
-                    }
-                ">
+                hx-swap="afterbegin">
             <div class="grid">
                 <label>
                     Name
@@ -168,6 +159,21 @@
     </article>
 
     <script>
+        // Handle device creation error messages
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('add-device-form-element');
+            if (form) {
+                form.addEventListener('htmx:afterRequest', function(event) {
+                    if (event.detail.successful) {
+                        document.getElementById('device-error-message').innerHTML = '';
+                        form.reset();
+                    } else {
+                        document.getElementById('device-error-message').innerHTML = event.detail.xhr.responseText;
+                    }
+                });
+            }
+        });
+
         // Copy API key to clipboard, falls back to execCommand for older browsers/HTTTP only
         function copyApiKey(button) {
             const apiKeyElement = button.parentElement.querySelector('.api-key-value');
