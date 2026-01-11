@@ -1,3 +1,4 @@
+<tr id="device-empty-state" hx-swap-oob="delete"></tr>
 <tr class="device-row" id="device-{{ device.id }}">
     <td class="device-cell">{{ device.name }}</td>
     <td class="device-cell">{{ device.device_type }}</td>
@@ -6,9 +7,9 @@
     <td>{{ device.get_expires_at_formatted() }}</td>
     <td>
         <div class="actions" role="group">
-            <button 
+            <button
                 class="action-button secondary"
-                hx-delete="/device/{{ device.id }}" 
+                hx-delete="/device/{{ device.id }}"
                 hx-target="#device-{{ device.id }}"
                 hx-swap="outerHTML swap:0.5s"
                 hx-confirm="Are you sure you want to delete this device?">
@@ -27,9 +28,9 @@
                     <path d="m6 6 12 12" />
                 </svg>
             </button>
-            <button 
+            <button
                 class="action-button secondary"
-                hx-get="/device/{{ device.id }}/edit" 
+                hx-get="/device/{{ device.id }}/edit"
                 hx-target="#device-{{ device.id }}"
                 hx-swap="outerHTML">
                 <svg
@@ -47,9 +48,9 @@
                     <path d="m15 5 4 4" />
                 </svg>
             </button>
-            <button 
+            <button
                 class="action-button"
-                hx-get="/device/{{ device.id }}/edit" 
+                hx-get="/device/{{ device.id }}/edit"
                 hx-target="#device-{{ device.id }}"
                 hx-swap="outerHTML">
                 <svg
