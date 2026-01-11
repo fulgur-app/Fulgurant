@@ -2,7 +2,7 @@ use askama::Template;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::Html,
+    response::{Html, IntoResponse},
     Form,
 };
 use std::sync::{atomic::AtomicBool, Arc};
@@ -172,14 +172,31 @@ pub async fn update_device(
 /// - `id`: The ID of the device
 ///
 /// ### Returns
-/// - `Ok(StatusCode)`: The response as status code
+/// - `Ok(StatusCode)`: The response as status code (when not last device)
+/// - `Ok(Html<String>)`: The empty state row HTML (when deleting last device)
 /// - `Err(AppError)`: Error that occurred while deleting the device
 pub async fn delete_device(
     State(state): State<AppState>,
     Path(id): Path<i32>,
-) -> Result<StatusCode, AppError> {
+) -> Result<axum::response::Response, AppError> {
+    // Get the device to find its user_id
+    let device = state.device_repository.get_by_id(id).await?;
+    let user_id = device.user_id;
+
+    // Count how many devices this user has
+    let device_count = state.device_repository.get_all_for_user(user_id).await?.len();
+
+    // Delete the device
     match state.device_repository.delete(id).await {
-        Ok(_) => Ok(StatusCode::OK),
+        Ok(_) => {
+            // If this was the last device, return the empty state row
+            if device_count == 1 {
+                let template = templates::DeviceEmptyStateRowTemplate;
+                Ok(Html(template.render()?).into_response())
+            } else {
+                Ok(StatusCode::OK.into_response())
+            }
+        }
         Err(e) => {
             tracing::error!("Error deleting device: {:?}", e);
             return Err(AppError::DatabaseError(e));

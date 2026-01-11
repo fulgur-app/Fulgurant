@@ -97,6 +97,11 @@ pub struct InlineRenewFormTemplate {
 #[template(path = "partials/devices/empty_state.html")]
 pub struct DeviceEmptyStateTemplate;
 
+/// Empty state row template (for table row with colspan)
+#[derive(Template)]
+#[template(path = "partials/devices/empty_state_row.html")]
+pub struct DeviceEmptyStateRowTemplate;
+
 /// Error message template
 #[derive(Template)]
 #[template(path = "partials/error_message.html")]
