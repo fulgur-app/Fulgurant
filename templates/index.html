@@ -23,6 +23,15 @@
         .inline-submit-button {
             width: 100%;
         }
+        .copy-feedback {
+            display: none;
+            margin-left: 8px;
+            color: #e7ffec;
+            font-weight: 500;
+        }
+        .action-button {
+            padding: 0.1rem 0.5rem;
+        }
     </style>
 
 {% endblock %}
@@ -159,22 +168,62 @@
     </article>
 
     <script>
+        // Copy API key to clipboard, falls back to execCommand for older browsers/HTTTP only
         function copyApiKey(button) {
             const apiKeyElement = button.parentElement.querySelector('.api-key-value');
-            if (apiKeyElement) {
-                navigator.clipboard.writeText(apiKeyElement.textContent.trim()).then(() => {
-                    console.log('API key copied to clipboard');
-                    // Scroll to the API key panel to ensure user sees it
-                    const container = document.getElementById('device-api-key-container');
-                    if (container) {
-                        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }
+            if (!apiKeyElement) return;
+            const apiKeyText = apiKeyElement.textContent.trim();
+            let success = false;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(apiKeyText).then(() => {
+                    success = true;
+                    showCopyFeedback(button);
                 }).catch(err => {
-                    console.error('Failed to copy API key:', err);
+                    console.error('Clipboard API failed:', err);
+                    success = fallbackCopy(apiKeyText);
+                    if (success) showCopyFeedback(button);
                 });
+            } else {
+                success = fallbackCopy(apiKeyText);
+                if (success) showCopyFeedback(button);
+            }
+        }
+        
+        // Fallback copy to clipboard for older browsers/HTTTP only
+        function fallbackCopy(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                const success = document.execCommand('copy');
+                document.body.removeChild(textarea);
+                return success;
+            } catch (err) {
+                console.error('Failed to copy:', err);
+                document.body.removeChild(textarea);
+                return false;
+            }
+        }
+        
+        // Show "Copied!" feedback
+        function showCopyFeedback(button) {
+            const feedback = button.nextElementSibling;
+            if (feedback && feedback.classList.contains('copy-feedback')) {
+                feedback.style.display = 'inline';
+                setTimeout(() => {
+                    feedback.style.display = 'none';
+                }, 3000);
+            }
+            const container = document.getElementById('device-api-key-container');
+            if (container) {
+                container.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         }
 
+        // Dismiss API key container
         function dismissApiKey() {
             const container = document.getElementById('device-api-key-container');
             if (container) {
