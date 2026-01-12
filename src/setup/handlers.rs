@@ -7,7 +7,7 @@ use axum::{
 };
 use serde::Deserialize;
 use tower_sessions::Session;
-use fulgurant::utils::{is_valid_email, is_password_valid};
+use crate::utils::{is_valid_email, is_password_valid};
 use crate::{
     auth::handlers::hash_password,
     errors::AppError,

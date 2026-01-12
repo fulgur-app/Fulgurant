@@ -8,7 +8,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
     Form,
 };
-use fulgurant::utils::{is_password_valid, is_valid_email};
+use crate::utils::{is_password_valid, is_valid_email};
 use serde::Deserialize;
 use tower_sessions::Session;
 

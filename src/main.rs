@@ -43,6 +43,7 @@ mod mail;
 pub mod shares;
 mod templates;
 mod users;
+mod utils;
 mod verification_code;
 
 #[tokio::main]

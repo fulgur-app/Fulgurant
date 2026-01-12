@@ -1,0 +1,43 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+
+# Build artifacts
+target/
+
+# Data files (will be in volume)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Logs
+*/logs/
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Test data
+test_data/

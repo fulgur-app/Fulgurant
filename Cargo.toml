@@ -9,14 +9,6 @@ categories = ["web", "api", "server"]
 homepage = "https://fulgur.app"
 default-run = "Fulgurant"
 
-[lib]
-name = "fulgurant"
-path = "src/lib.rs"
-
-[[bin]] # cargo run --bin seed_users
-name = "seed_users"
-path = "test_tools/seed_users.rs"
-
 [dependencies]
 # Web framework
 axum = { version = "0.8.8", features = ["macros"] }
