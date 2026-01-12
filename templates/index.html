@@ -40,7 +40,7 @@
     <div>
         <hgroup>
             <h2>Welcome, {{ user.first_name }}!</h2>
-            <p>You have created {{ user.shares }} shares so far.</p>
+            <p>You have created {{ user.shares }} share{{ user.shares | pluralize("s") }} so far.</p>
         </hgroup>
     </div>
     <!-- Add Device Form -->
@@ -90,7 +90,7 @@
                 <strong>Devices inventory</strong>
                 {% if let Some(max_devices_per_user) = max_devices_per_user %}
                 <div class="info">
-                        You can add up to {{ max_devices_per_user }} devices.
+                        You can add up to {{ max_devices_per_user }} device{{ max_devices_per_user | pluralize("s") }}.
                     </div>
                 {% endif %}
             </div>
