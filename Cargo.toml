@@ -74,5 +74,8 @@ jsonwebtoken = { version = "10.2.0", features = ["aws_lc_rs"] }
 sha2 = "0.10.9"
 lazy_static = "1.5.0"
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.6.1"
+
 [dev-dependencies]
 http-body-util = "0.1.3"
