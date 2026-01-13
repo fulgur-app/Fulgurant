@@ -10,7 +10,7 @@ use chrono::{Duration, Utc};
 use fulgur_common::api::{
     devices::DeviceResponse,
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
-    BeginResponse, EncryptionKeyResponse, ErrorResponse, PingResponse,
+    AccessTokenResponse, BeginResponse, EncryptionKeyResponse, ErrorResponse, PingResponse,
 };
 
 use super::middleware::AuthenticatedUser;
@@ -337,5 +337,156 @@ pub async fn begin(
         encryption_key,
         device_name: auth_user.device_name,
         shares,
+    }))
+}
+
+/// POST /api/token - Obtain a JWT access token using device key
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `headers`: Request headers containing email (`X-User-Email`) and device key (`Authorization`)
+///
+/// ### Returns
+/// - `Ok(Json(AccessTokenResponse))`: The JWT access token with expiry information
+/// - `Err((StatusCode, Json(ErrorResponse)))`: Authentication error or server error
+pub async fn obtain_access_token(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<AccessTokenResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let email = headers
+        .get("X-User-Email")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "Missing X-User-Email header".to_string(),
+                }),
+            )
+        })?
+        .trim()
+        .to_lowercase();
+    let auth_header = headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "Missing Authorization header".to_string(),
+                }),
+            )
+        })?;
+    let device_key = auth_header
+        .strip_prefix("Bearer ")
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "Invalid Authorization header format. Expected: Bearer <device_key>"
+                        .to_string(),
+                }),
+            )
+        })?
+        .trim();
+    let user = match state.user_repository.get_by_email(email.clone()).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            tracing::warn!("Token request for non-existent user: {}", email);
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "Invalid credentials".to_string(),
+                }),
+            ));
+        }
+        Err(e) => {
+            tracing::error!("Database error getting user for token: {:?}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Internal server error".to_string(),
+                }),
+            ));
+        }
+    };
+    if !user.email_verified {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Email not verified".to_string(),
+            }),
+        ));
+    }
+    let devices = match state.device_repository.get_all_for_user(user.id).await {
+        Ok(devices) => devices,
+        Err(e) => {
+            tracing::error!("Database error getting devices for token: {:?}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Internal server error".to_string(),
+                }),
+            ));
+        }
+    };
+    let mut authenticated_device = None;
+    for device in &devices {
+        match crate::api_key::verify_api_key(device_key, &device.device_key) {
+            Ok(true) => {
+                authenticated_device = Some((device.device_id.clone(), device.name.clone()));
+                tracing::debug!(
+                    "Access token requested for user {} with device {}",
+                    user.id,
+                    device.device_id
+                );
+                break;
+            }
+            Ok(false) => continue,
+            Err(e) => {
+                tracing::error!("Error verifying device key for token: {:?}", e);
+                continue;
+            }
+        }
+    }
+    let (device_id, device_name) = authenticated_device.ok_or_else(|| {
+        tracing::warn!("Invalid device key for user: {}", email);
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Invalid credentials".to_string(),
+            }),
+        )
+    })?;
+    let access_token = match crate::access_token::generate_access_token(
+        user.id,
+        device_id.clone(),
+        device_name.clone(),
+        &state.jwt_secret,
+        state.jwt_expiry_seconds,
+    ) {
+        Ok(token) => token,
+        Err(e) => {
+            tracing::error!("Failed to generate access token: {:?}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to generate access token".to_string(),
+                }),
+            ));
+        }
+    };
+    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(state.jwt_expiry_seconds);
+    tracing::info!(
+        "Access token issued for user {} (device: {}, expires: {})",
+        user.id,
+        device_id,
+        expires_at.to_rfc3339()
+    );
+    Ok(Json(AccessTokenResponse {
+        access_token,
+        token_type: "Bearer".to_string(),
+        expires_in: state.jwt_expiry_seconds,
+        expires_at: expires_at.to_rfc3339(),
     }))
 }

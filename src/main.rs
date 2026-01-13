@@ -17,6 +17,7 @@ use tower_sessions::{cookie::time::Duration as CookieDuration, Expiry, MemorySto
 use crate::shares::ShareRepository;
 use crate::verification_code::VerificationCodeRepository;
 
+mod access_token;
 mod api_key;
 mod errors;
 mod auth {
@@ -89,6 +90,22 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("SSE heartbeat interval: {} seconds", sse_heartbeat_seconds);
     let sse_manager = Arc::new(api::sse::SseChannelManager::new());
     tracing::info!("SSE channel manager initialized");
+    let jwt_secret = std::env::var("JWT_SECRET").expect(
+        "JWT_SECRET must be set. Generate with: openssl rand -base64 32"
+    );
+    if jwt_secret.len() < 32 {
+        panic!("JWT_SECRET must be at least 32 characters for security");
+    }
+    tracing::info!("JWT secret loaded (length: {} characters)", jwt_secret.len());
+    let jwt_expiry_seconds = std::env::var("JWT_EXPIRY_SECONDS")
+        .unwrap_or_else(|_| "900".to_string())
+        .parse::<i64>()
+        .expect("JWT_EXPIRY_SECONDS must be a valid number");
+    tracing::info!(
+        "JWT access token expiry: {} seconds (~{} minutes)",
+        jwt_expiry_seconds,
+        jwt_expiry_seconds / 60
+    );
     let app_state = handlers::AppState {
         device_repository,
         user_repository,
@@ -102,6 +119,8 @@ async fn main() -> anyhow::Result<()> {
         max_devices_per_user: devices::get_max_devices_per_user(),
         sse_manager,
         sse_heartbeat_seconds,
+        jwt_secret,
+        jwt_expiry_seconds,
     };
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     tracing::info!("API rate limiter: 100 requests per minute per IP");
@@ -282,7 +301,11 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
             .finish()
             .expect("Failed to build governor config"),
     );
-    Router::new()
+    let token_route = Router::new()
+        .route("/api/token", post(api::handlers::obtain_access_token))
+        .layer(tower_governor::GovernorLayer::new(governor_conf.clone()))
+        .with_state(app_state.clone());
+    let authenticated_routes = Router::new()
         .route("/api/ping", get(api::handlers::ping))
         .route("/api/begin", get(api::handlers::begin))
         .route("/api/devices", get(api::handlers::get_devices))
@@ -298,7 +321,8 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
             api::middleware::require_api_auth,
         ))
         .layer(tower_governor::GovernorLayer::new(governor_conf))
-        .with_state(app_state.clone())
+        .with_state(app_state.clone());
+    token_route.merge(authenticated_routes)
 }
 
 /// Make the web routes

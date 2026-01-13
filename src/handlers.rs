@@ -28,6 +28,8 @@ pub struct AppState {
     pub max_devices_per_user: i32,
     pub sse_manager: Arc<SseChannelManager>,
     pub sse_heartbeat_seconds: u64,
+    pub jwt_secret: String,
+    pub jwt_expiry_seconds: i64,
 }
 
 /// GET / - Returns the index page
