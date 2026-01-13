@@ -28,7 +28,6 @@ The Admin dashboard (for Admin users only): allows to manage the users (edit the
 
 ## In the backlog
 
-* Proper packaging
 * PostgreSQL support
 * More polished Admin interface (accounts creation/edition,...)
 * Docker image
@@ -72,6 +71,11 @@ Create a `.env` file in the project root with the following settings:
 ```env
 # Database location
 DATABASE_URL=sqlite:./data/fulgurant.db
+
+# JWT Authentication configuration
+# Generate a secure secret: openssl rand -base64 32
+# Example given here, do not use in production
+JWT_SECRET='CJALi2JE9jlPVSax+xS7E2+R8UOCpxI3nEPbeKpGcaA=' 
 ```
 
 ### Optional Settings
@@ -103,6 +107,9 @@ BIND_PORT=3000       # Port to listen on
 # TLS/HTTPS configuration - server runs HTTP if not configured
 TLS_CERT_PATH=certs/cert.pem 
 TLS_KEY_PATH=certs/key.pem
+
+# Access token expiry (default: 15 minutes)
+JWT_EXPIRY_SECONDS=900  
 ```
 
 ### Email Settings (Required when IS_PROD=true)
