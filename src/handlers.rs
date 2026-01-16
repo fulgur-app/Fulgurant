@@ -9,7 +9,16 @@ use std::sync::{atomic::AtomicBool, Arc};
 use tower_sessions::Session;
 
 use crate::{
-    api::{sse::SseChannelManager}, api_key::{self}, devices::{self, CreateDevice, Device, DeviceRepository, UpdateDevice}, errors::AppError, logging::sanitize_for_log, mail::Mailer, shares::{DisplayShare, ShareRepository}, templates::{self}, users::UserRepository, verification_code::{self, VerificationCodeRepository}
+    api::sse::SseChannelManager,
+    api_key::{self},
+    devices::{self, CreateDevice, Device, DeviceRepository, UpdateDevice},
+    errors::AppError,
+    logging::sanitize_for_log,
+    mail::Mailer,
+    shares::{DisplayShare, ShareRepository},
+    templates::{self},
+    users::UserRepository,
+    verification_code::{self, VerificationCodeRepository},
 };
 
 const SESSION_USER_ID: &str = "user_id";
@@ -59,7 +68,9 @@ pub async fn index(
     };
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+        })?;
     let devices = match state.device_repository.get_all_for_user(user_id).await {
         Ok(devices) => devices.into_iter().rev().collect::<Vec<Device>>(),
         Err(e) => {
@@ -124,7 +135,12 @@ pub async fn create_device(
         .device_repository
         .create(user_id, hash, request.clone())
         .await?;
-    tracing::info!("Device created: name={}, id={} for user {}", sanitize_for_log(&device.name), device.id, user_id);
+    tracing::info!(
+        "Device created: name={}, id={} for user {}",
+        sanitize_for_log(&device.name),
+        device.id,
+        user_id
+    );
     let template = templates::DeviceCreationResponseTemplate { device, api_key };
     Ok(Html(template.render()?))
 }
@@ -186,7 +202,11 @@ pub async fn delete_device(
     let user_id = device.user_id;
 
     // Count how many devices this user has
-    let device_count = state.device_repository.get_all_for_user(user_id).await?.len();
+    let device_count = state
+        .device_repository
+        .get_all_for_user(user_id)
+        .await?
+        .len();
 
     // Delete the device
     match state.device_repository.delete(id).await {
@@ -311,7 +331,9 @@ pub async fn get_settings(
     };
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+        })?;
     let template = templates::SettingsTemplate {
         user: templates::UserContext::from(&user),
         email: user.email,
@@ -393,7 +415,8 @@ pub async fn update_email_step_1(
     if user_id.is_none() {
         return Err(AppError::Unauthorized);
     }
-    if !request.email.contains('@') || !request.email.contains('.') { //TODO: improve email validation
+    if !request.email.contains('@') || !request.email.contains('.') {
+        //TODO: improve email validation
         let template = templates::EmailChangeStep2Template {
             new_email: request.email,
             error_message: "Invalid email format".to_string(),
@@ -429,7 +452,10 @@ pub async fn update_email_step_1(
             .send_verification_email(request.email.clone(), code.clone())
             .await
             .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to send email: {}", e)))?;
-        tracing::info!("Verification email sent to {}", sanitize_for_log(&request.email.clone()));
+        tracing::info!(
+            "Verification email sent to {}",
+            sanitize_for_log(&request.email.clone())
+        );
     } else {
         tracing::info!(
             "Not sending verification email in non-production environment\nVerification code: {}",
@@ -486,7 +512,11 @@ pub async fn update_email_step_2(
                 .user_repository
                 .update_email(user_id, request.email.clone())
                 .await?;
-            tracing::info!("User {} changed their email to {}", user_id, sanitize_for_log(&request.email));
+            tracing::info!(
+                "User {} changed their email to {}",
+                user_id,
+                sanitize_for_log(&request.email)
+            );
             let template = templates::EmailChangeSuccessTemplate {
                 email: request.email,
             };

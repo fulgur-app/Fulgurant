@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Row, Sqlite, SqlitePool};
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 pub const MAX_DEVICES_PER_USER: i32 = 99;
@@ -24,9 +24,9 @@ pub struct Device {
     pub device_key: String, // Hashed API key (private)
     pub name: String,
     pub device_type: String,
-    pub expires_at: DateTime<Utc>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub expires_at: OffsetDateTime,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
 impl Device {
@@ -35,7 +35,7 @@ impl Device {
     /// ### Returns
     /// - `true`: If the device has expired, `false` otherwise
     pub fn is_expired(&self) -> bool {
-        self.expires_at < Utc::now()
+        self.expires_at < OffsetDateTime::now_utc()
     }
 
     /// Get the created at date formatted as YYYY-MM-DD
@@ -43,7 +43,8 @@ impl Device {
     /// ### Returns
     /// - `String`: The created at date formatted as YYYY-MM-DD
     pub fn get_created_at_formatted(&self) -> String {
-        self.created_at.format("%Y-%m-%d").to_string()
+        let format = time::format_description::parse("[year]-[month]-[day]").unwrap();
+        self.created_at.format(&format).unwrap_or_default()
     }
 
     /// Get the updated at date formatted as YYYY-MM-DD HH:MM:SS
@@ -51,7 +52,10 @@ impl Device {
     /// ### Returns
     /// - `String`: The updated at date formatted as YYYY-MM-DD HH:MM:SS
     pub fn get_updated_at_formatted(&self) -> String {
-        self.updated_at.format("%Y-%m-%d %H:%M:%S").to_string()
+        let format =
+            time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]")
+                .unwrap();
+        self.updated_at.format(&format).unwrap_or_default()
     }
 
     /// Get the expires at date formatted as YYYY-MM-DD
@@ -59,16 +63,14 @@ impl Device {
     /// ### Returns
     /// - `String`: The expires at date formatted as YYYY-MM-DD
     pub fn get_expires_at_formatted(&self) -> String {
-        if self
-            .expires_at
-            .format("%Y-%m-%d")
-            .to_string()
-            .starts_with("21")
+        let format = time::format_description::parse("[year]-[month]-[day]").unwrap();
+        let formatted = self.expires_at.format(&format).unwrap_or_default();
+        if formatted.starts_with("21")
         // TODO: Remove this once we have a better way to handle expired devices
         {
             "Never".to_string()
         } else {
-            self.expires_at.format("%Y-%m-%d").to_string()
+            formatted
         }
     }
 }
@@ -139,16 +141,14 @@ impl DeviceRepository {
         device_key: String,
         data: CreateDevice,
     ) -> Result<Device, sqlx::Error> {
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         let device_id = Uuid::new_v4().to_string();
         let CreateDevice {
             name,
             device_type,
             api_key_lifetime,
         } = data;
-        let expires_at = now
-            .checked_add_signed(chrono::Duration::days(api_key_lifetime))
-            .unwrap();
+        let expires_at = now + Duration::days(api_key_lifetime);
         let result = sqlx::query(
             "INSERT INTO devices (user_id, device_id, device_key, name, device_type, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
@@ -174,7 +174,7 @@ impl DeviceRepository {
     /// - `Ok(Device)`: The updated device
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn update(&self, id: i32, data: UpdateDevice) -> Result<Device, sqlx::Error> {
-        let now = Utc::now().timestamp();
+        let now = OffsetDateTime::now_utc().unix_timestamp();
         let UpdateDevice { name, device_type } = data;
         sqlx::query("UPDATE devices SET name = ?, device_type = ?, updated_at = ? WHERE id = ?")
             .bind(name)
@@ -196,14 +196,12 @@ impl DeviceRepository {
     /// - `Ok(Device)`: The renewed device
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn renew(&self, id: i32, data: RenewDevice) -> Result<Device, sqlx::Error> {
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         let RenewDevice { api_key_lifetime } = data;
-        let new_expires_at = now
-            .checked_add_signed(chrono::Duration::days(api_key_lifetime))
-            .unwrap();
+        let new_expires_at = now + Duration::days(api_key_lifetime);
         sqlx::query("UPDATE devices SET expires_at = ?, updated_at = ? WHERE id = ?")
             .bind(new_expires_at)
-            .bind(now.timestamp())
+            .bind(now.unix_timestamp())
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -243,7 +241,7 @@ impl DeviceRepository {
             .await
     }
 
-    /// Get a device by device ID               
+    /// Get a device by device ID
     ///
     /// ### Arguments
     /// - `device_id`: The device ID
@@ -258,7 +256,7 @@ impl DeviceRepository {
             .await
     }
 
-    /// Get a device by device key  
+    /// Get a device by device key
     ///
     /// ### Arguments
     /// - `device_key`: The device key

@@ -1,7 +1,7 @@
-use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Sqlite, SqlitePool};
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::devices::Device;
@@ -29,8 +29,8 @@ pub struct Share {
     pub file_name: String,
     pub file_size: i32,
     pub content: String,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
+    pub expires_at: OffsetDateTime,
 }
 
 impl Share {
@@ -39,7 +39,7 @@ impl Share {
     /// ### Returns
     /// - `true`: If the share has expired, `false` otherwise
     pub fn is_expired(&self) -> bool {
-        self.expires_at < Utc::now()
+        self.expires_at < OffsetDateTime::now_utc()
     }
 
     /// Convert the share to a display share
@@ -64,8 +64,11 @@ impl Share {
             Some(d) => d.name.clone(),
             None => "Unknown".to_string(),
         };
-        let created_at = self.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-        let expires_at = self.expires_at.format("%Y-%m-%d %H:%M:%S").to_string();
+        let format =
+            time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]")
+                .unwrap();
+        let created_at = self.created_at.format(&format).unwrap_or_default();
+        let expires_at = self.expires_at.format(&format).unwrap_or_default();
         DisplayShare {
             id: self.id.clone(),
             file_name: self.file_name.clone(),
@@ -143,7 +146,7 @@ impl ShareRepository {
                 MAX_FILE_SIZE
             ));
         }
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         let expires_at = now + Duration::days(SHARE_VALIDITY_DAYS);
         sqlx::query(
             r#"

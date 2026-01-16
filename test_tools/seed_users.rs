@@ -1,10 +1,10 @@
-use chrono::{Duration, Utc};
 use dotenvy::dotenv;
 use fulgurant::api_key::hash_api_key;
 use fulgurant::users::generate_encryption_key;
 use rand::Rng;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
+use time::{Duration, OffsetDateTime};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -20,16 +20,37 @@ async fn main() -> anyhow::Result<()> {
         .connect_with(options)
         .await?;
     let first_names = vec![
-        "Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry",
-        "Iris", "Jack", "Kate", "Liam", "Maya", "Noah", "Olivia", "Paul",
-        "Quinn", "Ruby", "Sam", "Tara", "Uma", "Victor", "Wendy", "Xavier",
-        "Yara", "Zoe",
+        "Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry", "Iris", "Jack",
+        "Kate", "Liam", "Maya", "Noah", "Olivia", "Paul", "Quinn", "Ruby", "Sam", "Tara", "Uma",
+        "Victor", "Wendy", "Xavier", "Yara", "Zoe",
     ];
     let last_names = vec![
-        "Anderson", "Brown", "Chen", "Davis", "Evans", "Foster", "Garcia",
-        "Harris", "Ivanov", "Johnson", "Kim", "Lee", "Martinez", "Nguyen",
-        "O'Brien", "Patel", "Quinn", "Rodriguez", "Smith", "Taylor", "Underwood",
-        "Vargas", "Wilson", "Xu", "Young", "Zhang",
+        "Anderson",
+        "Brown",
+        "Chen",
+        "Davis",
+        "Evans",
+        "Foster",
+        "Garcia",
+        "Harris",
+        "Ivanov",
+        "Johnson",
+        "Kim",
+        "Lee",
+        "Martinez",
+        "Nguyen",
+        "O'Brien",
+        "Patel",
+        "Quinn",
+        "Rodriguez",
+        "Smith",
+        "Taylor",
+        "Underwood",
+        "Vargas",
+        "Wilson",
+        "Xu",
+        "Young",
+        "Zhang",
     ];
     let mut rng = rand::rng();
     let password = "Password123!"; // Default password for all seeded users
@@ -46,9 +67,13 @@ async fn main() -> anyhow::Result<()> {
         );
         let encryption_key = generate_encryption_key();
         let email_verified = rng.random_bool(0.7); // 70% chance of being verified
-        let role = if rng.random_bool(0.2) { "Admin" } else { "User" }; // 20% chance of being admin
-        let days_ago = rng.random_range(0..30);
-        let last_activity = Utc::now() - Duration::days(days_ago);
+        let role = if rng.random_bool(0.2) {
+            "Admin"
+        } else {
+            "User"
+        }; // 20% chance of being admin
+        let days_ago: i64 = rng.random_range(0..30);
+        let last_activity = OffsetDateTime::now_utc() - Duration::days(days_ago);
         let shares = rng.random_range(0..51);
         match sqlx::query(
             "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, role, last_activity, shares) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"

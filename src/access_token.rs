@@ -1,6 +1,6 @@
-use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, Algorithm};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+use time::{Duration, OffsetDateTime};
 
 /// JWT claims structure for access tokens
 ///
@@ -40,14 +40,14 @@ pub fn generate_access_token(
     jwt_secret: &str,
     expiry_seconds: i64,
 ) -> anyhow::Result<String> {
-    let now = Utc::now();
+    let now = OffsetDateTime::now_utc();
     let expiration = now + Duration::seconds(expiry_seconds);
     let claims = AccessTokenClaims {
         sub: user_id.to_string(),
         device_id,
         device_name,
-        exp: expiration.timestamp(),
-        iat: now.timestamp(),
+        exp: expiration.unix_timestamp(),
+        iat: now.unix_timestamp(),
         iss: "fulgurant".to_string(),
     };
     let token = encode(
@@ -68,10 +68,7 @@ pub fn generate_access_token(
 /// ### Returns
 /// - `Ok(AccessTokenClaims)`: The validated claims
 /// - `Err(anyhow::Error)`: Error if validation fails (invalid signature, expired, etc.)
-pub fn validate_access_token(
-    token: &str,
-    jwt_secret: &str,
-) -> anyhow::Result<AccessTokenClaims> {
+pub fn validate_access_token(token: &str, jwt_secret: &str) -> anyhow::Result<AccessTokenClaims> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.set_issuer(&["fulgurant"]);
     let token_data = decode::<AccessTokenClaims>(
@@ -155,7 +152,7 @@ mod tests {
         assert_eq!(claims.device_id, "device-xyz");
         assert_eq!(claims.device_name, "Test Device 2");
         assert_eq!(claims.iss, "fulgurant");
-        let now = Utc::now().timestamp();
+        let now = OffsetDateTime::now_utc().unix_timestamp();
         assert!(claims.iat <= now);
         assert!(claims.exp > now);
         assert_eq!(claims.exp - claims.iat, 900);

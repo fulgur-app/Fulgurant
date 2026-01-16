@@ -1,8 +1,8 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use chrono::{DateTime, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite, SqlitePool};
+use time::OffsetDateTime;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct User {
@@ -14,10 +14,10 @@ pub struct User {
     pub password_hash: String,
     pub role: String,
     pub encryption_key: String, // Base64-encoded 256-bit AES key for encrypting shared files
-    pub last_activity: DateTime<Utc>, 
-    pub shares: i32, 
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub last_activity: OffsetDateTime,
+    pub shares: i32,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
 /// Public-facing User struct that excludes sensitive information (password_hash, encryption_key)
@@ -29,10 +29,10 @@ pub struct DisplayUser {
     pub last_name: String,
     pub email_verified: bool,
     pub role: String,
-    pub last_activity: DateTime<Utc>,
+    pub last_activity: OffsetDateTime,
     pub shares: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
 impl DisplayUser {
@@ -41,7 +41,8 @@ impl DisplayUser {
     /// ### Returns
     /// - `String`: The short creation date
     pub fn get_short_creation_date(&self) -> String {
-        self.created_at.format("%Y-%m-%d").to_string()
+        let format = time::format_description::parse("[year]-[month]-[day]").unwrap();
+        self.created_at.format(&format).unwrap_or_default()
     }
 
     /// Get the short updated date. Used in the templates to display the updated date in a short format.
@@ -49,7 +50,8 @@ impl DisplayUser {
     /// ### Returns
     /// - `String`: The short updated date
     pub fn get_short_updated_date(&self) -> String {
-        self.updated_at.format("%Y-%m-%d").to_string()
+        let format = time::format_description::parse("[year]-[month]-[day]").unwrap();
+        self.updated_at.format(&format).unwrap_or_default()
     }
 
     /// Get the short last activity date. Used in the templates to display the last activity date in a short format.
@@ -57,7 +59,8 @@ impl DisplayUser {
     /// ### Returns
     /// - `String`: The short last activity date
     pub fn get_short_last_activity_date(&self) -> String {
-        self.last_activity.format("%Y-%m-%d").to_string()
+        let format = time::format_description::parse("[year]-[month]-[day]").unwrap();
+        self.last_activity.format(&format).unwrap_or_default()
     }
 
     /// Get the alternative role of the user. Used in the templates.
@@ -71,7 +74,6 @@ impl DisplayUser {
             "Admin".to_string()
         }
     }
-
 
     /// Get the prettyn value of the email_verified field. Used in the templates.
     ///
@@ -350,18 +352,14 @@ impl UserRepository {
     /// ### Returns
     /// - `Ok(PaginatedUsers)`: The paginated list of users (without sensitive information)
     /// - `Err(sqlx::Error)`: The error if the operation fails
-    pub async fn get_all(
-        &self,
-        page: i32,
-        page_size: i32,
-    ) -> Result<PaginatedUsers, sqlx::Error> {
+    pub async fn get_all(&self, page: i32, page_size: i32) -> Result<PaginatedUsers, sqlx::Error> {
         let page = page.max(1);
         let page_size = page_size.max(1);
         let offset = (page - 1) * page_size;
         let total_count = self.count_all().await?;
         let total_pages = (total_count + page_size - 1) / page_size;
         let users = sqlx::query_as::<_, User>(
-            "SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            "SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
         )
         .bind(page_size)
         .bind(offset)
@@ -428,7 +426,10 @@ impl UserRepository {
             where_clauses.push("last_name LIKE ?");
             params.push(format!("%{}%", l.trim()));
         }
-        if let Some(r) = role.as_ref().filter(|s| !s.trim().is_empty() && *s != "All") {
+        if let Some(r) = role
+            .as_ref()
+            .filter(|s| !s.trim().is_empty() && *s != "All")
+        {
             where_clauses.push("role = ?");
             params.push(r.trim().to_string());
         }
@@ -534,10 +535,12 @@ impl UserRepository {
     /// - `Ok(())`: The result of the operation if the shares count was incremented successfully
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn increment_shares(&self, id: i32) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE users SET shares = shares + 1, last_activity = CURRENT_TIMESTAMP WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "UPDATE users SET shares = shares + 1, last_activity = CURRENT_TIMESTAMP WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 }

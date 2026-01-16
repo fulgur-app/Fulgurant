@@ -6,12 +6,12 @@ use crate::{
     shares::{CreateShare, Share, MAX_FILE_SIZE},
 };
 use axum::{extract::State, http::StatusCode, Extension, Json};
-use chrono::{Duration, Utc};
 use fulgur_common::api::{
     devices::DeviceResponse,
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
     AccessTokenResponse, BeginResponse, EncryptionKeyResponse, ErrorResponse, PingResponse,
 };
+use time::{Duration, OffsetDateTime};
 
 use super::middleware::AuthenticatedUser;
 
@@ -128,7 +128,8 @@ pub async fn share_file(
     }
     let mut is_error = false;
     let mut created_shares: Vec<Share> = Vec::new();
-    let expiration_date = Utc::now() + Duration::days(crate::shares::SHARE_VALIDITY_DAYS);
+    let expiration_date =
+        OffsetDateTime::now_utc() + Duration::days(crate::shares::SHARE_VALIDITY_DAYS);
     for device_id in &payload.device_ids {
         let create_share = CreateShare {
             source_device_id: auth_user.device_id.clone(),
@@ -173,8 +174,14 @@ pub async fn share_file(
                 file_size: share.file_size as i64,
                 file_hash: share.file_hash.clone(),
                 content: share.content.clone(),
-                created_at: share.created_at.to_rfc3339(),
-                expires_at: share.expires_at.to_rfc3339(),
+                created_at: share
+                    .created_at
+                    .format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default(),
+                expires_at: share
+                    .expires_at
+                    .format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default(),
             };
             let tag = ChannelTag::DeviceId(share.destination_device_id.clone());
             state.sse_manager.send_by_tag(&tag, notification).await;
@@ -191,9 +198,10 @@ pub async fn share_file(
         {
             tracing::error!("Failed to increment shares count: {}", e);
         }
+        let date_format = time::format_description::parse("[year]-[month]-[day]").unwrap();
         Ok(Json(ShareFileResponse {
             message: "Share created successfully".to_string(),
-            expiration_date: expiration_date.format("%Y-%m-%d").to_string(),
+            expiration_date: expiration_date.format(&date_format).unwrap_or_default(),
         }))
     }
 }
@@ -235,8 +243,14 @@ impl From<Share> for SharedFileResponse {
             file_name: share.file_name,
             file_size: share.file_size,
             content: share.content,
-            created_at: share.created_at.to_rfc3339(),
-            expires_at: share.expires_at.to_rfc3339(),
+            created_at: share
+                .created_at
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default(),
+            expires_at: share
+                .expires_at
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default(),
         }
     }
 }
@@ -476,17 +490,20 @@ pub async fn obtain_access_token(
             ));
         }
     };
-    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(state.jwt_expiry_seconds);
+    let expires_at = OffsetDateTime::now_utc() + Duration::seconds(state.jwt_expiry_seconds);
+    let expires_at_str = expires_at
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default();
     tracing::info!(
         "Access token issued for user {} (device: {}, expires: {})",
         user.id,
         device_id,
-        expires_at.to_rfc3339()
+        expires_at_str
     );
     Ok(Json(AccessTokenResponse {
         access_token,
         token_type: "Bearer".to_string(),
         expires_in: state.jwt_expiry_seconds,
-        expires_at: expires_at.to_rfc3339(),
+        expires_at: expires_at_str,
     }))
 }
