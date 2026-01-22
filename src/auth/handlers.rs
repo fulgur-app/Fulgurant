@@ -1,3 +1,4 @@
+use crate::utils::{is_password_valid, is_valid_email};
 use argon2::{
     password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
@@ -8,7 +9,6 @@ use axum::{
     response::{Html, IntoResponse, Response},
     Form,
 };
-use fulgurant::utils::{is_password_valid, is_valid_email};
 use serde::Deserialize;
 use tower_sessions::Session;
 
@@ -50,7 +50,9 @@ pub async fn get_login_page(
 ) -> Result<Html<String>, AppError> {
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+        })?;
     let template = LoginTemplate {
         can_register: state.can_register,
         csrf_token,
@@ -78,7 +80,10 @@ pub async fn login(
     let user = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(user)) => user,
         Ok(None) => {
-            tracing::warn!("Login attempt for non-existent user: {}", sanitize_for_log(&email));
+            tracing::warn!(
+                "Login attempt for non-existent user: {}",
+                sanitize_for_log(&email)
+            );
             let template = templates::ErrorMessageTemplate {
                 message: "Invalid email or password. Please try again.".to_string(),
             };
@@ -152,7 +157,9 @@ pub async fn get_register_page(
     }
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+        })?;
     let template = templates::RegisterTemplate {
         error_message: "".to_string(),
         email: "".to_string(),
@@ -182,7 +189,9 @@ pub async fn logout(
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+        })?;
     let template = templates::LoginTemplate {
         can_register: state.can_register,
         csrf_token,
@@ -373,7 +382,9 @@ pub async fn register_step_2(
 pub async fn get_forgot_password_page(session: Session) -> Result<Html<String>, AppError> {
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+        })?;
     let template = templates::ForgotPasswordStep1Template {
         error_message: String::new(),
         email: String::new(),
