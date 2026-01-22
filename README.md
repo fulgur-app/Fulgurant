@@ -109,7 +109,11 @@ TLS_CERT_PATH=certs/cert.pem
 TLS_KEY_PATH=certs/key.pem
 
 # Access token expiry (default: 15 minutes)
-JWT_EXPIRY_SECONDS=900  
+JWT_EXPIRY_SECONDS=900
+
+# Database backup configuration
+DAILY_DATABASE_BACKUP=false  # Enable daily database backups (default: false)
+BACKUP_FOLDER=backups        # Folder to store database backups (default: backups)
 ```
 
 ### Email Settings (Required when IS_PROD=true)
@@ -128,10 +132,11 @@ Migrations run automatically on server startup. Migration files are in `data/mig
 
 ## Background Tasks
 
-The server runs two background tasks:
+The server runs the following background tasks:
 
 - **Share cleanup**: Runs every hour, removes expired shares
 - **Verification code cleanup**: Runs every minute, removes expired verification codes
+- **Database backup**: Runs every 24 hours when enabled via `DAILY_DATABASE_BACKUP=true`, creates timestamped backup files using SQLite's VACUUM INTO command
 
 ## Development vs Production
 
