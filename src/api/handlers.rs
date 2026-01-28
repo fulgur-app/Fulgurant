@@ -9,7 +9,10 @@ use axum::{extract::State, http::StatusCode, Extension, Json};
 use fulgur_common::api::{
     devices::DeviceResponse,
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
-    AccessTokenResponse, BeginResponse, EncryptionKeyResponse, ErrorResponse, PingResponse,
+    sync::{
+        AccessTokenResponse, BeginResponse, EncryptionKeyResponse, ErrorResponse,
+        InitialSynchronizationPayload, PingResponse,
+    },
 };
 use time::{Duration, OffsetDateTime};
 
@@ -39,6 +42,7 @@ impl From<Device> for DeviceResponse {
             id: device.device_id,
             name: device.name,
             device_type: device.device_type,
+            public_key: device.encryption_key,
             created_at,
             expires_at,
         }
@@ -83,12 +87,12 @@ pub async fn get_devices(
     Ok(Json(device_responses))
 }
 
-/// POST /api/share - Create a new share, one per destination device
+/// POST /api/share - Create a new share for a destination device
 ///
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `auth_user`: The authenticated user
-/// - `payload`: The payload containing the file content, file name, and destination devices
+/// - `payload`: The payload containing the file content, file name, and destination device
 ///
 /// ### Returns
 /// - `Ok(Json(ShareFileResponse))`: The response containing the share
@@ -118,7 +122,7 @@ pub async fn share_file(
             }),
         ));
     }
-    if payload.device_ids.is_empty() {
+    if payload.device_id.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
@@ -126,84 +130,74 @@ pub async fn share_file(
             }),
         ));
     }
-    let mut is_error = false;
-    let mut created_shares: Vec<Share> = Vec::new();
     let expiration_date =
         OffsetDateTime::now_utc() + Duration::days(crate::shares::SHARE_VALIDITY_DAYS);
-    for device_id in &payload.device_ids {
-        let create_share = CreateShare {
-            source_device_id: auth_user.device_id.clone(),
-            destination_device_id: device_id.clone(),
-            file_name: payload.file_name.clone(),
-            content: payload.content.clone(),
-        };
-        match state
-            .share_repository
-            .create(auth_user.user.id, create_share)
-            .await
-        {
-            Ok(share) => {
-                tracing::info!(
-                    "Created new share {} for user {} for device {}",
-                    share.id,
-                    auth_user.user.email,
-                    device_id
-                );
-                created_shares.push(share);
-            }
-            Err(e) => {
-                tracing::error!("Error creating share: {:?}", e);
-                is_error = true;
-            }
-        }
-    }
-    if is_error {
-        Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: "Failed to create share".to_string(),
-            }),
-        ))
-    } else {
-        for share in &created_shares {
-            let notification = ShareNotification {
-                share_id: share.id.clone(),
-                source_device_id: share.source_device_id.clone(),
-                destination_device_id: share.destination_device_id.clone(),
-                file_name: share.file_name.clone(),
-                file_size: share.file_size as i64,
-                file_hash: share.file_hash.clone(),
-                content: share.content.clone(),
-                created_at: share
-                    .created_at
-                    .format(&time::format_description::well_known::Rfc3339)
-                    .unwrap_or_default(),
-                expires_at: share
-                    .expires_at
-                    .format(&time::format_description::well_known::Rfc3339)
-                    .unwrap_or_default(),
-            };
-            let tag = ChannelTag::DeviceId(share.destination_device_id.clone());
-            state.sse_manager.send_by_tag(&tag, notification).await;
+    let create_share = CreateShare {
+        source_device_id: auth_user.device_id.clone(),
+        destination_device_id: payload.device_id.clone(),
+        file_name: payload.file_name.clone(),
+        content: payload.content.clone(),
+    };
+    let share = match state
+        .share_repository
+        .create(auth_user.user.id, create_share)
+        .await
+    {
+        Ok(share) => {
             tracing::info!(
-                share_id = ?share.id,
-                device_id = ?share.destination_device_id,
-                "Share notification sent via SSE"
+                "Created new share {} for user {} for device {}",
+                share.id,
+                auth_user.user.email,
+                payload.device_id
             );
+            share
         }
-        if let Err(e) = state
-            .user_repository
-            .increment_shares(auth_user.user.id)
-            .await
-        {
-            tracing::error!("Failed to increment shares count: {}", e);
+        Err(e) => {
+            tracing::error!("Error creating share: {:?}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to create share".to_string(),
+                }),
+            ));
         }
-        let date_format = time::format_description::parse("[year]-[month]-[day]").unwrap();
-        Ok(Json(ShareFileResponse {
-            message: "Share created successfully".to_string(),
-            expiration_date: expiration_date.format(&date_format).unwrap_or_default(),
-        }))
+    };
+    let notification = ShareNotification {
+        share_id: share.id.clone(),
+        source_device_id: share.source_device_id.clone(),
+        destination_device_id: share.destination_device_id.clone(),
+        file_name: share.file_name.clone(),
+        file_size: share.file_size as i64,
+        file_hash: share.file_hash.clone(),
+        content: share.content.clone(),
+        created_at: share
+            .created_at
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_default(),
+        expires_at: share
+            .expires_at
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_default(),
+    };
+    let tag = ChannelTag::DeviceId(share.destination_device_id.clone());
+    state.sse_manager.send_by_tag(&tag, notification).await;
+    tracing::info!(
+        share_id = ?share.id,
+        device_id = ?share.destination_device_id,
+        "Share notification sent via SSE"
+    );
+    if let Err(e) = state
+        .user_repository
+        .increment_shares(auth_user.user.id)
+        .await
+    {
+        tracing::error!("Failed to increment shares count: {}", e);
     }
+    let date_format = time::format_description::parse("[year]-[month]-[day]").unwrap();
+    Ok(Json(ShareFileResponse {
+        message: "Share created successfully".to_string(),
+        expiration_date: expiration_date.format(&date_format).unwrap_or_default(),
+    }))
 }
 
 /// GET /api/encryption-key - Returns the user's encryption key for end-to-end encryption.
@@ -232,7 +226,7 @@ impl From<Share> for SharedFileResponse {
     /// Converts a Share to a SharedFileResponse
     ///
     /// ### Arguments
-    /// @param share: The Share to convert
+    /// `share`: The Share to convert
     ///
     /// ### Returns
     /// - `SharedFileResponse`: The SharedFileResponse
@@ -296,25 +290,51 @@ pub async fn get_shares(
     }
 }
 
-/// GET /api/begin - Returns encryption key and pending shares for the authenticated device
+/// POST /api/begin - Initial synchronization endpoint that updates device encryption key and returns pending shares
 ///
 /// ### Description
-/// This endpoint combines the functionality of /api/encryption-key and /api/shares
-/// to reduce round trips during app startup.
-/// Authentication is handled by the `require_api_auth` middleware
+/// This endpoint is called during app startup to:
+/// 1. Update the device's encryption key (if provided)
+/// 2. Update user's last activity timestamp
+/// 3. Return pending shares for the device
 ///
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `auth_user`: The authenticated user
+/// - `payload`: The initial synchronization payload containing the public key (encryption key)
 ///
 /// ### Returns
 /// - `Ok(Json(BeginResponse))`: The response containing encryption key and shares
-/// - `Err((StatusCode, Json(ErrorResponse)))`: The error response if the shares retrieval fails
+/// - `Err((StatusCode, Json(ErrorResponse)))`: The error response if the operation fails
 pub async fn begin(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthenticatedUser>,
+    Json(payload): Json<InitialSynchronizationPayload>,
 ) -> Result<Json<BeginResponse>, (StatusCode, Json<ErrorResponse>)> {
-    // Update last_activity timestamp
+    if !payload.public_key.is_empty() {
+        if let Err(e) = state
+            .device_repository
+            .update_encryption_key(&auth_user.device_id, payload.public_key.clone())
+            .await
+        {
+            tracing::error!(
+                "Failed to update encryption key for device {}: {}",
+                auth_user.device_id,
+                e
+            );
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to update encryption key".to_string(),
+                }),
+            ));
+        }
+        tracing::debug!(
+            "Updated encryption key for device {} (user: {})",
+            auth_user.device_id,
+            auth_user.user.email
+        );
+    }
     if let Err(e) = state
         .user_repository
         .update_last_activity(auth_user.user.id)
@@ -322,8 +342,6 @@ pub async fn begin(
     {
         tracing::error!("Failed to update last_activity: {}", e);
     }
-
-    let encryption_key = auth_user.user.encryption_key.clone();
     let shares: Vec<SharedFileResponse> = match state
         .share_repository
         .get_and_delete_shares_for_device(&auth_user.device_id)
@@ -341,14 +359,12 @@ pub async fn begin(
         }
     };
     tracing::info!(
-        "Begin session for device {} (user: {}): encryption key provided, {} pending shares",
+        "Begin session for device {}: {} pending shares",
         auth_user.device_id,
-        auth_user.user.email,
         shares.len()
     );
 
     Ok(Json(BeginResponse {
-        encryption_key,
         device_name: auth_user.device_name,
         shares,
     }))
