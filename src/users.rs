@@ -3,6 +3,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite, SqlitePool};
 use time::OffsetDateTime;
+use crate::utils::format_date_utc;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct User {
@@ -41,8 +42,7 @@ impl DisplayUser {
     /// ### Returns
     /// - `String`: The short creation date
     pub fn get_short_creation_date(&self) -> String {
-        let format = time::format_description::parse("[year]-[month]-[day]").unwrap();
-        self.created_at.format(&format).unwrap_or_default()
+        format_date_utc(&self.created_at)
     }
 
     /// Get the short updated date. Used in the templates to display the updated date in a short format.
@@ -50,8 +50,7 @@ impl DisplayUser {
     /// ### Returns
     /// - `String`: The short updated date
     pub fn get_short_updated_date(&self) -> String {
-        let format = time::format_description::parse("[year]-[month]-[day]").unwrap();
-        self.updated_at.format(&format).unwrap_or_default()
+        format_date_utc(&self.updated_at)
     }
 
     /// Get the short last activity date. Used in the templates to display the last activity date in a short format.
@@ -59,8 +58,7 @@ impl DisplayUser {
     /// ### Returns
     /// - `String`: The short last activity date
     pub fn get_short_last_activity_date(&self) -> String {
-        let format = time::format_description::parse("[year]-[month]-[day]").unwrap();
-        self.last_activity.format(&format).unwrap_or_default()
+        format_date_utc(&self.last_activity)
     }
 
     /// Get the alternative role of the user. Used in the templates.
@@ -519,7 +517,7 @@ impl UserRepository {
     /// - `Ok(())`: The result of the operation if the last_activity was updated successfully
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn update_last_activity(&self, id: i32) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE users SET last_activity = CURRENT_TIMESTAMP WHERE id = ?")
+        sqlx::query("UPDATE users SET last_activity = unixepoch('now') WHERE id = ?")
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -536,7 +534,7 @@ impl UserRepository {
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn increment_shares(&self, id: i32) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "UPDATE users SET shares = shares + 1, last_activity = CURRENT_TIMESTAMP WHERE id = ?",
+            "UPDATE users SET shares = shares + 1, last_activity = unixepoch('now') WHERE id = ?",
         )
         .bind(id)
         .execute(&self.pool)

@@ -141,7 +141,7 @@ impl VerificationCodeRepository {
         .bind(id.clone())
         .bind(email.clone())
         .bind(code_hash)
-        .bind(expires_at)
+        .bind(expires_at.unix_timestamp())
         .bind(purpose.clone())
         .execute(&self.pool)
         .await?;
@@ -220,8 +220,9 @@ impl VerificationCodeRepository {
     /// - `Ok(())`: The result of the operation if the verification code was marked as verified successfully
     /// - `Err(anyhow::Error)`: The error if the operation fails
     pub async fn mark_as_verified(&self, id: String) -> anyhow::Result<()> {
+        let now = OffsetDateTime::now_utc();
         sqlx::query("UPDATE verification_codes SET verified_at = ? WHERE id = ?")
-            .bind(OffsetDateTime::now_utc())
+            .bind(now.unix_timestamp())
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -291,7 +292,7 @@ impl VerificationCodeRepository {
         )
         .bind(email)
         .bind(purpose)
-        .bind(now)
+        .bind(now.unix_timestamp())
         .fetch_one(&self.pool)
         .await?;
         Ok(result.get::<i32, _>(0))
@@ -305,7 +306,7 @@ impl VerificationCodeRepository {
     pub async fn delete_expired(&self) -> Result<u64, sqlx::Error> {
         let now = OffsetDateTime::now_utc();
         let result = sqlx::query("DELETE FROM verification_codes WHERE expires_at < ?")
-            .bind(now)
+            .bind(now.unix_timestamp())
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected())
