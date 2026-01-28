@@ -328,7 +328,7 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
         .with_state(app_state.clone());
     let authenticated_routes = Router::new()
         .route("/api/ping", get(api::handlers::ping))
-        .route("/api/begin", get(api::handlers::begin))
+        .route("/api/begin", post(api::handlers::begin))
         .route("/api/devices", get(api::handlers::get_devices))
         .route(
             "/api/encryption-key",

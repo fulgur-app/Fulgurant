@@ -24,6 +24,7 @@ pub struct Device {
     pub device_key: String, // Hashed API key (private)
     pub name: String,
     pub device_type: String,
+    pub encryption_key: Option<String>, // Base64-encoded 256-bit AES key for encrypting shared files (nullable)
     pub expires_at: OffsetDateTime,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
@@ -150,13 +151,14 @@ impl DeviceRepository {
         } = data;
         let expires_at = now + Duration::days(api_key_lifetime);
         let result = sqlx::query(
-            "INSERT INTO devices (user_id, device_id, device_key, name, device_type, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO devices (user_id, device_id, device_key, name, device_type, encryption_key, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(user_id)
         .bind(&device_id)
         .bind(&device_key)
         .bind(name)
         .bind(device_type)
+        .bind(None::<String>) // encryption_key defaults to NULL
         .bind(expires_at)
         .execute(&self.pool)
         .await?;
@@ -184,6 +186,30 @@ impl DeviceRepository {
             .execute(&self.pool)
             .await?;
         self.get_by_id(id).await
+    }
+
+    /// Update the encryption key for a device
+    ///
+    /// ### Arguments
+    /// - `device_id`: The device ID (UUID)
+    /// - `encryption_key`: The new encryption key
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The result of the operation
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn update_encryption_key(
+        &self,
+        device_id: &str,
+        encryption_key: String,
+    ) -> Result<(), sqlx::Error> {
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        sqlx::query("UPDATE devices SET encryption_key = ?, updated_at = ? WHERE device_id = ?")
+            .bind(encryption_key)
+            .bind(now)
+            .bind(device_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// Renew a device by extending its expiration date
