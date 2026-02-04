@@ -151,7 +151,7 @@ impl DeviceRepository {
         } = data;
         let expires_at = now + Duration::days(api_key_lifetime);
         let result = sqlx::query(
-            "INSERT INTO devices (user_id, device_id, device_key, name, device_type, encryption_key, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO devices (user_id, device_id, device_key, name, device_type, encryption_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(user_id)
         .bind(&device_id)
@@ -160,6 +160,7 @@ impl DeviceRepository {
         .bind(device_type)
         .bind(None::<String>) // encryption_key defaults to NULL
         .bind(expires_at.unix_timestamp())
+        .bind(now.unix_timestamp())
         .execute(&self.pool)
         .await?;
         let id = result.last_insert_rowid() as i32;
