@@ -1,19 +1,19 @@
 use axum::{
-    http::{header, HeaderValue},
+    Router,
+    http::{HeaderValue, header},
     middleware,
     routing::{delete, get, post, put},
-    Router,
 };
 use dotenvy::dotenv;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::{
     net::SocketAddr,
     str::FromStr,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
 };
 use tower_http::{services::ServeDir, set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tower_sessions::{
-    cookie::time::Duration as CookieDuration, Expiry, MemoryStore, SessionManagerLayer,
+    Expiry, MemoryStore, SessionManagerLayer, cookie::time::Duration as CookieDuration,
 };
 
 use crate::shares::ShareRepository;
@@ -50,12 +50,12 @@ pub mod users;
 mod utils;
 mod verification_code;
 
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
+// #[cfg(not(target_env = "msvc"))]
+// use tikv_jemallocator::Jemalloc;
 
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+// #[cfg(not(target_env = "msvc"))]
+// #[global_allocator]
+// static GLOBAL: Jemalloc = Jemalloc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
