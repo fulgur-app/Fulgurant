@@ -2,7 +2,8 @@
 /target/
 **/*.rs.bk
 *.pdb
-/logs/
+*/logs/
+logs/
 
 # Database
 *.db
