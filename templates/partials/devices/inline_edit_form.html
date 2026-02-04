@@ -1,13 +1,9 @@
 <tr class="device-inline-form" id="inline-edit-{{ device.id }}">
     <td colspan="6">
-        <form hx-put="/device/{{ device.id }}"
+        <form class="device-edit-form"
+              hx-put="/device/{{ device.id }}"
               hx-target="#device-{{ device.id }}"
-              hx-swap="outerHTML"
-              hx-on::after-request="
-                if (event.detail.successful) {
-                    this.closest('tr').remove();
-                }
-              ">
+              hx-swap="outerHTML">
             <div class="grid">
                 <label>
                     Name
@@ -25,7 +21,7 @@
                 </label>
                 <div class="submit-container">
                     <div class="container-row gap-1">
-                        <button type="button" class="secondary" hx-on:click="this.closest('tr').remove()">
+                        <button type="button" class="secondary" onclick="document.getElementById('inline-edit-{{ device.id }}').remove()">
                             Cancel
                         </button>
                         <button type="submit" class="inline-submit-button">Save</button>

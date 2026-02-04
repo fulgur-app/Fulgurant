@@ -1,13 +1,9 @@
 <tr class="device-inline-form" id="inline-renew-{{ device.id }}">
     <td colspan="6">
-        <form hx-post="/device/{{ device.id }}/renew"
+        <form class="device-renew-form"
+              hx-post="/device/{{ device.id }}/renew"
               hx-target="#device-{{ device.id }}"
-              hx-swap="outerHTML"
-              hx-on::after-request="
-                if (event.detail.successful) {
-                    this.closest('tr').remove();
-                }
-              ">
+              hx-swap="outerHTML">
             <div class="grid">
                 <label>
                     Extend API Key Lifetime
@@ -21,7 +17,7 @@
                 </label>
                 <div class="submit-container">
                     <div class="container-row gap-1">
-                        <button type="button" class="secondary" hx-on:click="this.closest('tr').remove()">
+                        <button type="button" class="secondary" onclick="document.getElementById('inline-renew-{{ device.id }}').remove()">
                             Cancel
                         </button>
                         <button type="submit" class="inline-submit-button">Renew</button>
