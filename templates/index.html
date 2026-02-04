@@ -233,9 +233,35 @@
         function dismissApiKey() {
             const container = document.getElementById('device-api-key-container');
             if (container) {
-                container.innerHTML = '';
+                container.textContent = '';
             }
         }
+
+        // Prevent opening multiple device forms at once
+        document.body.addEventListener('htmx:beforeRequest', function(event) {
+            const target = event.target;
+            if (target.classList.contains('device-edit-btn') || target.classList.contains('device-renew-btn')) {
+                const existingForm = document.querySelector('.device-inline-form');
+                if (existingForm) {
+                    event.preventDefault();
+                }
+            }
+        });
+
+        // Remove inline forms after successful device update/renew
+        document.body.addEventListener('htmx:afterSwap', function(event) {
+            const target = event.target;
+            const requestConfig = event.detail.requestConfig;
+
+            // Only remove form if it was a PUT/POST (save/renew), not a GET (open)
+            if (target.classList.contains('device-row') &&
+                (requestConfig.verb === 'put' || requestConfig.verb === 'post')) {
+                const nextRow = target.nextElementSibling;
+                if (nextRow && nextRow.classList.contains('device-inline-form')) {
+                    nextRow.remove();
+                }
+            }
+        });
     </script>
 
 {% endblock %}

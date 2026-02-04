@@ -150,8 +150,8 @@ impl ShareRepository {
             r#"
             INSERT INTO shares (
                 id, user_id, source_device_id, destination_device_id,
-                file_hash, file_name, file_size, content, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                file_hash, file_name, file_size, content, created_at, expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&id)
@@ -162,6 +162,7 @@ impl ShareRepository {
         .bind(&data.file_name)
         .bind(file_size)
         .bind(&data.content)
+        .bind(now.unix_timestamp())
         .bind(expires_at.unix_timestamp())
         .execute(&self.pool)
         .await?;
