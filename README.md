@@ -58,10 +58,6 @@ Run tests:
 cargo test
 ```
 
-## Packaging
-
-Proper packaging is yet to be implemented. Until then, Fulgurant must be ran from sources.
-
 ## Configuration
 
 Create a `.env` file in the project root with the following settings:
@@ -125,6 +121,65 @@ SMTP_USERNAME=your-email@example.com
 SMTP_PASSWORD=your-password
 SMTP_FROM=noreply@example.com
 ```
+
+## Running with Docker
+### Steps
+1. **Download docker-compose.yml** 
+
+2. **Edit docker-compose.yml** with your configuration:
+   ```yaml
+   environment:
+     - SMTP_HOST=your-smtp-server.com
+     - SMTP_LOGIN=your-email@example.com
+     - SMTP_PASSWORD=your-password
+     - CAN_REGISTER=false  # Set to true to allow user registration
+   ```
+
+3. **Create the data directory**:
+   ```bash
+   mkdir -p data
+   ```
+
+4. **Start the container**:
+   ```bash
+   docker-compose up -d
+   ```
+
+5. **Create the first admin user**:
+   - Navigate to `http://localhost:3000/setup`
+   - Follow the setup wizard
+
+6. **View logs**:
+   ```bash
+   docker-compose logs -f fulgurant
+   ```
+
+### Configuration
+#### Required Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `SMTP_HOST` | SMTP server hostname | `smtp.mail.ovh.net` |
+| `SMTP_PORT` | SMTP server port | `587` |
+| `SMTP_LOGIN` | SMTP username | `mail@example.com` |
+| `SMTP_PASSWORD` | SMTP password | `your_password` |
+
+#### Optional Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `sqlite:/data/fulgurant.db` | SQLite database path |
+| `BIND_HOST` | `0.0.0.0` | Bind address (0.0.0.0 for all interfaces) |
+| `BIND_PORT` | `3000` | Port to listen on |
+| `IS_PROD` | `true` | Production mode (true/false) |
+| `CAN_REGISTER` | `false` | Allow user registration |
+| `MAX_DEVICES_PER_USER` | `10` | Maximum devices per user |
+| `SHARE_VALIDITY_DAYS` | `3` | Days until shares expire |
+| `SSE_HEARTBEAT_SECONDS` | `30` | SSE keep-alive interval |
+| `RUST_LOG` | `info` | Log level (trace, debug, info, warn, error) |
+| `LOG_FOLDER` | `/data/logs` | Log file directory |
+| `PUID` | `1000` | User ID for file permissions |
+| `PGID` | `1000` | Group ID for file permissions |
 
 ## Database Migrations
 
