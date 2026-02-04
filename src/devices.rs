@@ -1,6 +1,7 @@
-use chrono::{DateTime, Utc};
+use crate::utils::{format_date_utc, format_datetime_utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Row, Sqlite, SqlitePool};
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 pub const MAX_DEVICES_PER_USER: i32 = 99;
@@ -24,9 +25,10 @@ pub struct Device {
     pub device_key: String, // Hashed API key (private)
     pub name: String,
     pub device_type: String,
-    pub expires_at: DateTime<Utc>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub encryption_key: Option<String>, // Base64-encoded 256-bit AES key for encrypting shared files (nullable)
+    pub expires_at: OffsetDateTime,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
 }
 
 impl Device {
@@ -35,7 +37,7 @@ impl Device {
     /// ### Returns
     /// - `true`: If the device has expired, `false` otherwise
     pub fn is_expired(&self) -> bool {
-        self.expires_at < Utc::now()
+        self.expires_at < OffsetDateTime::now_utc()
     }
 
     /// Get the created at date formatted as YYYY-MM-DD
@@ -43,7 +45,7 @@ impl Device {
     /// ### Returns
     /// - `String`: The created at date formatted as YYYY-MM-DD
     pub fn get_created_at_formatted(&self) -> String {
-        self.created_at.format("%Y-%m-%d").to_string()
+        format_date_utc(&self.created_at)
     }
 
     /// Get the updated at date formatted as YYYY-MM-DD HH:MM:SS
@@ -51,7 +53,11 @@ impl Device {
     /// ### Returns
     /// - `String`: The updated at date formatted as YYYY-MM-DD HH:MM:SS
     pub fn get_updated_at_formatted(&self) -> String {
-        self.updated_at.format("%Y-%m-%d %H:%M:%S").to_string()
+        if self.updated_at == OffsetDateTime::UNIX_EPOCH {
+            "Never".to_string()
+        } else {
+            format_datetime_utc(&self.updated_at)
+        }
     }
 
     /// Get the expires at date formatted as YYYY-MM-DD
@@ -59,16 +65,13 @@ impl Device {
     /// ### Returns
     /// - `String`: The expires at date formatted as YYYY-MM-DD
     pub fn get_expires_at_formatted(&self) -> String {
-        if self
-            .expires_at
-            .format("%Y-%m-%d")
-            .to_string()
-            .starts_with("21")
+        let formatted = format_date_utc(&self.expires_at);
+        if formatted.starts_with("21")
         // TODO: Remove this once we have a better way to handle expired devices
         {
             "Never".to_string()
         } else {
-            self.expires_at.format("%Y-%m-%d").to_string()
+            formatted
         }
     }
 }
@@ -139,25 +142,24 @@ impl DeviceRepository {
         device_key: String,
         data: CreateDevice,
     ) -> Result<Device, sqlx::Error> {
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         let device_id = Uuid::new_v4().to_string();
         let CreateDevice {
             name,
             device_type,
             api_key_lifetime,
         } = data;
-        let expires_at = now
-            .checked_add_signed(chrono::Duration::days(api_key_lifetime))
-            .unwrap();
+        let expires_at = now + Duration::days(api_key_lifetime);
         let result = sqlx::query(
-            "INSERT INTO devices (user_id, device_id, device_key, name, device_type, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO devices (user_id, device_id, device_key, name, device_type, encryption_key, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(user_id)
         .bind(&device_id)
         .bind(&device_key)
         .bind(name)
         .bind(device_type)
-        .bind(expires_at)
+        .bind(None::<String>) // encryption_key defaults to NULL
+        .bind(expires_at.unix_timestamp())
         .execute(&self.pool)
         .await?;
         let id = result.last_insert_rowid() as i32;
@@ -174,16 +176,36 @@ impl DeviceRepository {
     /// - `Ok(Device)`: The updated device
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn update(&self, id: i32, data: UpdateDevice) -> Result<Device, sqlx::Error> {
-        let now = Utc::now().timestamp();
         let UpdateDevice { name, device_type } = data;
-        sqlx::query("UPDATE devices SET name = ?, device_type = ?, updated_at = ? WHERE id = ?")
+        sqlx::query("UPDATE devices SET name = ?, device_type = ?, updated_at = unixepoch('now') WHERE id = ?")
             .bind(name)
             .bind(device_type)
-            .bind(now)
             .bind(id)
             .execute(&self.pool)
             .await?;
         self.get_by_id(id).await
+    }
+
+    /// Update the encryption key for a device
+    ///
+    /// ### Arguments
+    /// - `device_id`: The device ID (UUID)
+    /// - `encryption_key`: The new encryption key
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The result of the operation
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn update_encryption_key(
+        &self,
+        device_id: &str,
+        encryption_key: String,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE devices SET encryption_key = ?, updated_at = unixepoch('now') WHERE device_id = ?")
+            .bind(encryption_key)
+            .bind(device_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// Renew a device by extending its expiration date
@@ -196,14 +218,12 @@ impl DeviceRepository {
     /// - `Ok(Device)`: The renewed device
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn renew(&self, id: i32, data: RenewDevice) -> Result<Device, sqlx::Error> {
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         let RenewDevice { api_key_lifetime } = data;
-        let new_expires_at = now
-            .checked_add_signed(chrono::Duration::days(api_key_lifetime))
-            .unwrap();
+        let new_expires_at = now + Duration::days(api_key_lifetime);
         sqlx::query("UPDATE devices SET expires_at = ?, updated_at = ? WHERE id = ?")
-            .bind(new_expires_at)
-            .bind(now.timestamp())
+            .bind(new_expires_at.unix_timestamp())
+            .bind(now.unix_timestamp())
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -243,7 +263,7 @@ impl DeviceRepository {
             .await
     }
 
-    /// Get a device by device ID               
+    /// Get a device by device ID
     ///
     /// ### Arguments
     /// - `device_id`: The device ID
@@ -258,7 +278,7 @@ impl DeviceRepository {
             .await
     }
 
-    /// Get a device by device key  
+    /// Get a device by device key
     ///
     /// ### Arguments
     /// - `device_key`: The device key

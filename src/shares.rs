@@ -1,10 +1,11 @@
-use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Sqlite, SqlitePool};
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::devices::Device;
+use crate::utils::format_datetime_utc;
 
 // Default validity period for shares (3 days)
 pub const SHARE_VALIDITY_DAYS: i64 = 3;
@@ -29,8 +30,8 @@ pub struct Share {
     pub file_name: String,
     pub file_size: i32,
     pub content: String,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub created_at: OffsetDateTime,
+    pub expires_at: OffsetDateTime,
 }
 
 impl Share {
@@ -39,7 +40,7 @@ impl Share {
     /// ### Returns
     /// - `true`: If the share has expired, `false` otherwise
     pub fn is_expired(&self) -> bool {
-        self.expires_at < Utc::now()
+        self.expires_at < OffsetDateTime::now_utc()
     }
 
     /// Convert the share to a display share
@@ -64,15 +65,15 @@ impl Share {
             Some(d) => d.name.clone(),
             None => "Unknown".to_string(),
         };
-        let created_at = self.created_at.format("%Y-%m-%d %H:%M:%S").to_string();
-        let expires_at = self.expires_at.format("%Y-%m-%d %H:%M:%S").to_string();
+        let created_at = format_datetime_utc(&self.created_at);
+        let expires_at = format_datetime_utc(&self.expires_at);
         DisplayShare {
             id: self.id.clone(),
             file_name: self.file_name.clone(),
             from: from,
             to: to,
-            created_at: created_at.clone(),
-            expires_at: expires_at.clone(),
+            created_at: created_at,
+            expires_at: expires_at,
         }
     }
 }
@@ -143,7 +144,7 @@ impl ShareRepository {
                 MAX_FILE_SIZE
             ));
         }
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         let expires_at = now + Duration::days(SHARE_VALIDITY_DAYS);
         sqlx::query(
             r#"
@@ -161,7 +162,7 @@ impl ShareRepository {
         .bind(&data.file_name)
         .bind(file_size)
         .bind(&data.content)
-        .bind(expires_at)
+        .bind(expires_at.unix_timestamp())
         .execute(&self.pool)
         .await?;
         self.get_by_id(&id).await
@@ -223,7 +224,7 @@ impl ShareRepository {
     /// - `Ok(Vec<Share>)`: The shares for the device that were deleted
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn delete_expired(&self) -> Result<u64, sqlx::Error> {
-        let result = sqlx::query("DELETE FROM shares WHERE expires_at < datetime('now')")
+        let result = sqlx::query("DELETE FROM shares WHERE expires_at < unixepoch('now')")
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected())
@@ -243,7 +244,7 @@ impl ShareRepository {
             r#"
             SELECT * FROM shares
             WHERE destination_device_id = ?
-            AND expires_at > datetime('now')
+            AND expires_at > unixepoch('now')
             ORDER BY created_at DESC
             "#,
         )
@@ -272,7 +273,7 @@ impl ShareRepository {
             r#"
             DELETE FROM shares
             WHERE destination_device_id = ?
-            AND expires_at > datetime('now')
+            AND expires_at > unixepoch('now')
             RETURNING *
             "#,
         )

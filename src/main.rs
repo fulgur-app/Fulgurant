@@ -9,16 +9,19 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::{
     net::SocketAddr,
     str::FromStr,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{atomic::AtomicBool, Arc},
 };
 use tower_http::{services::ServeDir, set_header::SetResponseHeaderLayer, trace::TraceLayer};
-use tower_sessions::{cookie::time::Duration as CookieDuration, Expiry, MemoryStore, SessionManagerLayer};
+use tower_sessions::{
+    cookie::time::Duration as CookieDuration, Expiry, MemoryStore, SessionManagerLayer,
+};
 
 use crate::shares::ShareRepository;
 use crate::verification_code::VerificationCodeRepository;
 
 mod access_token;
-mod api_key;
+pub mod api_key;
+mod database_backup;
 mod errors;
 mod auth {
     pub(crate) mod handlers;
@@ -43,7 +46,8 @@ mod logging;
 mod mail;
 pub mod shares;
 mod templates;
-mod users;
+pub mod users;
+mod utils;
 mod verification_code;
 
 #[cfg(not(target_env = "msvc"))]
@@ -69,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("========================================");
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let options = SqliteConnectOptions::from_str(database_url.as_str())?
-        .create_if_missing(true)  
+        .create_if_missing(true)
         .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
         .busy_timeout(std::time::Duration::from_secs(30));
     let connection = SqlitePoolOptions::new()
@@ -97,13 +101,15 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("SSE heartbeat interval: {} seconds", sse_heartbeat_seconds);
     let sse_manager = Arc::new(api::sse::SseChannelManager::new());
     tracing::info!("SSE channel manager initialized");
-    let jwt_secret = std::env::var("JWT_SECRET").expect(
-        "JWT_SECRET must be set. Generate with: openssl rand -base64 32"
-    );
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .expect("JWT_SECRET must be set. Generate with: openssl rand -base64 32");
     if jwt_secret.len() < 32 {
         panic!("JWT_SECRET must be at least 32 characters for security");
     }
-    tracing::info!("JWT secret loaded (length: {} characters)", jwt_secret.len());
+    tracing::info!(
+        "JWT secret loaded (length: {} characters)",
+        jwt_secret.len()
+    );
     let jwt_expiry_seconds = std::env::var("JWT_EXPIRY_SECONDS")
         .unwrap_or_else(|_| "900".to_string())
         .parse::<i64>()
@@ -157,6 +163,8 @@ async fn main() -> anyhow::Result<()> {
     make_share_cleanup_task(cleanup_share_repo);
     let cleanup_verification_repo = app_state.verification_code_repository.clone();
     make_verification_code_cleanup_task(cleanup_verification_repo);
+    let backup_pool = connection.clone();
+    database_backup::make_daily_backup_task(backup_pool);
     let bind_host = std::env::var("BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()); // default to localhost only for safety
     let bind_port = std::env::var("BIND_PORT")
         .unwrap_or_else(|_| "3000".to_string())
@@ -176,12 +184,10 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("Certificate: {}", cert_path);
             tracing::info!("Private key: {}", key_path);
             let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-            let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-                cert_path,
-                key_path,
-            )
-            .await
-            .expect("Failed to load TLS certificate and key");
+            let tls_config =
+                axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path)
+                    .await
+                    .expect("Failed to load TLS certificate and key");
             tracing::info!("Server starting on https://{}", addr);
             axum_server::bind_rustls(addr, tls_config)
                 .serve(app.into_make_service_with_connect_info::<SocketAddr>())
@@ -189,7 +195,9 @@ async fn main() -> anyhow::Result<()> {
         }
         _ => {
             tracing::info!("TLS disabled - running HTTP only");
-            tracing::warn!("For production, configure TLS_CERT_PATH and TLS_KEY_PATH environment variables");
+            tracing::warn!(
+                "For production, configure TLS_CERT_PATH and TLS_KEY_PATH environment variables"
+            );
             tracing::info!("Server starting on http://{}", addr);
             let listener = tokio::net::TcpListener::bind(addr).await?;
             axum::serve(
@@ -203,14 +211,17 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Make the auth routes
-/// 
+///
 /// ### Arguments
 /// - `app_state`: The state of the application
 /// - `session_layer`: The session layer
-/// 
+///
 /// ### Returns
 /// - `Router`: The router that handles the auth routes
-fn make_auth_routes(app_state: &handlers::AppState, session_layer: SessionManagerLayer<MemoryStore>) -> Router {
+fn make_auth_routes(
+    app_state: &handlers::AppState,
+    session_layer: SessionManagerLayer<MemoryStore>,
+) -> Router {
     let auth_governor_conf = Arc::new(
         tower_governor::governor::GovernorConfigBuilder::default()
             .period(std::time::Duration::from_secs(6)) // 10 requests/min = 1 per 6s
@@ -274,17 +285,20 @@ fn make_public_routes(app_state: &handlers::AppState) -> Router {
 }
 
 /// Make the admin routes
-/// 
+///
 /// ### Arguments
 /// - `app_state`: The state of the application
-/// 
+///
 /// ### Returns
 /// - `Router`: The router that handles the admin routes
 fn make_admin_routes(app_state: &handlers::AppState) -> Router<handlers::AppState> {
     Router::new()
         .route("/admin", get(admin::handlers::get_admin))
         .route("/admin/users/search", get(admin::handlers::search_users))
-        .route("/user/{id}/change-role", post(admin::handlers::change_user_role))
+        .route(
+            "/user/{id}/change-role",
+            post(admin::handlers::change_user_role),
+        )
         .route("/user/{id}", delete(admin::handlers::delete_user))
         .layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
@@ -293,10 +307,10 @@ fn make_admin_routes(app_state: &handlers::AppState) -> Router<handlers::AppStat
 }
 
 /// Make the api routes
-/// 
+///
 /// ### Arguments
 /// - `app_state`: The state of the application
-/// 
+///
 /// ### Returns
 /// - `Router`: The router that handles the api routes
 fn make_api_routes(app_state: &handlers::AppState) -> Router {
@@ -314,7 +328,7 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
         .with_state(app_state.clone());
     let authenticated_routes = Router::new()
         .route("/api/ping", get(api::handlers::ping))
-        .route("/api/begin", get(api::handlers::begin))
+        .route("/api/begin", post(api::handlers::begin))
         .route("/api/devices", get(api::handlers::get_devices))
         .route(
             "/api/encryption-key",
@@ -340,7 +354,10 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
 ///
 /// ### Returns
 /// - `Router`: The router that handles the web routes
-fn make_web_routes(app_state: &handlers::AppState, session_layer: SessionManagerLayer<MemoryStore>) -> Router {
+fn make_web_routes(
+    app_state: &handlers::AppState,
+    session_layer: SessionManagerLayer<MemoryStore>,
+) -> Router {
     Router::new()
         .merge(make_public_routes(app_state))
         .merge(make_protected_routes(app_state))
@@ -373,10 +390,10 @@ fn make_web_routes(app_state: &handlers::AppState, session_layer: SessionManager
 }
 
 /// Make the protected routes
-/// 
+///
 /// ### Arguments
 /// - `app_state`: The state of the application
-/// 
+///
 /// ### Returns
 /// - `Router`: The router that handles the protected routes
 fn make_protected_routes(app_state: &handlers::AppState) -> Router {
@@ -410,7 +427,7 @@ fn make_protected_routes(app_state: &handlers::AppState) -> Router {
 }
 
 /// Make the share cleanup task. Runs every hour.
-/// 
+///
 /// ### Arguments
 /// - `share_repository`: The share repository
 fn make_share_cleanup_task(share_repository: ShareRepository) {
@@ -436,7 +453,7 @@ fn make_share_cleanup_task(share_repository: ShareRepository) {
 }
 
 /// Make the verification code cleanup task. Runs every minute.
-/// 
+///
 /// ### Arguments
 /// - `verification_code_repository`: The verification code repository
 fn make_verification_code_cleanup_task(verification_code_repository: VerificationCodeRepository) {

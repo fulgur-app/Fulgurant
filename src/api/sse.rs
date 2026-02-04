@@ -5,11 +5,11 @@ use axum::{
     response::sse::{Event, KeepAlive, Sse},
     Extension,
 };
-use chrono::Utc;
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, time::Duration};
 use tagged_channels::TaggedChannels;
+use time::OffsetDateTime;
 
 /// Tag enum for identifying SSE channels by device ID
 #[derive(Clone, Eq, Hash, PartialEq, Debug)]
@@ -62,8 +62,11 @@ pub async fn handle_sse_connection(
         loop {
             tokio::select! {
                 _ = interval.tick() => {
+                    let timestamp = OffsetDateTime::now_utc()
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_default();
                     let heartbeat = serde_json::json!({
-                        "timestamp": Utc::now().to_rfc3339()
+                        "timestamp": timestamp
                     });
                     tracing::debug!(device_id = ?device_id, "Sending heartbeat");
                     yield Ok(Event::default()

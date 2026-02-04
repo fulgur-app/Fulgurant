@@ -2,10 +2,10 @@ use argon2::{
     password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
 };
-use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Row, Sqlite, SqlitePool};
+use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 const VERIFICATION_CODE_EXPIRATION_MINUTES: i64 = 5;
@@ -92,9 +92,9 @@ pub struct VerificationCode {
     pub code_hash: String,
     pub attempts: i32,
     pub max_attempts: i32,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
-    pub verified_at: Option<DateTime<Utc>>,
+    pub created_at: OffsetDateTime,
+    pub expires_at: OffsetDateTime,
+    pub verified_at: Option<OffsetDateTime>,
     pub purpose: String,
 }
 
@@ -133,14 +133,15 @@ impl VerificationCodeRepository {
     ) -> anyhow::Result<VerificationCode> {
         let code_hash = hash_code(&code);
         let id = Uuid::new_v4().to_string();
-        let expires_at = Utc::now() + Duration::minutes(VERIFICATION_CODE_EXPIRATION_MINUTES);
+        let expires_at =
+            OffsetDateTime::now_utc() + Duration::minutes(VERIFICATION_CODE_EXPIRATION_MINUTES);
         sqlx::query(
             "INSERT INTO verification_codes (id, email, code_hash, expires_at, purpose) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(id.clone())
         .bind(email.clone())
         .bind(code_hash)
-        .bind(expires_at)
+        .bind(expires_at.unix_timestamp())
         .bind(purpose.clone())
         .execute(&self.pool)
         .await?;
@@ -219,8 +220,9 @@ impl VerificationCodeRepository {
     /// - `Ok(())`: The result of the operation if the verification code was marked as verified successfully
     /// - `Err(anyhow::Error)`: The error if the operation fails
     pub async fn mark_as_verified(&self, id: String) -> anyhow::Result<()> {
+        let now = OffsetDateTime::now_utc();
         sqlx::query("UPDATE verification_codes SET verified_at = ? WHERE id = ?")
-            .bind(Utc::now())
+            .bind(now.unix_timestamp())
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -249,11 +251,7 @@ impl VerificationCodeRepository {
             None => return Ok(VerificationResult::NotFound),
         };
 
-        let expires_at = DateTime::parse_from_rfc3339(&verification_code.expires_at.to_rfc3339())
-            .map_err(|e| sqlx::Error::Protocol(format!("Date parse error: {}", e)))?
-            .with_timezone(&Utc);
-
-        if Utc::now() > expires_at {
+        if OffsetDateTime::now_utc() > verification_code.expires_at {
             return Ok(VerificationResult::Expired);
         }
 
@@ -288,13 +286,13 @@ impl VerificationCodeRepository {
         email: String,
         purpose: String,
     ) -> Result<i32, sqlx::Error> {
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         let result = sqlx::query(
             "SELECT COUNT(*) FROM verification_codes WHERE email = ? AND purpose = ? AND expires_at > ?"
         )
         .bind(email)
         .bind(purpose)
-        .bind(now)
+        .bind(now.unix_timestamp())
         .fetch_one(&self.pool)
         .await?;
         Ok(result.get::<i32, _>(0))
@@ -306,9 +304,9 @@ impl VerificationCodeRepository {
     /// - `Ok(u64)`: The number of deleted verification codes
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn delete_expired(&self) -> Result<u64, sqlx::Error> {
-        let now = Utc::now();
+        let now = OffsetDateTime::now_utc();
         let result = sqlx::query("DELETE FROM verification_codes WHERE expires_at < ?")
-            .bind(now)
+            .bind(now.unix_timestamp())
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected())

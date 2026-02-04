@@ -1,3 +1,5 @@
+use crate::utils::{is_password_valid, is_valid_email};
+use crate::{auth::handlers::hash_password, errors::AppError, handlers::AppState, templates};
 use askama::Template;
 use axum::{
     extract::State,
@@ -7,13 +9,6 @@ use axum::{
 };
 use serde::Deserialize;
 use tower_sessions::Session;
-use fulgurant::utils::{is_valid_email, is_password_valid};
-use crate::{
-    auth::handlers::hash_password,
-    errors::AppError,
-    handlers::AppState,
-    templates,
-};
 
 const SESSION_USER_ID: &str = "user_id";
 
@@ -42,12 +37,16 @@ pub async fn get_setup_page(
         AppError::InternalError(anyhow::anyhow!("Failed to check for admin: {}", e))
     })?;
     if has_admin {
-        tracing::warn!("Attempted access to /setup but admin already exists - redirecting to /login");
+        tracing::warn!(
+            "Attempted access to /setup but admin already exists - redirecting to /login"
+        );
         return Ok(Redirect::to("/login").into_response());
     }
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+        })?;
     let template = templates::SetupTemplate {
         error_message: String::new(),
         email: String::new(),
@@ -75,21 +74,24 @@ pub async fn create_admin(
 ) -> Result<Response, AppError> {
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e)))?;
-    
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+        })?;
+
     let has_admin = state.user_repository.has_admin().await.map_err(|e| {
         AppError::InternalError(anyhow::anyhow!("Failed to check for admin: {}", e))
     })?;
     if has_admin {
-        tracing::warn!("Attempted to create admin via /setup but admin already exists - rejecting request");
+        tracing::warn!(
+            "Attempted to create admin via /setup but admin already exists - rejecting request"
+        );
         let mut response = Response::builder()
             .status(StatusCode::OK)
             .body("".to_string())
             .unwrap();
-        response.headers_mut().insert(
-            "HX-Redirect",
-            HeaderValue::from_static("/login")
-        );
+        response
+            .headers_mut()
+            .insert("HX-Redirect", HeaderValue::from_static("/login"));
         return Ok(response.into_response());
     }
     let first_name = request.first_name.trim();
@@ -153,14 +155,15 @@ pub async fn create_admin(
         .map_err(|e| {
             AppError::InternalError(anyhow::anyhow!("Failed to set user id in session: {}", e))
         })?;
-    state.setup_needed.store(false, std::sync::atomic::Ordering::Relaxed);
+    state
+        .setup_needed
+        .store(false, std::sync::atomic::Ordering::Relaxed);
     let mut response = Response::builder()
         .status(StatusCode::OK)
         .body("".to_string())
         .unwrap();
-    response.headers_mut().insert(
-        "HX-Redirect",
-        HeaderValue::from_static("/")
-    );
+    response
+        .headers_mut()
+        .insert("HX-Redirect", HeaderValue::from_static("/"));
     Ok(response.into_response())
 }

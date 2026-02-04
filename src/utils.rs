@@ -1,5 +1,6 @@
 use lazy_static::lazy_static;
 use regex::Regex;
+use time::OffsetDateTime;
 
 lazy_static! {
     static ref EMAIL_REGEX: Regex = Regex::new(
@@ -35,6 +36,43 @@ pub fn is_password_valid(password: &str) -> bool {
         return false;
     }
     true
+}
+
+/// Format timestamp as YYYY-MM-DD HH:MM:SS UTC
+///
+/// ### Arguments
+/// - `dt`: The OffsetDateTime to format
+///
+/// ### Returns
+/// - Formatted string in the format "YYYY-MM-DD HH:MM:SS"
+pub fn format_datetime_utc(dt: &OffsetDateTime) -> String {
+    let dt_utc = dt.to_offset(time::UtcOffset::UTC);
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        dt_utc.year(),
+        dt_utc.month() as u8,
+        dt_utc.day(),
+        dt_utc.hour(),
+        dt_utc.minute(),
+        dt_utc.second()
+    )
+}
+
+/// Format timestamp as YYYY-MM-DD UTC
+///
+/// ### Arguments
+/// - `dt`: The OffsetDateTime to format
+///
+/// ### Returns
+/// - Formatted string in the format "YYYY-MM-DD"
+pub fn format_date_utc(dt: &OffsetDateTime) -> String {
+    let dt_utc = dt.to_offset(time::UtcOffset::UTC);
+    format!(
+        "{:04}-{:02}-{:02}",
+        dt_utc.year(),
+        dt_utc.month() as u8,
+        dt_utc.day()
+    )
 }
 
 #[cfg(test)]
