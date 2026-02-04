@@ -300,6 +300,7 @@ fn make_admin_routes(app_state: &handlers::AppState) -> Router<handlers::AppStat
             post(admin::handlers::change_user_role),
         )
         .route("/user/{id}", delete(admin::handlers::delete_user))
+        .route("/user/create", post(admin::handlers::create_user_from_admin))
         .layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             admin::middleware::require_admin,

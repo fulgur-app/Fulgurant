@@ -1,13 +1,13 @@
 use crate::utils::{is_password_valid, is_valid_email};
 use argon2::{
-    password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+    password_hash::{SaltString, rand_core::OsRng},
 };
 use askama::Template;
 use axum::{
+    Form,
     extract::{Query, State},
     response::{Html, IntoResponse, Response},
-    Form,
 };
 use serde::Deserialize;
 use tower_sessions::Session;
@@ -17,7 +17,7 @@ use crate::{
     handlers::AppState,
     logging::sanitize_for_log,
     templates::{self, LoginTemplate},
-    verification_code::{self, generate_code, VerificationResult},
+    verification_code::{self, VerificationResult, generate_code},
 };
 
 const SESSION_USER_ID: &str = "user_id";
@@ -260,7 +260,7 @@ pub async fn register_step_1(
             return Err(AppError::InternalError(anyhow::anyhow!(
                 "Failed to get user by email: {:?}",
                 e.to_string()
-            )))
+            )));
         }
     };
     if !is_password_valid(password) {
@@ -295,6 +295,7 @@ pub async fn register_step_1(
             first_name.to_string(),
             last_name.to_string(),
             password_hash,
+            false,
         )
         .await
         .map_err(|e| {
@@ -332,7 +333,7 @@ pub async fn register_step_2(
             return Err(AppError::InternalError(anyhow::anyhow!(
                 "Failed to get user by email: {:?}",
                 e.to_string()
-            )))
+            )));
         }
     };
     let verification_result = match state

@@ -1,4 +1,8 @@
-use crate::{devices::Device, shares::DisplayShare, users::{DisplayUser, User}};
+use crate::{
+    devices::Device,
+    shares::DisplayShare,
+    users::{DisplayUser, User},
+};
 use askama::Template;
 
 /// User context for templates - represents the authenticated user (if any)
@@ -12,7 +16,7 @@ pub struct UserContext {
 
 impl UserContext {
     /// Create a new UserContext
-    /// 
+    ///
     /// ### Arguments
     /// - `user_id`: The ID of the user
     /// - `first_name`: The first name of the user
@@ -21,7 +25,12 @@ impl UserContext {
     /// ### Returns
     /// - `UserContext`: The UserContext
     pub fn new(user_id: i32, first_name: String, role: String, shares: i32) -> Self {
-        Self { user_id, first_name, role, shares }
+        Self {
+            user_id,
+            first_name,
+            role,
+            shares,
+        }
     }
 
     /// Create a new UserContext from a User
@@ -32,7 +41,12 @@ impl UserContext {
     /// ### Returns
     /// - `UserContext`: The UserContext
     pub fn from(user: &User) -> Self {
-        Self::new(user.id, user.first_name.clone(), user.role.clone(), user.shares)
+        Self::new(
+            user.id,
+            user.first_name.clone(),
+            user.role.clone(),
+            user.shares,
+        )
     }
     /// Check if the user is an admin
     ///
@@ -300,4 +314,21 @@ pub struct RoleChangeSuccessTemplate {
 pub struct DeleteUserSuccessTemplate {
     pub first_name: String,
     pub last_name: String,
+}
+
+/// User creation response template (includes user row and password display)
+#[derive(Template)]
+#[template(path = "partials/admin/user_creation_response.html")]
+pub struct UserCreationResponseTemplate {
+    pub display_user: crate::users::DisplayUser,
+    pub user: UserContext,
+    pub password: String,
+}
+
+/// User row template (for HTMX updates)
+#[derive(Template)]
+#[template(path = "partials/admin/user_row.html")]
+pub struct UserRowTemplate {
+    pub display_user: crate::users::DisplayUser,
+    pub user: UserContext,
 }

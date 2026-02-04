@@ -1,9 +1,9 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use crate::utils::format_date_utc;
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite, SqlitePool};
 use time::OffsetDateTime;
-use crate::utils::format_date_utc;
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct User {
@@ -183,6 +183,7 @@ impl UserRepository {
     /// - `first_name`: The first name of the user
     /// - `last_name`: The last name of the user
     /// - `password_hash`: The password hash of the user
+    /// - `is_email_verified`: Whether the email is verified
     ///
     /// ### Returns
     /// - `Ok(i32)`: The ID of the created user
@@ -193,16 +194,21 @@ impl UserRepository {
         first_name: String,
         last_name: String,
         password_hash: String,
+        is_email_verified: bool,
     ) -> Result<i32, sqlx::Error> {
         let encryption_key = generate_encryption_key();
+        let now = OffsetDateTime::now_utc().unix_timestamp();
         let result = sqlx::query(
-            "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(email)
         .bind(first_name)
         .bind(last_name)
         .bind(password_hash)
         .bind(encryption_key)
+        .bind(is_email_verified)
+        .bind(now)
+        .bind(now)
         .execute(&self.pool)
         .await?;
         let id = result.last_insert_rowid() as i32;
