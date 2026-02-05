@@ -41,6 +41,18 @@ pub struct AppState {
     pub jwt_expiry_seconds: i64,
 }
 
+/// Fallback handler for 404 Not Found
+///
+/// ### Returns
+/// - `(StatusCode, Html<String>)`: The 404 page with proper status code
+pub async fn not_found() -> impl IntoResponse {
+    let template = templates::NotFoundTemplate {};
+    match template.render() {
+        Ok(html) => (StatusCode::NOT_FOUND, Html(html)),
+        Err(_) => (StatusCode::NOT_FOUND, Html("404 - Not Found".to_string())),
+    }
+}
+
 /// GET / - Returns the index page
 ///
 /// ### Arguments

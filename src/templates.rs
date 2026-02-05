@@ -136,6 +136,11 @@ pub struct DeviceCreationResponseTemplate {
 #[template(path = "logout.html")]
 pub struct LogoutTemplate {}
 
+/// 404 Not Found page template
+#[derive(Template)]
+#[template(path = "404.html")]
+pub struct NotFoundTemplate {}
+
 /// Login page template
 #[derive(Template)]
 #[template(path = "login.html")]

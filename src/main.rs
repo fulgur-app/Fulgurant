@@ -158,7 +158,8 @@ async fn main() -> anyhow::Result<()> {
         .merge(auth_routes)
         .merge(web_routes)
         .merge(api_routes)
-        .nest_service("/assets", assets_service);
+        .nest_service("/assets", assets_service)
+        .fallback(handlers::not_found);
     let cleanup_share_repo = app_state.share_repository.clone();
     make_share_cleanup_task(cleanup_share_repo);
     let cleanup_verification_repo = app_state.verification_code_repository.clone();
