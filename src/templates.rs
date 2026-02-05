@@ -131,7 +131,12 @@ pub struct DeviceCreationResponseTemplate {
     pub api_key: String,
 }
 
-/// Empty state template
+/// Logout page template
+#[derive(Template)]
+#[template(path = "logout.html")]
+pub struct LogoutTemplate {}
+
+/// Login page template
 #[derive(Template)]
 #[template(path = "login.html")]
 pub struct LoginTemplate {

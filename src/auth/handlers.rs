@@ -279,29 +279,17 @@ pub async fn get_register_page(
 /// POST /logout - Logs out a user
 ///
 /// ### Arguments
-/// - `state`: The state of the application
 /// - `session`: The session
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The response
+/// - `Ok(Html<String>)`: The logout page
 /// - `Err(AppError)`: An error occurred while logging out the user
-pub async fn logout(
-    State(state): State<AppState>,
-    session: Session,
-) -> Result<Html<String>, AppError> {
+pub async fn logout(session: Session) -> Result<Html<String>, AppError> {
     session
         .delete()
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
-    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
-        .await
-        .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
-        })?;
-    let template = templates::LoginTemplate {
-        can_register: state.can_register,
-        csrf_token,
-    };
+    let template = templates::LogoutTemplate {};
     Ok(Html(template.render()?))
 }
 
