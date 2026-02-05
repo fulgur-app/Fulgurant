@@ -275,6 +275,31 @@ impl UserRepository {
         Ok(())
     }
 
+    /// Toggle the force_password_update flag for a user
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the user
+    ///
+    /// ### Returns
+    /// - `Ok(DisplayUser)`: The updated user
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn toggle_force_password_update(
+        &self,
+        id: i32,
+    ) -> Result<DisplayUser, sqlx::Error> {
+        sqlx::query(
+            "UPDATE users SET force_password_update = NOT force_password_update WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        let updated_user = self
+            .get_by_id(id)
+            .await?
+            .ok_or(sqlx::Error::RowNotFound)?;
+        Ok(updated_user.into())
+    }
+
     /// Mark a user as verified
     ///
     /// ### Arguments

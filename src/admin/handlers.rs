@@ -175,6 +175,44 @@ pub async fn change_user_role(
     Ok(Html(template.render()?))
 }
 
+/// POST /user/{id}/toggle-force-password-update - Toggle the force_password_update flag for a user
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+/// - `id`: The ID of the user to toggle force password update for
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The updated user row as formatted HTML
+/// - `Err(AppError)`: Error that occurred while toggling the flag
+pub async fn toggle_force_password_update(
+    State(state): State<AppState>,
+    session: Session,
+    axum::extract::Path(id): axum::extract::Path<i32>,
+) -> Result<Html<String>, AppError> {
+    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
+        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
+    })?;
+    let user_id = match user_id {
+        Some(id) => id,
+        None => return Err(AppError::Unauthorized),
+    };
+    let user = state.user_repository.get_by_id(user_id).await?;
+    let user = match user {
+        Some(user) => user,
+        None => return Err(AppError::Unauthorized),
+    };
+    let updated_user = state
+        .user_repository
+        .toggle_force_password_update(id)
+        .await?;
+    let template = templates::UserRowTemplate {
+        display_user: updated_user,
+        user: templates::UserContext::from(&user),
+    };
+    Ok(Html(template.render()?))
+}
+
 /// DELETE /user/{id} - Delete a user
 ///
 /// ### Arguments

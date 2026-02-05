@@ -303,6 +303,10 @@ fn make_admin_routes(app_state: &handlers::AppState) -> Router<handlers::AppStat
             "/user/{id}/change-role",
             post(admin::handlers::change_user_role),
         )
+        .route(
+            "/user/{id}/toggle-force-password-update",
+            post(admin::handlers::toggle_force_password_update),
+        )
         .route("/user/{id}", delete(admin::handlers::delete_user))
         .route("/user/create", post(admin::handlers::create_user_from_admin))
         .layer(axum::middleware::from_fn_with_state(

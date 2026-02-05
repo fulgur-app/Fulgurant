@@ -77,6 +77,27 @@
 					<circle cx="10" cy="7" r="4" />
 				</svg>
 			</button>
+			<button
+				class="action-button secondary"
+				hx-post="/user/{{ display_user.id }}/toggle-force-password-update"
+				hx-target="#user-{{ display_user.id }}"
+				hx-swap="outerHTML"
+				hx-confirm="Are you sure you want to {% if display_user.force_password_update %}remove the forced password update for{% else %}force a password update for{% endif %} {{ display_user.first_name }} {{ display_user.last_name }}?"
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4" />
+				</svg>
+			</button>
 		</div>
 		{% else %}
 		<div class="actions" role="group">
@@ -114,6 +135,21 @@
 						d="M21.378 16.626a1 1 0 0 0-3.004-3.004l-4.01 4.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"
 					/>
 					<circle cx="10" cy="7" r="4" />
+				</svg>
+			</button>
+			<button class="action-button secondary" disabled>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4" />
 				</svg>
 			</button>
 		</div>
