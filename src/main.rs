@@ -253,6 +253,10 @@ fn make_auth_routes(
             "/auth/forgot-password/resend",
             get(auth::handlers::resend_forgot_password_code),
         )
+        .route(
+            "/force-password-update",
+            post(auth::handlers::force_password_update),
+        )
         .route("/setup", post(setup::handlers::create_admin))
         .with_state(app_state.clone())
         .layer(axum::middleware::from_fn_with_state(
@@ -400,6 +404,10 @@ fn make_web_routes(
 fn make_protected_routes(app_state: &handlers::AppState) -> Router {
     Router::new()
         .route("/", get(handlers::index))
+        .route(
+            "/force-password-update",
+            get(auth::handlers::get_force_password_update_page),
+        )
         .route("/device/{user_id}/create", post(handlers::create_device))
         .route("/device/{id}/edit", get(handlers::get_device_edit_form))
         .route("/device/{id}", put(handlers::update_device))

@@ -270,6 +270,7 @@ pub async fn create_user_from_admin(
             last_name.to_string(),
             password_hash,
             true,
+            true,
         )
         .await?;
     let new_user = state
@@ -282,7 +283,7 @@ pub async fn create_user_from_admin(
     if state.is_prod {
         let subject = "Your Fulgurant Account".to_string();
         let text_body = format!(
-            "Hello {} {},\n\nYour Fulgurant account has been created by an administrator.\n\nYour login credentials are:\nEmail: {}\nPassword: {}\n\nPlease log in and change your password immediately.",
+            "Hello {} {},\n\nYour Fulgurant account has been created by an administrator.\n\nYour login credentials are:\nEmail: {}\nPassword: {}\n\nYou will be required to set a new password when you first log in.",
             first_name, last_name, email, password
         );
         let html_body = format!(
@@ -302,7 +303,7 @@ pub async fn create_user_from_admin(
                         <p>Email: <code>{}</code></p>
                         <p>Password: <code style="background-color: #f0f0f0; padding: 5px 10px; border-radius: 4px;">{}</code></p>
                     </div>
-                    <p style="color: #666;">Please log in and change your password immediately.</p>
+                    <p style="color: #666;">You will be required to set a new password when you first log in.</p>
                 </div>
             </body>
             </html>"#,

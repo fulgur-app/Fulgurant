@@ -248,6 +248,21 @@ pub struct ForgotPasswordStep3Template {
 #[template(path = "partials/auth/forgot_password_success.html")]
 pub struct ForgotPasswordSuccessTemplate {}
 
+/// Force password update page template (full page)
+#[derive(Template)]
+#[template(path = "force_password_update.html")]
+pub struct ForcePasswordUpdateTemplate {
+    pub csrf_token: String,
+    pub error_message: String,
+}
+
+/// Force password update form partial template (for HTMX re-render on validation error)
+#[derive(Template)]
+#[template(path = "partials/auth/force_password_update_form.html")]
+pub struct ForcePasswordUpdateFormTemplate {
+    pub error_message: String,
+}
+
 /// Initial setup template (create first admin user)
 #[derive(Template)]
 #[template(path = "setup.html")]

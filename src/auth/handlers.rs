@@ -124,6 +124,112 @@ pub async fn login(
         .insert(SESSION_USER_ID, user.id)
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    let redirect_url = if user.force_password_update {
+        session
+            .insert("force_password_update", true)
+            .await
+            .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+        "/force-password-update"
+    } else {
+        "/"
+    };
+    let mut response = Html("").into_response();
+    response
+        .headers_mut()
+        .insert("HX-Redirect", redirect_url.parse().unwrap());
+    Ok(response)
+}
+
+/// GET /force-password-update - Returns the force password update page
+///
+/// ### Arguments
+/// - `session`: The session
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The force password update page
+/// - `Err(AppError)`: An error occurred while rendering the template
+pub async fn get_force_password_update_page(
+    session: Session,
+) -> Result<Html<String>, AppError> {
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+        })?;
+    let template = templates::ForcePasswordUpdateTemplate {
+        csrf_token,
+        error_message: String::new(),
+    };
+    Ok(Html(template.render()?))
+}
+
+#[derive(Deserialize)]
+pub struct ForcePasswordUpdateRequest {
+    password: String,
+}
+
+/// POST /force-password-update - Updates the password and clears the force_password_update flag
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+/// - `request`: The force password update request
+///
+/// ### Returns
+/// - `Ok(Response)`: Redirect to home page on success
+/// - `Err(AppError)`: An error occurred while updating the password
+pub async fn force_password_update(
+    State(state): State<AppState>,
+    session: Session,
+    Form(request): Form<ForcePasswordUpdateRequest>,
+) -> Result<Response, AppError> {
+    let user_id: Option<i32> = session
+        .get(SESSION_USER_ID)
+        .await
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    let user_id = match user_id {
+        Some(id) => id,
+        None => return Err(AppError::Unauthorized),
+    };
+    if !is_password_valid(&request.password) {
+        let template = templates::ForcePasswordUpdateFormTemplate {
+            error_message: "Password must be 8-64 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.".to_string(),
+        };
+        return Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+        })?)
+        .into_response());
+    }
+    let user = state
+        .user_repository
+        .get_by_id(user_id)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Database error: {}", e)))?
+        .ok_or(AppError::Unauthorized)?;
+    if verify_password(&request.password, user.password_hash) {
+        let template = templates::ForcePasswordUpdateFormTemplate {
+            error_message: "New password must be different from your current password.".to_string(),
+        };
+        return Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+        })?)
+        .into_response());
+    }
+    let password_hash = hash_password(&request.password)
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {}", e)))?;
+    state
+        .user_repository
+        .update_password_and_clear_force_update(user_id, password_hash)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to update password: {}", e);
+            AppError::InternalError(anyhow::anyhow!("Failed to update password"))
+        })?;
+    session
+        .remove::<bool>("force_password_update")
+        .await
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    tracing::info!("User {} updated password via force password update", user_id);
     let mut response = Html("").into_response();
     response
         .headers_mut()
@@ -295,6 +401,7 @@ pub async fn register_step_1(
             first_name.to_string(),
             last_name.to_string(),
             password_hash,
+            false,
             false,
         )
         .await

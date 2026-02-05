@@ -5,6 +5,7 @@
 	<td class="user-cell">{{ display_user.last_name }}</td>
 	<td class="user-cell">{{ display_user.shares }}</td>
 	<td class="user-cell">{{ display_user.is_email_verified() }}</td>
+	<td class="user-cell">{{ display_user.is_force_password_update() }}</td>
 	<td class="user-cell">{{ display_user.role }}</td>
 	<td class="user-cell">
 		<span data-tooltip="{{ display_user.created_at }}"

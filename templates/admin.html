@@ -126,6 +126,7 @@
 						<th>Last Name</th>
 						<th>Shares</th>
 						<th>Verified</th>
+						<th>Pwd Update</th>
 						<th>Role</th>
 						<th>Created at</th>
 						<th>Last Activity</th>
@@ -135,7 +136,7 @@
 				<tbody id="user-list">
 					{% if users.is_empty() %}
 					<tr id="user-empty-state">
-						<td colspan="10">{% include "partials/admin/empty_state.html" %}</td>
+						<td colspan="11">{% include "partials/admin/empty_state.html" %}</td>
 					</tr>
 					{% else %} {% for display_user in users %} {% include
 					"partials/admin/user_row.html" %} {% endfor %} {% endif %}
