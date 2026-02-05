@@ -42,6 +42,15 @@
 		color: #e7ffec;
 		font-weight: 500;
 	}
+
+	.password-update {
+		display: inline-block;
+		padding: 0rem 0.25rem;
+		color: #ff9500;
+		border-radius: 4px;
+		font-size: 0.6rem;
+		font-weight: 500;
+	}
 </style>
 {% endblock %} {% block content %}
 <!-- Add Device Form -->
@@ -116,34 +125,7 @@
 	</form>
 
 	<div id="user-list-container">
-		<div class="overflow-auto">
-			<table role="grid">
-				<thead>
-					<tr>
-						<th>ID</th>
-						<th>Email</th>
-						<th>First Name</th>
-						<th>Last Name</th>
-						<th>Shares</th>
-						<th>Verified</th>
-						<th>Pwd Update</th>
-						<th>Role</th>
-						<th>Created at</th>
-						<th>Last Activity</th>
-						<th>Actions</th>
-					</tr>
-				</thead>
-				<tbody id="user-list">
-					{% if users.is_empty() %}
-					<tr id="user-empty-state">
-						<td colspan="11">{% include "partials/admin/empty_state.html" %}</td>
-					</tr>
-					{% else %} {% for display_user in users %} {% include
-					"partials/admin/user_row.html" %} {% endfor %} {% endif %}
-				</tbody>
-			</table>
-		</div>
-		{% include "partials/admin/pagination.html" %}
+		{% include "partials/admin/user_list.html" %}
 	</div>
 </article>
 
@@ -155,14 +137,17 @@
 		const passwordText = passwordElement.textContent.trim();
 		let success = false;
 		if (navigator.clipboard && navigator.clipboard.writeText) {
-			navigator.clipboard.writeText(passwordText).then(() => {
-				success = true;
-				showCopyFeedback(button);
-			}).catch(err => {
-				console.error('Clipboard API failed:', err);
-				success = fallbackCopy(passwordText);
-				if (success) showCopyFeedback(button);
-			});
+			navigator.clipboard
+				.writeText(passwordText)
+				.then(() => {
+					success = true;
+					showCopyFeedback(button);
+				})
+				.catch((err) => {
+					console.error('Clipboard API failed:', err);
+					success = fallbackCopy(passwordText);
+					if (success) showCopyFeedback(button);
+				});
 		} else {
 			success = fallbackCopy(passwordText);
 			if (success) showCopyFeedback(button);
