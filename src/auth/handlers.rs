@@ -100,7 +100,6 @@ pub async fn login(
         }
     };
     let password_verified = verify_password(password, user.password_hash.clone());
-    tracing::info!("Password verified: {}", password_verified);
     if !password_verified {
         let template = templates::ErrorMessageTemplate {
             message: "Invalid password. Please try again.".to_string(),
@@ -148,9 +147,7 @@ pub async fn login(
 /// ### Returns
 /// - `Ok(Html<String>)`: The force password update page
 /// - `Err(AppError)`: An error occurred while rendering the template
-pub async fn get_force_password_update_page(
-    session: Session,
-) -> Result<Html<String>, AppError> {
+pub async fn get_force_password_update_page(session: Session) -> Result<Html<String>, AppError> {
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
@@ -195,9 +192,11 @@ pub async fn force_password_update(
         let template = templates::ForcePasswordUpdateFormTemplate {
             error_message: "Password must be 8-64 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.".to_string(),
         };
-        return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
-        })?)
+        return Ok(Html(
+            template
+                .render()
+                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?,
+        )
         .into_response());
     }
     let user = state
@@ -210,9 +209,11 @@ pub async fn force_password_update(
         let template = templates::ForcePasswordUpdateFormTemplate {
             error_message: "New password must be different from your current password.".to_string(),
         };
-        return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
-        })?)
+        return Ok(Html(
+            template
+                .render()
+                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?,
+        )
         .into_response());
     }
     let password_hash = hash_password(&request.password)
@@ -229,7 +230,10 @@ pub async fn force_password_update(
         .remove::<bool>("force_password_update")
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
-    tracing::info!("User {} updated password via force password update", user_id);
+    tracing::info!(
+        "User {} updated password via force password update",
+        user_id
+    );
     let mut response = Html("").into_response();
     response
         .headers_mut()
