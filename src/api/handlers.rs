@@ -137,6 +137,7 @@ pub async fn share_file(
         destination_device_id: payload.device_id.clone(),
         file_name: payload.file_name.clone(),
         content: payload.content.clone(),
+        deduplication_hash: payload.deduplication_hash.clone(),
     };
     let share = match state
         .share_repository

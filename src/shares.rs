@@ -30,6 +30,7 @@ pub struct Share {
     pub file_name: String,
     pub file_size: i32,
     pub content: String,
+    pub deduplication_hash: Option<String>,
     pub created_at: OffsetDateTime,
     pub expires_at: OffsetDateTime,
 }
@@ -93,6 +94,7 @@ pub struct CreateShare {
     pub destination_device_id: String,
     pub file_name: String,
     pub content: String,
+    pub deduplication_hash: Option<String>,
 }
 
 /// Calculate SHA256 hash of file content
@@ -125,14 +127,18 @@ impl ShareRepository {
         Self { pool }
     }
 
-    /// Create a new share
+    /// Create a new share, or replace an existing one if deduplication_hash matches
+    ///
+    /// When `deduplication_hash` is `Some`, uses UPSERT to replace any existing share
+    /// with the same (source_device_id, destination_device_id, deduplication_hash).
+    /// When `None`, always inserts a new share (SQLite treats NULLs as distinct).
     ///
     /// ### Arguments
     /// - `user_id`: The ID of the user
     /// - `data`: The data for the share
     ///
     /// ### Returns
-    /// - `Ok(Share)`: The created share
+    /// - `Ok(Share)`: The created or updated share
     /// - `Err(anyhow::Error)`: The error that occurred while creating the share
     pub async fn create(&self, user_id: i32, data: CreateShare) -> Result<Share, anyhow::Error> {
         let id = Uuid::new_v4().to_string();
@@ -146,27 +152,67 @@ impl ShareRepository {
         }
         let now = OffsetDateTime::now_utc();
         let expires_at = now + Duration::days(SHARE_VALIDITY_DAYS);
-        sqlx::query(
-            r#"
-            INSERT INTO shares (
-                id, user_id, source_device_id, destination_device_id,
-                file_hash, file_name, file_size, content, created_at, expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&id)
-        .bind(user_id)
-        .bind(&data.source_device_id)
-        .bind(&data.destination_device_id)
-        .bind(&file_hash)
-        .bind(&data.file_name)
-        .bind(file_size)
-        .bind(&data.content)
-        .bind(now.unix_timestamp())
-        .bind(expires_at.unix_timestamp())
-        .execute(&self.pool)
-        .await?;
-        self.get_by_id(&id).await
+
+        if data.deduplication_hash.is_some() {
+            // UPSERT: replace existing share with same source/destination/hash
+            let share = sqlx::query_as::<_, Share>(
+                r#"
+                INSERT INTO shares (
+                    id, user_id, source_device_id, destination_device_id,
+                    file_hash, file_name, file_size, content, deduplication_hash,
+                    created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source_device_id, destination_device_id, deduplication_hash)
+                DO UPDATE SET
+                    file_hash = excluded.file_hash,
+                    file_name = excluded.file_name,
+                    file_size = excluded.file_size,
+                    content = excluded.content,
+                    created_at = excluded.created_at,
+                    expires_at = excluded.expires_at
+                RETURNING *
+                "#,
+            )
+            .bind(&id)
+            .bind(user_id)
+            .bind(&data.source_device_id)
+            .bind(&data.destination_device_id)
+            .bind(&file_hash)
+            .bind(&data.file_name)
+            .bind(file_size)
+            .bind(&data.content)
+            .bind(&data.deduplication_hash)
+            .bind(now.unix_timestamp())
+            .bind(expires_at.unix_timestamp())
+            .fetch_one(&self.pool)
+            .await?;
+            Ok(share)
+        } else {
+            // Plain INSERT: no dedup, always creates a new share
+            let share = sqlx::query_as::<_, Share>(
+                r#"
+                INSERT INTO shares (
+                    id, user_id, source_device_id, destination_device_id,
+                    file_hash, file_name, file_size, content, deduplication_hash,
+                    created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                RETURNING *
+                "#,
+            )
+            .bind(&id)
+            .bind(user_id)
+            .bind(&data.source_device_id)
+            .bind(&data.destination_device_id)
+            .bind(&file_hash)
+            .bind(&data.file_name)
+            .bind(file_size)
+            .bind(&data.content)
+            .bind(now.unix_timestamp())
+            .bind(expires_at.unix_timestamp())
+            .fetch_one(&self.pool)
+            .await?;
+            Ok(share)
+        }
     }
 
     /// Get share by ID
