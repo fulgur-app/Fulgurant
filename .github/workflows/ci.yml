@@ -107,7 +107,51 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           deny-warnings: false
-          ignore: RUSTSEC-2023-0071  # RSA Marvin Attack from unused sqlx-mysql dependency
+          ignore: RUSTSEC-2023-0071 # RSA Marvin Attack from unused sqlx-mysql dependency
 
       - name: Cargo deny
         uses: EmbarkStudios/cargo-deny-action@v2
+
+      - name: Discord notification - Security Success
+        if: success()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "✅ Fulgurant Security Audit - Passed",
+                "description": "No security vulnerabilities or license issues found",
+                "color": 3066993,
+                "fields": [
+                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
+                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
+                ],
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "timestamp": "${{ github.event.head_commit.timestamp }}"
+              }]
+            }'
+
+      - name: Discord notification - Security Failure
+        if: failure()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "❌ Fulgurant Security Audit - Failed",
+                "description": "Security vulnerabilities or license issues detected",
+                "color": 15105570,
+                "fields": [
+                  {"name": "Branch", "value": "${{ github.ref_name }}", "inline": true},
+                  {"name": "Commit", "value": "`${{ github.sha }}`", "inline": true},
+                  {"name": "Author", "value": "${{ github.actor }}", "inline": true}
+                ],
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "timestamp": "${{ github.event.head_commit.timestamp }}"
+              }]
+            }'
