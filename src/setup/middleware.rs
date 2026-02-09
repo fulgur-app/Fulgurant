@@ -37,7 +37,9 @@ pub async fn require_setup_complete(
     if path.starts_with("/setup") {
         return Ok(next.run(request).await);
     }
-    let has_admin = !state.setup_needed.load(std::sync::atomic::Ordering::Relaxed);
+    let has_admin = !state
+        .setup_needed
+        .load(std::sync::atomic::Ordering::Relaxed);
     if !has_admin {
         let user_id: Option<i32> = session
             .get(SESSION_USER_ID)

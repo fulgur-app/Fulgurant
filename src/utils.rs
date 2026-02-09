@@ -31,7 +31,7 @@ pub fn is_password_valid(password: &str) -> bool {
     let right_length = password.len() >= 8 && password.len() <= 64;
     let has_uppercase = password.chars().any(|c| c.is_uppercase());
     let has_lowercase = password.chars().any(|c| c.is_lowercase());
-    let has_digit = password.chars().any(|c| c.is_digit(10));
+    let has_digit = password.chars().any(|c| c.is_ascii_digit());
     let has_special = password.chars().any(|c| !c.is_alphanumeric());
     if !right_length || !has_uppercase || !has_lowercase || !has_digit || !has_special {
         return false;
@@ -50,31 +50,24 @@ pub fn generate_valid_password() -> String {
     const DIGITS: &str = "0123456789";
     const SPECIAL: &str = "!@#$%&*";
     let mut rng = rand::rng();
-    let mut password = Vec::new();
-    password.push(
+    let mut password = vec![
         UPPERCASE
             .chars()
             .nth(rng.random_range(0..UPPERCASE.len()))
             .unwrap(),
-    );
-    password.push(
         LOWERCASE
             .chars()
             .nth(rng.random_range(0..LOWERCASE.len()))
             .unwrap(),
-    );
-    password.push(
         DIGITS
             .chars()
             .nth(rng.random_range(0..DIGITS.len()))
             .unwrap(),
-    );
-    password.push(
         SPECIAL
             .chars()
             .nth(rng.random_range(0..SPECIAL.len()))
             .unwrap(),
-    );
+    ];
     let all_chars = format!("{}{}{}{}", UPPERCASE, LOWERCASE, DIGITS, SPECIAL);
     for _ in 0..8 {
         password.push(

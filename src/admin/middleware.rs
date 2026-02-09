@@ -33,17 +33,14 @@ pub async fn require_admin(
     request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    let user_id: Option<i32> = session
-        .get(SESSION_USER_ID)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get user_id from session: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            )
-                .into_response()
-        })?;
+    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
+        tracing::error!("Failed to get user_id from session: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error".to_string(),
+        )
+            .into_response()
+    })?;
     let user_id = match user_id {
         Some(id) => id,
         None => {

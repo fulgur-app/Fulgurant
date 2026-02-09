@@ -27,7 +27,7 @@ rustls = { version = "0.23.36", features = ["aws-lc-rs"], default-features = fal
 fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git" }
 
 # Database
-sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "sqlite", "migrate", "time"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "migrate", "time", "macros"] }
 
 # Templating
 askama = "0.15.1"

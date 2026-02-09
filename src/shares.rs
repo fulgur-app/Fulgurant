@@ -71,10 +71,10 @@ impl Share {
         DisplayShare {
             id: self.id.clone(),
             file_name: self.file_name.clone(),
-            from: from,
-            to: to,
-            created_at: created_at,
-            expires_at: expires_at,
+            from,
+            to,
+            created_at,
+            expires_at,
         }
     }
 }

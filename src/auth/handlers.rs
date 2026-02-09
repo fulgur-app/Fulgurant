@@ -780,11 +780,11 @@ async fn create_and_send_verification_code(
                 tracing::error!("Failed to send email: {}", e);
                 AppError::InternalError(anyhow::anyhow!("Failed to send email: {}", e))
             })?;
-        tracing::info!("Verification email sent to {}", sanitize_for_log(&email));
+        tracing::info!("Verification email sent to {}", sanitize_for_log(email));
     } else {
         tracing::info!(
             "Development mode - verification email not sent\nVerification code for {}: {}",
-            sanitize_for_log(&email),
+            sanitize_for_log(email),
             &code
         );
     }

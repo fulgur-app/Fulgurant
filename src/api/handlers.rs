@@ -22,7 +22,6 @@ use super::middleware::AuthenticatedUser;
 ///
 /// ### Returns
 /// - `Json(PingResponse)`: The response containing the status of the server
-/// @return Json<PingResponse>: The response containing the status of the server
 pub async fn ping() -> Json<PingResponse> {
     Json(PingResponse { ok: true })
 }

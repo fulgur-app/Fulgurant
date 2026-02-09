@@ -1,6 +1,6 @@
 use argon2::{
-    password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+    password_hash::{SaltString, rand_core::OsRng},
 };
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -58,6 +58,7 @@ pub enum VerificationResult {
     TooManyAttempts,
 }
 
+#[allow(dead_code)]
 impl VerificationResult {
     /// Convert a VerificationResult to an error message
     ///

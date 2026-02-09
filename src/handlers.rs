@@ -1,11 +1,11 @@
 use askama::Template;
 use axum::{
+    Form,
     extract::{Path, State},
     http::StatusCode,
     response::{Html, IntoResponse},
-    Form,
 };
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{Arc, atomic::AtomicBool};
 use tower_sessions::Session;
 
 use crate::{
@@ -233,7 +233,7 @@ pub async fn delete_device(
         }
         Err(e) => {
             tracing::error!("Error deleting device: {:?}", e);
-            return Err(AppError::DatabaseError(e));
+            Err(AppError::DatabaseError(e))
         }
     }
 }
@@ -311,7 +311,7 @@ pub async fn delete_share(
         Ok(_) => Ok(StatusCode::OK),
         Err(e) => {
             tracing::error!("Error deleting share: {:?}", e);
-            return Err(AppError::DatabaseError(e));
+            Err(AppError::DatabaseError(e))
         }
     }
 }

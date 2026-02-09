@@ -2,10 +2,10 @@ use crate::utils::{is_password_valid, is_valid_email};
 use crate::{auth::handlers::hash_password, errors::AppError, handlers::AppState, templates};
 use askama::Template;
 use axum::{
+    Form,
     extract::State,
     http::{HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
-    Form,
 };
 use serde::Deserialize;
 use tower_sessions::Session;

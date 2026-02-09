@@ -1,12 +1,13 @@
 use lettre::{
-    message::{header, Mailbox, MultiPart, SinglePart},
-    transport::smtp::authentication::Credentials,
     Address, Message, SmtpTransport, Transport,
+    message::{Mailbox, MultiPart, SinglePart, header},
+    transport::smtp::authentication::Credentials,
 };
 
 #[derive(Clone)]
 pub struct Mailer {
     smtp_host: String,
+    #[allow(dead_code)]
     smtp_port: u16,
     smtp_user: String,
     smtp_password: String,
@@ -73,7 +74,7 @@ impl Mailer {
             .await
     }
 
-    /// Sends an email  
+    /// Sends an email
     ///
     /// ### Arguments
     /// - `to`: The email address to send the email to

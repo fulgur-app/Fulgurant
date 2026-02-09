@@ -347,7 +347,6 @@ pub struct DeleteUserSuccessTemplate {
 pub struct UserCreationResponseTemplate {
     pub display_user: crate::users::DisplayUser,
     pub user: UserContext,
-    pub password: String,
 }
 
 /// User row template (for HTMX updates)

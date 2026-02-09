@@ -283,15 +283,16 @@ pub async fn create_user_from_admin(
     let first_name = request.first_name.trim();
     let last_name = request.last_name.trim();
     let email = request.email.trim();
-    if !is_valid_email(&email) {
+    if !is_valid_email(email) {
         return Err(AppError::InternalError(anyhow::anyhow!(
             "Invalid email address"
         )));
     }
-    if let Some(_) = state
+    if (state
         .user_repository
         .get_by_email(email.to_string())
-        .await?
+        .await?)
+        .is_some()
     {
         return Err(AppError::InternalError(anyhow::anyhow!(
             "A user with this email already exists"
@@ -357,19 +358,18 @@ pub async fn create_user_from_admin(
             })?;
         tracing::info!(
             "Account creation email sent to {}",
-            crate::logging::sanitize_for_log(&email)
+            crate::logging::sanitize_for_log(email)
         );
     } else {
         tracing::info!(
             "Development mode - account creation email not sent\nPassword for {}: {}",
-            crate::logging::sanitize_for_log(&email),
+            crate::logging::sanitize_for_log(email),
             &password
         );
     }
     let template = templates::UserCreationResponseTemplate {
         display_user: new_user.into(),
         user: templates::UserContext::from(&user),
-        password,
     };
     Ok(Html(template.render()?))
 }
