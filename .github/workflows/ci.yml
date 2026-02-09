@@ -63,6 +63,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           deny-warnings: false
+          ignore: RUSTSEC-2023-0071  # RSA Marvin Attack from unused sqlx-mysql dependency
 
       - name: Cargo deny
         uses: EmbarkStudios/cargo-deny-action@v2
