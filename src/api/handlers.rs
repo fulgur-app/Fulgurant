@@ -3,9 +3,9 @@ use crate::{
     api::sse::{ChannelTag, ShareNotification},
     devices::Device,
     handlers::AppState,
-    shares::{CreateShare, Share, MAX_FILE_SIZE},
+    shares::{CreateShare, MAX_FILE_SIZE, Share},
 };
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use axum::{Extension, Json, extract::State, http::StatusCode};
 use fulgur_common::api::{
     devices::DeviceResponse,
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
@@ -130,8 +130,7 @@ pub async fn share_file(
             }),
         ));
     }
-    let expiration_date =
-        OffsetDateTime::now_utc() + Duration::days(crate::shares::SHARE_VALIDITY_DAYS);
+    let expiration_date = OffsetDateTime::now_utc() + Duration::days(state.share_validity_days);
     let create_share = CreateShare {
         source_device_id: auth_user.device_id.clone(),
         destination_device_id: payload.device_id.clone(),
