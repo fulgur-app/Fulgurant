@@ -16,21 +16,39 @@ pub struct Mailer {
 impl Mailer {
     /// Creates a new Mailer
     ///
+    /// ### Arguments
+    /// - `is_prod`: If true, requires SMTP env vars. If false, uses defaults (emails won't be sent).
+    ///
     /// ### Returns
     /// - `Mailer`: The Mailer
-    pub fn new() -> Self {
-        let smtp_host = std::env::var("SMTP_HOST").expect("SMTP_HOST must be set");
-        let smtp_port = std::env::var("SMTP_PORT")
-            .expect("SMTP_PORT must be set")
-            .parse()
-            .expect("SMTP_PORT must be a number");
-        let smtp_user = std::env::var("SMTP_LOGIN").expect("SMTP_LOGIN must be set");
-        let smtp_password = std::env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set");
-        Self {
-            smtp_host,
-            smtp_port,
-            smtp_user,
-            smtp_password,
+    pub fn new(is_prod: bool) -> Self {
+        if is_prod {
+            let smtp_host =
+                std::env::var("SMTP_HOST").expect("SMTP_HOST must be set in production mode");
+            let smtp_port = std::env::var("SMTP_PORT")
+                .expect("SMTP_PORT must be set in production mode")
+                .parse()
+                .expect("SMTP_PORT must be a valid number");
+            let smtp_user =
+                std::env::var("SMTP_LOGIN").expect("SMTP_LOGIN must be set in production mode");
+            let smtp_password = std::env::var("SMTP_PASSWORD")
+                .expect("SMTP_PASSWORD must be set in production mode");
+            Self {
+                smtp_host,
+                smtp_port,
+                smtp_user,
+                smtp_password,
+            }
+        } else {
+            tracing::debug!(
+                "Development mode: Mailer created with default values (SMTP not configured)"
+            );
+            Self {
+                smtp_host: String::from("localhost"),
+                smtp_port: 587,
+                smtp_user: String::from("dev@example.com"),
+                smtp_password: String::new(),
+            }
         }
     }
 
