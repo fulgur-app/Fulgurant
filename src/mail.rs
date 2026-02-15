@@ -119,13 +119,10 @@ impl Mailer {
                     ),
             )?;
 
-        let _ = match mailer.send(&email) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                tracing::error!("Failed to send email: {}", e);
-                Err(anyhow::anyhow!("Failed to send email: {}", e))
-            }
-        };
+        mailer.send(&email).map_err(|e| {
+            tracing::error!("Failed to send email: {}", e);
+            anyhow::anyhow!("Failed to send email: {}", e)
+        })?;
         Ok(())
     }
 }
