@@ -7,6 +7,7 @@ use askama::Template;
 use axum::{
     Form,
     extract::{Query, State},
+    http::HeaderValue,
     response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
@@ -133,9 +134,11 @@ pub async fn login(
         "/"
     };
     let mut response = Html("").into_response();
-    response
-        .headers_mut()
-        .insert("HX-Redirect", redirect_url.parse().unwrap());
+    let header_value = redirect_url.parse().map_err(|e| {
+        tracing::error!("Failed to parse redirect URL as header value: {}", e);
+        AppError::InternalError(anyhow::anyhow!("Invalid redirect URL"))
+    })?;
+    response.headers_mut().insert("HX-Redirect", header_value);
     Ok(response)
 }
 
@@ -237,7 +240,7 @@ pub async fn force_password_update(
     let mut response = Html("").into_response();
     response
         .headers_mut()
-        .insert("HX-Redirect", "/".parse().unwrap());
+        .insert("HX-Redirect", HeaderValue::from_static("/"));
     Ok(response)
 }
 
@@ -845,9 +848,15 @@ pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Er
 /// - `password_hash`: The hashed password
 ///
 /// ### Returns
-/// - `true` if the password is valid, `false` otherwise
+/// - `true` if the password is valid, `false` otherwise (including on malformed hash)
 fn verify_password(password: &str, password_hash: String) -> bool {
-    let password_hash = PasswordHash::new(&password_hash).unwrap();
+    let password_hash = match PasswordHash::new(&password_hash) {
+        Ok(hash) => hash,
+        Err(_) => {
+            tracing::warn!("Failed to parse password hash - treating as invalid");
+            return false;
+        }
+    };
     let argon2 = Argon2::default();
     argon2
         .verify_password(password.as_bytes(), &password_hash)

@@ -88,7 +88,10 @@ pub async fn create_admin(
         let mut response = Response::builder()
             .status(StatusCode::OK)
             .body("".to_string())
-            .unwrap();
+            .map_err(|e| {
+                tracing::error!("Failed to build response: {}", e);
+                AppError::InternalError(anyhow::anyhow!("Failed to build response"))
+            })?;
         response
             .headers_mut()
             .insert("HX-Redirect", HeaderValue::from_static("/login"));
@@ -161,7 +164,10 @@ pub async fn create_admin(
     let mut response = Response::builder()
         .status(StatusCode::OK)
         .body("".to_string())
-        .unwrap();
+        .map_err(|e| {
+            tracing::error!("Failed to build response: {}", e);
+            AppError::InternalError(anyhow::anyhow!("Failed to build response"))
+        })?;
     response
         .headers_mut()
         .insert("HX-Redirect", HeaderValue::from_static("/"));

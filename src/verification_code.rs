@@ -26,13 +26,15 @@ pub fn generate_code() -> String {
 /// - `code`: The code to hash
 ///
 /// ### Returns
-/// - `String`: The hashed code
-pub fn hash_code(code: &str) -> String {
+/// - `Ok(String)`: The hashed code
+/// - `Err(anyhow::Error)`: If hashing fails
+pub fn hash_code(code: &str) -> anyhow::Result<String> {
     let salt = SaltString::generate(&mut OsRng);
-    Argon2::default()
+    let hash = Argon2::default()
         .hash_password(code.as_bytes(), &salt)
-        .unwrap()
-        .to_string()
+        .map_err(|e| anyhow::anyhow!("Failed to hash verification code: {}", e))?
+        .to_string();
+    Ok(hash)
 }
 
 /// Verify a code
@@ -42,9 +44,15 @@ pub fn hash_code(code: &str) -> String {
 /// - `hash`: The hashed code
 ///
 /// ### Returns
-/// - `true` if the code is valid, `false` otherwise
+/// - `true` if the code is valid, `false` otherwise (including on malformed hash)
 pub fn verify_code(code: &str, hash: &str) -> bool {
-    let parsed = PasswordHash::new(hash).unwrap();
+    let parsed = match PasswordHash::new(hash) {
+        Ok(hash) => hash,
+        Err(_) => {
+            tracing::warn!("Failed to parse verification code hash - treating as invalid");
+            return false;
+        }
+    };
     Argon2::default()
         .verify_password(code.as_bytes(), &parsed)
         .is_ok()
@@ -132,7 +140,7 @@ impl VerificationCodeRepository {
         code: String,
         purpose: String,
     ) -> anyhow::Result<VerificationCode> {
-        let code_hash = hash_code(&code);
+        let code_hash = hash_code(&code)?;
         let id = Uuid::new_v4().to_string();
         let expires_at =
             OffsetDateTime::now_utc() + Duration::minutes(VERIFICATION_CODE_EXPIRATION_MINUTES);
