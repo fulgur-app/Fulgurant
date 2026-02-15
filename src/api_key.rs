@@ -2,6 +2,7 @@ use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::{Engine as _, engine::general_purpose};
 use rand::Rng;
+use sha2::{Digest, Sha256};
 
 /// Generate a new API key
 ///
@@ -54,6 +55,22 @@ pub fn verify_api_key(api_key: &str, hash: &str) -> anyhow::Result<bool> {
     Ok(Argon2::default()
         .verify_password(api_key.as_bytes(), &hash)
         .is_ok())
+}
+
+/// Hash an API key using SHA256 for fast lookup (not security)
+///
+/// This is NOT for security - it's for O(1) device identification.
+/// Argon2 is still used for actual verification.
+///
+/// ### Arguments
+/// - `api_key`: The API key to hash
+///
+/// ### Returns
+/// - `String`: The SHA256 hash in hexadecimal format
+pub fn hash_api_key_fast(api_key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(api_key.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 #[cfg(test)]
@@ -256,5 +273,25 @@ mod tests {
         let verified = verify_api_key(&long_key, &hash).unwrap();
 
         assert!(verified, "Long API key should verify correctly");
+    }
+
+    #[test]
+    fn test_hash_api_key_fast_deterministic() {
+        let key = "fulgur_test_key";
+        assert_eq!(hash_api_key_fast(key), hash_api_key_fast(key));
+    }
+
+    #[test]
+    fn test_hash_api_key_fast_different_keys() {
+        let hash1 = hash_api_key_fast("fulgur_key1");
+        let hash2 = hash_api_key_fast("fulgur_key2");
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_hash_api_key_fast_format() {
+        let hash = hash_api_key_fast("fulgur_test");
+        assert_eq!(hash.len(), 64); // SHA256 = 64 hex chars
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }
