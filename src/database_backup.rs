@@ -19,6 +19,26 @@ pub fn is_daily_backup_enabled() -> bool {
         == "true"
 }
 
+/// Validate that a path contains only safe characters for SQL interpolation
+///
+/// Since SQLite's VACUUM INTO doesn't support parameterized queries, we must
+/// sanitize the path manually to prevent SQL injection.
+///
+/// ### Arguments
+/// - `path`: The path string to validate
+///
+/// ### Returns
+/// - `Ok(())`: If the path is safe
+/// - `Err(anyhow::Error)`: If the path contains potentially dangerous characters
+fn validate_backup_path(path: &str) -> anyhow::Result<()> {
+    if path.contains('\'') {
+        return Err(anyhow::anyhow!(
+            "Backup path contains single quote character, which is not allowed for security reasons"
+        ));
+    }
+    Ok(())
+}
+
 /// Perform a database backup using SQLite's VACUUM INTO command
 ///
 /// ### Arguments
@@ -40,6 +60,7 @@ pub async fn perform_backup(pool: &SqlitePool) -> anyhow::Result<PathBuf> {
     let backup_path_str = backup_path
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid backup path"))?;
+    validate_backup_path(backup_path_str)?;
     let query = format!("VACUUM INTO '{}'", backup_path_str);
     sqlx::query(&query).execute(pool).await?;
     tracing::info!(
@@ -77,4 +98,60 @@ pub fn make_daily_backup_task(pool: SqlitePool) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_backup_path_rejects_single_quote() {
+        let malicious_path = "backups'; DROP TABLE users; --/backup.db";
+        let result = validate_backup_path(malicious_path);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("single quote character")
+        );
+    }
+
+    #[test]
+    fn test_validate_backup_path_allows_safe_paths() {
+        let safe_paths = vec![
+            "backups/fulgurant_backup_2026-02-15_12-00-00.db",
+            "/var/backups/fulgurant.db",
+            "./backups/test.db",
+            "../backups/backup.db",
+            "C:\\backups\\fulgurant.db",
+        ];
+
+        for path in safe_paths {
+            let result = validate_backup_path(path);
+            assert!(
+                result.is_ok(),
+                "Path '{}' should be valid but was rejected",
+                path
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_backup_path_rejects_sql_injection_attempts() {
+        let injection_attempts = vec![
+            "'; DELETE FROM users; --",
+            "backup'; DROP TABLE devices; --",
+            "test' OR '1'='1",
+        ];
+
+        for path in injection_attempts {
+            let result = validate_backup_path(path);
+            assert!(
+                result.is_err(),
+                "Injection attempt '{}' should be rejected",
+                path
+            );
+        }
+    }
 }
