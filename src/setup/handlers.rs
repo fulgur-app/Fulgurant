@@ -1,5 +1,7 @@
 use crate::utils::{is_password_valid, is_valid_email};
-use crate::{auth::handlers::hash_password, errors::AppError, handlers::AppState, templates};
+use crate::{
+    auth::handlers::hash_password, errors::AppError, handlers::AppState, session, templates,
+};
 use askama::Template;
 use axum::{
     Form,
@@ -9,8 +11,6 @@ use axum::{
 };
 use serde::Deserialize;
 use tower_sessions::Session;
-
-const SESSION_USER_ID: &str = "user_id";
 
 #[derive(Deserialize)]
 pub struct SetupRequest {
@@ -153,7 +153,7 @@ pub async fn create_admin(
         })?;
     tracing::info!("Initial admin user created with ID: {}", user_id);
     session
-        .insert(SESSION_USER_ID, user_id)
+        .insert(session::SESSION_USER_ID, user_id)
         .await
         .map_err(|e| {
             AppError::InternalError(anyhow::anyhow!("Failed to set user id in session: {}", e))

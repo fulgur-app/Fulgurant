@@ -17,11 +17,10 @@ use crate::{
     errors::AppError,
     handlers::AppState,
     logging::sanitize_for_log,
+    session,
     templates::{self, LoginTemplate},
     verification_code::{self, VerificationResult, generate_code},
 };
-
-const SESSION_USER_ID: &str = "user_id";
 
 /// Checks if the registration is allowed
 ///
@@ -121,7 +120,7 @@ pub async fn login(
             AppError::InternalError(anyhow::anyhow!("Failed to update last_activity"))
         })?;
     session
-        .insert(SESSION_USER_ID, user.id)
+        .insert(session::SESSION_USER_ID, user.id)
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
     let redirect_url = if user.force_password_update {
@@ -184,7 +183,7 @@ pub async fn force_password_update(
     Form(request): Form<ForcePasswordUpdateRequest>,
 ) -> Result<Response, AppError> {
     let user_id: Option<i32> = session
-        .get(SESSION_USER_ID)
+        .get(session::SESSION_USER_ID)
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
     let user_id = match user_id {

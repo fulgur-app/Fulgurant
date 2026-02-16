@@ -44,6 +44,7 @@ pub mod devices;
 mod handlers;
 mod logging;
 mod mail;
+mod session;
 pub mod shares;
 mod templates;
 pub mod users;

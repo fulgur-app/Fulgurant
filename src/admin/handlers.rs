@@ -11,11 +11,9 @@ use crate::{
     auth::handlers::hash_password,
     errors::AppError,
     handlers::AppState,
-    templates,
+    session, templates,
     utils::{generate_valid_password, is_valid_email},
 };
-
-const SESSION_USER_ID: &str = "user_id";
 
 #[derive(Deserialize)]
 pub struct UserSearchParams {
@@ -54,13 +52,7 @@ pub async fn get_admin(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
     let user = match user {
         Some(user) => user,
@@ -103,13 +95,7 @@ pub async fn search_users(
     session: Session,
     Query(params): Query<UserSearchParams>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
     let user = match user {
         Some(user) => user,
@@ -154,13 +140,7 @@ pub async fn change_user_role(
     session: Session,
     axum::extract::Path(id): axum::extract::Path<i32>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
     let user = match user {
         Some(user) => user,
@@ -190,13 +170,7 @@ pub async fn toggle_force_password_update(
     session: Session,
     axum::extract::Path(id): axum::extract::Path<i32>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
     let user = match user {
         Some(user) => user,
@@ -228,13 +202,7 @@ pub async fn delete_user(
     session: Session,
     axum::extract::Path(id): axum::extract::Path<i32>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let _user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let _user_id = session::get_session_user_id(&session).await?;
     let deleted_user = match state.user_repository.delete(id).await {
         Ok(deleted) => deleted,
         Err(e) => return Err(AppError::DatabaseError(e)),
@@ -268,13 +236,7 @@ pub async fn create_user_from_admin(
     session: Session,
     Form(request): Form<CreateUserFromAdminRequest>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
     let user = match user {
         Some(user) => user,

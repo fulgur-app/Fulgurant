@@ -8,7 +8,7 @@ use axum::{
 };
 use tower_sessions::Session;
 
-const SESSION_USER_ID: &str = "user_id";
+use crate::session;
 
 /// Middleware that requires authentication
 ///
@@ -29,16 +29,11 @@ pub async fn require_auth(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let user_id: Option<i32> = session
-        .get(SESSION_USER_ID)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    if user_id.is_none() {
+    if session::get_session_user_id(&session).await.is_err() {
         return Ok(Redirect::to("/login").into_response());
     }
     let force_password_update: Option<bool> = session
-        .get("force_password_update")
+        .get(session::SESSION_FORCE_PASSWORD_UPDATE)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     if force_password_update == Some(true) {

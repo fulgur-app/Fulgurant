@@ -15,13 +15,12 @@ use crate::{
     errors::AppError,
     logging::sanitize_for_log,
     mail,
+    session::{self},
     shares::{DisplayShare, ShareRepository},
     templates::{self},
     users::UserRepository,
     verification_code::{self, VerificationCodeRepository},
 };
-
-const SESSION_USER_ID: &str = "user_id";
 
 #[derive(Clone)]
 pub struct AppState {
@@ -66,13 +65,7 @@ pub async fn index(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
     let user = match user {
         Some(user) => user,
@@ -329,13 +322,7 @@ pub async fn get_settings(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
     let user = match user {
         Some(user) => user,
@@ -377,13 +364,7 @@ pub async fn update_name(
     session: Session,
     Form(request): Form<UpdateNameRequest>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     //TODO: add validation for first and last name
     state
         .user_repository
@@ -421,12 +402,7 @@ pub async fn update_email_step_1(
     session: Session,
     Form(request): Form<UpdateEmailRequest>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    if user_id.is_none() {
-        return Err(AppError::Unauthorized);
-    }
+    let _user_id = session::get_session_user_id(&session).await?;
     if !request.email.contains('@') || !request.email.contains('.') {
         //TODO: improve email validation
         let template = templates::EmailChangeStep2Template {
@@ -502,13 +478,7 @@ pub async fn update_email_step_2(
     session: Session,
     Form(request): Form<VerifyEmailChangeRequest>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let result = state
         .verification_code_repository
         .verify_code(
