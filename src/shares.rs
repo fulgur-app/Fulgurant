@@ -51,7 +51,7 @@ impl Share {
     ///
     /// ### Returns
     /// - `DisplayShare`: The display share
-    pub fn to_display_shares(&self, devices: Vec<Device>) -> DisplayShare {
+    pub fn to_display_shares(&self, devices: &[Device]) -> DisplayShare {
         let from = match devices
             .iter()
             .find(|d| d.device_id == self.source_device_id)

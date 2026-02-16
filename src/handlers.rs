@@ -99,7 +99,7 @@ pub async fn index(
     };
     let shares = raw_shares
         .into_iter()
-        .map(|s| s.to_display_shares(devices.clone()))
+        .map(|s| s.to_display_shares(&devices))
         .collect::<Vec<DisplayShare>>();
     let template = templates::IndexTemplate {
         devices,
