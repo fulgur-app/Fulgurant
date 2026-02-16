@@ -4,50 +4,43 @@ use lettre::{
     transport::smtp::authentication::Credentials,
 };
 
-#[derive(Clone)]
 pub struct Mailer {
-    smtp_host: String,
-    #[allow(dead_code)]
-    smtp_port: u16,
     smtp_user: String,
-    smtp_password: String,
+    transport: Option<SmtpTransport>,
 }
 
 impl Mailer {
     /// Creates a new Mailer
     ///
     /// ### Arguments
-    /// - `is_prod`: If true, requires SMTP env vars. If false, uses defaults (emails won't be sent).
+    /// - `is_prod`: If true, requires SMTP env vars and creates transport. If false, transport is None (emails logged).
     ///
     /// ### Returns
-    /// - `Mailer`: The Mailer
+    /// - `Mailer`: The Mailer with optional transport
     pub fn new(is_prod: bool) -> Self {
         if is_prod {
             let smtp_host =
                 std::env::var("SMTP_HOST").expect("SMTP_HOST must be set in production mode");
-            let smtp_port = std::env::var("SMTP_PORT")
-                .expect("SMTP_PORT must be set in production mode")
-                .parse()
-                .expect("SMTP_PORT must be a valid number");
             let smtp_user =
                 std::env::var("SMTP_LOGIN").expect("SMTP_LOGIN must be set in production mode");
             let smtp_password = std::env::var("SMTP_PASSWORD")
                 .expect("SMTP_PASSWORD must be set in production mode");
+            let transport = SmtpTransport::starttls_relay(&smtp_host)
+                .expect("Failed to create SMTP transport")
+                .credentials(Credentials::new(smtp_user.clone(), smtp_password))
+                .build();
+
             Self {
-                smtp_host,
-                smtp_port,
                 smtp_user,
-                smtp_password,
+                transport: Some(transport),
             }
         } else {
             tracing::debug!(
-                "Development mode: Mailer created with default values (SMTP not configured)"
+                "Development mode: Mailer created without SMTP transport (emails will be logged)"
             );
             Self {
-                smtp_host: String::from("localhost"),
-                smtp_port: 587,
                 smtp_user: String::from("dev@example.com"),
-                smtp_password: String::new(),
+                transport: None,
             }
         }
     }
@@ -110,12 +103,11 @@ impl Mailer {
         text_body: String,
         html_body: String,
     ) -> Result<(), anyhow::Error> {
-        let mailer = SmtpTransport::starttls_relay(&self.smtp_host)?;
-        let mailer = mailer.credentials(Credentials::new(
-            self.smtp_user.clone(),
-            self.smtp_password.clone(),
-        ));
-        let mailer = mailer.build();
+        let transport = self
+            .transport
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("SMTP transport not configured (development mode)"))?;
+
         let email = Message::builder()
             .from(Mailbox::new(
                 None,
@@ -137,7 +129,7 @@ impl Mailer {
                     ),
             )?;
 
-        mailer.send(&email).map_err(|e| {
+        transport.send(&email).map_err(|e| {
             tracing::error!("Failed to send email: {}", e);
             anyhow::anyhow!("Failed to send email: {}", e)
         })?;

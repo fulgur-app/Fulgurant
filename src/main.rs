@@ -124,7 +124,7 @@ async fn main() -> anyhow::Result<()> {
         user_repository,
         verification_code_repository,
         share_repository,
-        mailer: mail::Mailer::new(is_prod),
+        mailer: Arc::new(mail::Mailer::new(is_prod)),
         is_prod,
         can_register: auth::handlers::can_register(),
         setup_needed: Arc::new(AtomicBool::new(setup_needed)),
