@@ -11,6 +11,7 @@ use std::{
     str::FromStr,
     sync::{Arc, atomic::AtomicBool},
 };
+use tokio_util::sync::CancellationToken;
 use tower_http::{services::ServeDir, set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tower_sessions::{
     Expiry, MemoryStore, SessionManagerLayer, cookie::time::Duration as CookieDuration,
@@ -161,12 +162,13 @@ async fn main() -> anyhow::Result<()> {
         .merge(api_routes)
         .nest_service("/assets", assets_service)
         .fallback(handlers::not_found);
+    let shutdown_token = CancellationToken::new();
     let cleanup_share_repo = app_state.share_repository.clone();
-    make_share_cleanup_task(cleanup_share_repo);
+    make_share_cleanup_task(cleanup_share_repo, shutdown_token.clone());
     let cleanup_verification_repo = app_state.verification_code_repository.clone();
-    make_verification_code_cleanup_task(cleanup_verification_repo);
+    make_verification_code_cleanup_task(cleanup_verification_repo, shutdown_token.clone());
     let backup_pool = connection.clone();
-    database_backup::make_daily_backup_task(backup_pool);
+    database_backup::make_daily_backup_task(backup_pool, shutdown_token.clone(), is_prod);
     let bind_host = std::env::var("BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()); // default to localhost only for safety
     let bind_port = std::env::var("BIND_PORT")
         .unwrap_or_else(|_| "3000".to_string())
@@ -180,6 +182,16 @@ async fn main() -> anyhow::Result<()> {
     } else if bind_host == "127.0.0.1" {
         tracing::info!("Server is listening on localhost only");
     }
+    let sse_manager_shutdown = app_state.sse_manager.clone();
+    let shutdown_token_handler = shutdown_token.clone();
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        shutdown_token_handler.cancel();
+        tracing::info!("Closing all SSE connections");
+        drop(sse_manager_shutdown);
+        tracing::info!("Graceful shutdown complete");
+    });
+
     match (tls_cert_path, tls_key_path) {
         (Some(cert_path), Some(key_path)) => {
             tracing::info!("TLS enabled - loading certificate and key");
@@ -206,10 +218,42 @@ async fn main() -> anyhow::Result<()> {
                 listener,
                 app.into_make_service_with_connect_info::<SocketAddr>(),
             )
+            .with_graceful_shutdown(shutdown_signal())
             .await?;
         }
     }
     Ok(())
+}
+
+/// Create a shutdown signal handler that listens for SIGTERM/SIGINT
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            tracing::info!("Received Ctrl+C signal");
+        },
+        _ = terminate => {
+            tracing::info!("Received SIGTERM signal");
+        },
+    }
+
+    tracing::info!("Starting graceful shutdown...");
 }
 
 /// Make the auth routes
@@ -448,22 +492,30 @@ fn make_protected_routes(app_state: &handlers::AppState) -> Router {
 ///
 /// ### Arguments
 /// - `share_repository`: The share repository
-fn make_share_cleanup_task(share_repository: ShareRepository) {
+/// - `shutdown_token`: Token to signal graceful shutdown
+fn make_share_cleanup_task(share_repository: ShareRepository, shutdown_token: CancellationToken) {
     tracing::info!("Starting share cleanup task (runs every 1 hour)");
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // 1 hour
         loop {
-            interval.tick().await;
-            match share_repository.delete_expired().await {
-                Ok(count) => {
-                    if count > 0 {
-                        tracing::info!("Cleaned up {} expired share(s)", count);
-                    } else {
-                        tracing::debug!("Share cleanup check complete - no expired shares found");
+            tokio::select! {
+                _ = interval.tick() => {
+                    match share_repository.delete_expired().await {
+                        Ok(count) => {
+                            if count > 0 {
+                                tracing::info!("Cleaned up {} expired share(s)", count);
+                            } else {
+                                tracing::debug!("Share cleanup check complete - no expired shares found");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Error cleaning up expired shares: {:?}", e);
+                        }
                     }
-                }
-                Err(e) => {
-                    tracing::error!("Error cleaning up expired shares: {:?}", e);
+                },
+                _ = shutdown_token.cancelled() => {
+                    tracing::info!("Share cleanup task shutting down gracefully");
+                    break;
                 }
             }
         }
@@ -474,24 +526,35 @@ fn make_share_cleanup_task(share_repository: ShareRepository) {
 ///
 /// ### Arguments
 /// - `verification_code_repository`: The verification code repository
-fn make_verification_code_cleanup_task(verification_code_repository: VerificationCodeRepository) {
+/// - `shutdown_token`: Token to signal graceful shutdown
+fn make_verification_code_cleanup_task(
+    verification_code_repository: VerificationCodeRepository,
+    shutdown_token: CancellationToken,
+) {
     tracing::info!("Starting verification code cleanup task (runs every 1 minute)");
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60)); // 1 minutes
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60)); // 1 minute
         loop {
-            interval.tick().await;
-            match verification_code_repository.delete_expired().await {
-                Ok(count) => {
-                    if count > 0 {
-                        tracing::info!("Cleaned up {} expired verification code(s)", count);
-                    } else {
-                        tracing::debug!(
-                            "Verification code cleanup check complete - no expired codes found"
-                        );
+            tokio::select! {
+                _ = interval.tick() => {
+                    match verification_code_repository.delete_expired().await {
+                        Ok(count) => {
+                            if count > 0 {
+                                tracing::info!("Cleaned up {} expired verification code(s)", count);
+                            } else {
+                                tracing::debug!(
+                                    "Verification code cleanup check complete - no expired codes found"
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Error cleaning up expired verification codes: {:?}", e);
+                        }
                     }
-                }
-                Err(e) => {
-                    tracing::error!("Error cleaning up expired verification codes: {:?}", e);
+                },
+                _ = shutdown_token.cancelled() => {
+                    tracing::info!("Verification code cleanup task shutting down gracefully");
+                    break;
                 }
             }
         }

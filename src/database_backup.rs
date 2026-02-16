@@ -1,6 +1,7 @@
 use sqlx::SqlitePool;
 use std::path::PathBuf;
 use time::OffsetDateTime;
+use tokio_util::sync::CancellationToken;
 
 /// Get the backup folder path from environment or use default
 ///
@@ -74,7 +75,9 @@ pub async fn perform_backup(pool: &SqlitePool) -> anyhow::Result<PathBuf> {
 ///
 /// ### Arguments
 /// - `pool`: The SQLite connection pool
-pub fn make_daily_backup_task(pool: SqlitePool) {
+/// - `shutdown_token`: Token to signal graceful shutdown
+/// - `is_prod`: If true, performs final backup on shutdown (production). If false, skips final backup (development).
+pub fn make_daily_backup_task(pool: SqlitePool, shutdown_token: CancellationToken, is_prod: bool) {
     if !is_daily_backup_enabled() {
         tracing::info!("Daily database backups are disabled");
         return;
@@ -87,13 +90,32 @@ pub fn make_daily_backup_task(pool: SqlitePool) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(86400)); // 24 hours
         loop {
-            interval.tick().await;
-            match perform_backup(&pool).await {
-                Ok(backup_path) => {
-                    tracing::info!("Daily backup created: {}", backup_path.display());
-                }
-                Err(e) => {
-                    tracing::error!("Failed to create daily backup: {:?}", e);
+            tokio::select! {
+                _ = interval.tick() => {
+                    match perform_backup(&pool).await {
+                        Ok(backup_path) => {
+                            tracing::info!("Daily backup created: {}", backup_path.display());
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to create daily backup: {:?}", e);
+                        }
+                    }
+                },
+                _ = shutdown_token.cancelled() => {
+                    if is_prod {
+                        tracing::info!("Database backup task shutting down - performing final backup");
+                        match perform_backup(&pool).await {
+                            Ok(backup_path) => {
+                                tracing::info!("Final shutdown backup created: {}", backup_path.display());
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to create final shutdown backup: {:?}", e);
+                            }
+                        }
+                    } else {
+                        tracing::debug!("Database backup task shutting down (dev mode - skipping final backup)");
+                    }
+                    break;
                 }
             }
         }
