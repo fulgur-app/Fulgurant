@@ -38,10 +38,8 @@ pub async fn require_setup_complete(
     let has_admin = !state
         .setup_needed
         .load(std::sync::atomic::Ordering::Relaxed);
-    if !has_admin {
-        if session::get_session_user_id(&session).await.is_err() {
-            return Ok(Redirect::to("/setup").into_response());
-        }
+    if !has_admin && session::get_session_user_id(&session).await.is_err() {
+        return Ok(Redirect::to("/setup").into_response());
     }
     Ok(next.run(request).await)
 }
