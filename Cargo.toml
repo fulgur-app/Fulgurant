@@ -35,7 +35,6 @@ sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio
 
 # Templating
 askama = "0.15.1"
-askama_axum = "0.4"
 
 # Serialization
 serde = { version = "1.0.228", features = ["derive"] }
