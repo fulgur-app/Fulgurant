@@ -66,34 +66,6 @@ pub enum VerificationResult {
     TooManyAttempts,
 }
 
-#[allow(dead_code)]
-impl VerificationResult {
-    /// Convert a VerificationResult to an error message
-    ///
-    /// ### Arguments
-    /// - `self`: The VerificationResult
-    ///
-    /// ### Returns
-    /// - `String`: The error message
-    pub fn to_error_message(&self) -> String {
-        match self {
-            VerificationResult::Verified => "Code verified successfully".to_string(),
-            VerificationResult::NotFound => {
-                "No verification code found. Please request a new one.".to_string()
-            }
-            VerificationResult::Expired => {
-                "Code has expired. Please request a new one.".to_string()
-            }
-            VerificationResult::Invalid { attempts_remaining } => {
-                format!("Invalid code. {} attempt(s) remaining.", attempts_remaining)
-            }
-            VerificationResult::TooManyAttempts => {
-                "Too many failed attempts. Please request a new code.".to_string()
-            }
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct VerificationCode {
     pub id: String,
