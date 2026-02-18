@@ -1,13 +1,13 @@
-use lazy_static::lazy_static;
 use rand::Rng;
 use regex::Regex;
+use std::sync::LazyLock;
 use time::OffsetDateTime;
 
-lazy_static! {
-    static ref EMAIL_REGEX: Regex = Regex::new(
+static EMAIL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
         r"^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$"
-    ).unwrap();
-}
+    ).unwrap()
+});
 
 /// Checks if the email is valid
 ///
