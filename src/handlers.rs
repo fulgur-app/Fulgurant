@@ -21,7 +21,7 @@ use crate::{
     session::{self},
     shares::{DisplayShare, ShareRepository},
     templates::{self},
-    users::UserRepository,
+    users::{MAX_NAME_LEN, UserRepository},
     verification_code::{self, VerificationCodeRepository},
 };
 
@@ -420,19 +420,38 @@ pub async fn update_name(
     Form(request): Form<UpdateNameRequest>,
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
-    //TODO: add validation for first and last name
+    let first_name = request.first_name.trim().to_string();
+    let last_name = request.last_name.trim().to_string();
+    if first_name.is_empty() {
+        return Err(AppError::ValidationError(
+            "First name cannot be empty".to_string(),
+        ));
+    }
+    if first_name.len() > MAX_NAME_LEN {
+        return Err(AppError::ValidationError(format!(
+            "First name cannot exceed {} characters",
+            MAX_NAME_LEN
+        )));
+    }
+    if last_name.is_empty() {
+        return Err(AppError::ValidationError(
+            "Last name cannot be empty".to_string(),
+        ));
+    }
+    if last_name.len() > MAX_NAME_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Last name cannot exceed {} characters",
+            MAX_NAME_LEN
+        )));
+    }
     state
         .user_repository
-        .update_name(
-            user_id,
-            request.first_name.clone(),
-            request.last_name.clone(),
-        )
+        .update_name(user_id, first_name.clone(), last_name.clone())
         .await?;
     tracing::info!("User {} updated their name", user_id);
     let template = templates::UpdateNameSuccessTemplate {
-        first_name: request.first_name,
-        last_name: request.last_name,
+        first_name,
+        last_name,
     };
     Ok(Html(template.render()?))
 }

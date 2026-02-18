@@ -19,6 +19,7 @@ use crate::{
     logging::sanitize_for_log,
     session,
     templates::{self, LoginTemplate},
+    users::MAX_NAME_LEN,
     verification_code::{self, VerificationResult, generate_code},
 };
 
@@ -332,6 +333,28 @@ pub async fn register_step_1(
     let last_name = request.last_name.trim();
     let password = request.password.trim();
     let email = request.email.trim().to_lowercase();
+    if first_name.is_empty()
+        || last_name.is_empty()
+        || first_name.len() > MAX_NAME_LEN
+        || last_name.len() > MAX_NAME_LEN
+    {
+        let error_message = if first_name.is_empty() {
+            "First name cannot be empty".to_string()
+        } else if last_name.is_empty() {
+            "Last name cannot be empty".to_string()
+        } else {
+            format!("Names cannot exceed {} characters", MAX_NAME_LEN)
+        };
+        let template = templates::RegisterStep1Template {
+            error_message,
+            email: email.clone(),
+            first_name: first_name.to_string(),
+            last_name: last_name.to_string(),
+        };
+        return Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+        })?));
+    }
     if !is_valid_email(&email) {
         let template = templates::RegisterStep1Template {
             error_message: "Invalid email".to_string(),

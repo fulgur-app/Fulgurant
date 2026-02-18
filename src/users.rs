@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite, SqlitePool};
 use time::OffsetDateTime;
 
+pub const MAX_NAME_LEN: usize = 50;
+
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct User {
     pub id: i32,

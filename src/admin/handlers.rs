@@ -12,6 +12,7 @@ use crate::{
     errors::AppError,
     handlers::AppState,
     session, templates,
+    users::MAX_NAME_LEN,
     utils::{generate_valid_password, is_valid_email},
 };
 
@@ -245,6 +246,28 @@ pub async fn create_user_from_admin(
     let first_name = request.first_name.trim();
     let last_name = request.last_name.trim();
     let email = request.email.trim();
+    if first_name.is_empty() {
+        return Err(AppError::ValidationError(
+            "First name cannot be empty".to_string(),
+        ));
+    }
+    if first_name.len() > MAX_NAME_LEN {
+        return Err(AppError::ValidationError(format!(
+            "First name cannot exceed {} characters",
+            MAX_NAME_LEN
+        )));
+    }
+    if last_name.is_empty() {
+        return Err(AppError::ValidationError(
+            "Last name cannot be empty".to_string(),
+        ));
+    }
+    if last_name.len() > MAX_NAME_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Last name cannot exceed {} characters",
+            MAX_NAME_LEN
+        )));
+    }
     if !is_valid_email(email) {
         return Err(AppError::InternalError(anyhow::anyhow!(
             "Invalid email address"
