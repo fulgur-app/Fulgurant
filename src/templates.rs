@@ -33,27 +33,30 @@ impl UserContext {
         }
     }
 
-    /// Create a new UserContext from a User
-    ///
-    /// ### Arguments
-    /// - `user`: The User to convert
-    ///
-    /// ### Returns
-    /// - `UserContext`: The UserContext
-    pub fn from(user: &User) -> Self {
-        Self::new(
-            user.id,
-            user.first_name.clone(),
-            user.role.clone(),
-            user.shares,
-        )
-    }
     /// Check if the user is an admin
     ///
     /// ### Returns
     /// - `True` if the user is an admin, `False` otherwise
     pub fn is_admin(&self) -> bool {
         self.role == "Admin"
+    }
+}
+
+impl From<&User> for UserContext {
+    /// Convert a User reference into a UserContext
+    ///
+    /// ### Arguments
+    /// - `user`: The User to convert
+    ///
+    /// ### Returns
+    /// - `UserContext`: The UserContext
+    fn from(user: &User) -> Self {
+        Self::new(
+            user.id,
+            user.first_name.clone(),
+            user.role.clone(),
+            user.shares,
+        )
     }
 }
 
