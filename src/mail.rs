@@ -25,8 +25,13 @@ impl Mailer {
                 std::env::var("SMTP_LOGIN").expect("SMTP_LOGIN must be set in production mode");
             let smtp_password = std::env::var("SMTP_PASSWORD")
                 .expect("SMTP_PASSWORD must be set in production mode");
+            let smtp_port = std::env::var("SMTP_PORT")
+                .unwrap_or_else(|_| "587".to_string())
+                .parse::<u16>()
+                .expect("SMTP_PORT must be a valid port number (1-65535)");
             let transport = SmtpTransport::starttls_relay(&smtp_host)
                 .expect("Failed to create SMTP transport")
+                .port(smtp_port)
                 .credentials(Credentials::new(smtp_user.clone(), smtp_password))
                 .build();
 
