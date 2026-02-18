@@ -25,7 +25,7 @@ pub struct User {
 }
 
 /// Public-facing User struct that excludes sensitive information (password_hash, encryption_key)
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct DisplayUser {
     pub id: i32,
     pub email: String,
@@ -425,16 +425,15 @@ impl UserRepository {
         let offset = (page - 1) * page_size;
         let total_count = self.count_all().await?;
         let total_pages = (total_count + page_size - 1) / page_size;
-        let users = sqlx::query_as::<_, User>(
-            "SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        let users = sqlx::query_as::<_, DisplayUser>(
+            "SELECT id, email, first_name, last_name, email_verified, role, last_activity, shares, force_password_update, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
         )
         .bind(page_size)
         .bind(offset)
         .fetch_all(&self.pool)
         .await?;
-        let display_users: Vec<DisplayUser> = users.into_iter().map(|u| u.into()).collect();
         Ok(PaginatedUsers {
-            users: display_users,
+            users,
             total_count,
             page,
             page_size,
@@ -514,18 +513,17 @@ impl UserRepository {
 
         let total_pages = (total_count + page_size - 1) / page_size;
         let query = format!(
-            "SELECT * FROM users {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT id, email, first_name, last_name, email_verified, role, last_activity, shares, force_password_update, created_at, updated_at FROM users {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             where_clause
         );
-        let mut query_builder = sqlx::query_as::<_, User>(&query);
+        let mut query_builder = sqlx::query_as::<_, DisplayUser>(&query);
         for param in &params {
             query_builder = query_builder.bind(param);
         }
         query_builder = query_builder.bind(page_size).bind(offset);
         let users = query_builder.fetch_all(&self.pool).await?;
-        let display_users: Vec<DisplayUser> = users.into_iter().map(|u| u.into()).collect();
         Ok(PaginatedUsers {
-            users: display_users,
+            users,
             total_count,
             page,
             page_size,
