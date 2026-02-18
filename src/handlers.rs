@@ -342,11 +342,11 @@ pub async fn cancel_edit_device(
     Ok(Html(template.render()?))
 }
 
-/// DELETE /device/{id} - Deletes a device
+/// DELETE /share/{id} - Deletes a share
 ///
 /// ### Arguments
 /// - `state`: The state of the application
-/// - `id`: The ID of the device
+/// - `id`: The ID of the share
 ///
 /// ### Returns
 /// - `Ok(StatusCode)`: The response as status code
