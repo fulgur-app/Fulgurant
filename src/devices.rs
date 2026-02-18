@@ -5,6 +5,8 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 pub const MAX_DEVICES_PER_USER: i32 = 99;
+pub const MAX_DEVICE_NAME_LEN: usize = 50;
+pub const MAX_DEVICE_TYPE_LEN: usize = 20;
 
 /// Get the maximum number of devices per user from the environment variable, defaults to 99
 ///

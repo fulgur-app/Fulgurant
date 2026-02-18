@@ -11,7 +11,10 @@ use tower_sessions::Session;
 use crate::{
     api::sse::SseChannelManager,
     api_key::{self},
-    devices::{self, CreateDevice, Device, DeviceRepository, UpdateDevice},
+    devices::{
+        self, CreateDevice, Device, DeviceRepository, MAX_DEVICE_NAME_LEN, MAX_DEVICE_TYPE_LEN,
+        UpdateDevice,
+    },
     errors::AppError,
     logging::sanitize_for_log,
     mail,
@@ -121,8 +124,34 @@ pub async fn index(
 pub async fn create_device(
     State(state): State<AppState>,
     Path(user_id): Path<i32>,
-    Form(request): Form<CreateDevice>,
+    Form(mut request): Form<CreateDevice>,
 ) -> Result<Html<String>, AppError> {
+    let name = request.name.trim().to_string();
+    let device_type = request.device_type.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::ValidationError(
+            "Device name cannot be empty".to_string(),
+        ));
+    }
+    if name.len() > MAX_DEVICE_NAME_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Device name cannot exceed {} characters",
+            MAX_DEVICE_NAME_LEN
+        )));
+    }
+    if device_type.is_empty() {
+        return Err(AppError::ValidationError(
+            "Device type cannot be empty".to_string(),
+        ));
+    }
+    if device_type.len() > MAX_DEVICE_TYPE_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Device type cannot exceed {} characters",
+            MAX_DEVICE_TYPE_LEN
+        )));
+    }
+    request.name = name;
+    request.device_type = device_type;
     let devices_number = state
         .device_repository
         .count_devices_for_user(user_id)
@@ -181,8 +210,34 @@ pub async fn get_device_edit_form(
 pub async fn update_device(
     State(state): State<AppState>,
     Path(id): Path<i32>,
-    Form(request): Form<UpdateDevice>,
+    Form(mut request): Form<UpdateDevice>,
 ) -> Result<Html<String>, AppError> {
+    let name = request.name.trim().to_string();
+    let device_type = request.device_type.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::ValidationError(
+            "Device name cannot be empty".to_string(),
+        ));
+    }
+    if name.len() > MAX_DEVICE_NAME_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Device name cannot exceed {} characters",
+            MAX_DEVICE_NAME_LEN
+        )));
+    }
+    if device_type.is_empty() {
+        return Err(AppError::ValidationError(
+            "Device type cannot be empty".to_string(),
+        ));
+    }
+    if device_type.len() > MAX_DEVICE_TYPE_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Device type cannot exceed {} characters",
+            MAX_DEVICE_TYPE_LEN
+        )));
+    }
+    request.name = name;
+    request.device_type = device_type;
     let device = state.device_repository.update(id, request).await?;
     let template = templates::DeviceRowTemplate { device };
     Ok(Html(template.render()?))
