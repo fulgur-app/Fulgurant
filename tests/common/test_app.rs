@@ -4,6 +4,7 @@ use fulgurant::{
     shares::ShareRepository, users::UserRepository, verification_code::VerificationCodeRepository,
 };
 use sqlx::SqlitePool;
+use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::{Arc, atomic::AtomicBool};
 use tower_sessions::{
     Expiry, MemoryStore, SessionManagerLayer, cookie::time::Duration as CookieDuration,
@@ -64,7 +65,11 @@ impl TestApp {
     /// ### Returns
     /// - `TestApp` with an in-memory SQLite database, all migrations applied, and the given options
     pub async fn with_options(opts: TestAppOptions) -> Self {
-        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
         sqlx::migrate!("./data/migrations")
             .run(&pool)
             .await
