@@ -139,17 +139,11 @@ impl ShareRepository {
     ///
     /// ### Returns
     /// - `Ok(Share)`: The created or updated share
-    /// - `Err(anyhow::Error)`: The error that occurred while creating the share
-    pub async fn create(&self, user_id: i32, data: CreateShare) -> Result<Share, anyhow::Error> {
+    /// - `Err(sqlx::Error)`: The error that occurred while creating the share
+    pub async fn create(&self, user_id: i32, data: CreateShare) -> Result<Share, sqlx::Error> {
         let id = Uuid::new_v4().to_string();
         let file_hash = calculate_file_hash(&data.content);
         let file_size = data.content.len() as i32;
-        if file_size as usize > MAX_FILE_SIZE {
-            return Err(anyhow::anyhow!(
-                "File size exceeds maximum of {} bytes",
-                MAX_FILE_SIZE
-            ));
-        }
         let now = OffsetDateTime::now_utc();
         let expires_at = now + Duration::days(SHARE_VALIDITY_DAYS);
 
@@ -222,13 +216,12 @@ impl ShareRepository {
     ///
     /// ### Returns
     /// - `Ok(Share)`: The share
-    /// - `Err(anyhow::Error)`: The error that occurred while getting the share
-    pub async fn get_by_id(&self, id: &str) -> Result<Share, anyhow::Error> {
-        let share = sqlx::query_as::<_, Share>("SELECT * FROM shares WHERE id = ?")
+    /// - `Err(sqlx::Error)`: The error that occurred while getting the share
+    pub async fn get_by_id(&self, id: &str) -> Result<Share, sqlx::Error> {
+        sqlx::query_as::<_, Share>("SELECT * FROM shares WHERE id = ?")
             .bind(id)
             .fetch_one(&self.pool)
-            .await?;
-        Ok(share)
+            .await
     }
 
     /// Get all shares for a user       /
