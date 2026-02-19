@@ -46,6 +46,7 @@ impl TestApp {
     ///
     /// ### Returns
     /// - `TestApp` configured with `setup_needed = true`
+    #[allow(dead_code)]
     pub async fn with_setup_needed() -> Self {
         Self::with_options(TestAppOptions {
             setup_needed: true,

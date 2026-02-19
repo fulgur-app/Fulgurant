@@ -34,6 +34,7 @@ pub async fn create_verified_user(pool: &SqlitePool, email: &str, password: &str
 ///
 /// ### Returns
 /// - `(user_id, email, password)` — the created admin's ID and fixed credentials
+#[allow(dead_code)]
 pub async fn create_admin_user(pool: &SqlitePool) -> (i32, String, String) {
     let email = "admin@test.com".to_string();
     let password = "TestAdmin1!".to_string();
@@ -61,6 +62,7 @@ pub async fn create_admin_user(pool: &SqlitePool) -> (i32, String, String) {
 ///
 /// ### Returns
 /// - `String`: The CSRF token value string
+#[allow(dead_code)]
 pub fn extract_csrf_token(html: &str) -> String {
     // Match: name="csrf_token" value="<TOKEN>" (with possible whitespace variations)
     let start_marker = "name=\"csrf_token\"";
