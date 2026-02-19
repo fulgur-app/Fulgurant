@@ -7,6 +7,14 @@ use time::OffsetDateTime;
 
 pub const MAX_NAME_LEN: usize = 50;
 
+/// Escapes SQLite LIKE wildcards (`%`, `_`, `\`) in a search term.
+/// Must be used together with `LIKE ? ESCAPE '\'` in the SQL clause.
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct User {
     pub id: i32,
@@ -481,16 +489,16 @@ impl UserRepository {
         let mut where_clauses = Vec::new();
         let mut params = Vec::new();
         if let Some(e) = email.as_ref().filter(|s| !s.trim().is_empty()) {
-            where_clauses.push("email LIKE ?");
-            params.push(format!("%{}%", e.trim()));
+            where_clauses.push("email LIKE ? ESCAPE '\\'");
+            params.push(format!("%{}%", escape_like(e.trim())));
         }
         if let Some(f) = first_name.as_ref().filter(|s| !s.trim().is_empty()) {
-            where_clauses.push("first_name LIKE ?");
-            params.push(format!("%{}%", f.trim()));
+            where_clauses.push("first_name LIKE ? ESCAPE '\\'");
+            params.push(format!("%{}%", escape_like(f.trim())));
         }
         if let Some(l) = last_name.as_ref().filter(|s| !s.trim().is_empty()) {
-            where_clauses.push("last_name LIKE ?");
-            params.push(format!("%{}%", l.trim()));
+            where_clauses.push("last_name LIKE ? ESCAPE '\\'");
+            params.push(format!("%{}%", escape_like(l.trim())));
         }
         if let Some(r) = role
             .as_ref()
@@ -607,5 +615,40 @@ impl UserRepository {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_like;
+
+    #[test]
+    fn test_escape_like_plain_string() {
+        assert_eq!(escape_like("hello"), "hello");
+    }
+
+    #[test]
+    fn test_escape_like_escapes_percent() {
+        assert_eq!(escape_like("100%"), "100\\%");
+    }
+
+    #[test]
+    fn test_escape_like_escapes_underscore() {
+        assert_eq!(escape_like("test_user"), "test\\_user");
+    }
+
+    #[test]
+    fn test_escape_like_escapes_backslash() {
+        assert_eq!(escape_like("path\\file"), "path\\\\file");
+    }
+
+    #[test]
+    fn test_escape_like_escapes_multiple() {
+        assert_eq!(escape_like("50% off_sale"), "50\\% off\\_sale");
+    }
+
+    #[test]
+    fn test_escape_like_empty_string() {
+        assert_eq!(escape_like(""), "");
     }
 }
