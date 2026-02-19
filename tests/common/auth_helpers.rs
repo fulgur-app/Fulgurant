@@ -1,7 +1,7 @@
 use axum::http::header::{HeaderName, HeaderValue};
 use axum_test::TestServer;
 use fulgurant::auth::handlers::hash_password;
-use fulgurant::users::UserRepository;
+use fulgurant::users::{UserRepository, generate_encryption_key};
 use serde::Serialize;
 use sqlx::SqlitePool;
 
@@ -38,6 +38,10 @@ pub async fn create_verified_user(pool: &SqlitePool, email: &str, password: &str
 
 /// Create an admin user directly in the database
 ///
+/// Bypasses the production guard in `UserRepository::create_admin()` that prevents
+/// creating a second admin. This is necessary because seed migrations may already
+/// insert an admin user into the test database.
+///
 /// ### Arguments
 /// - `pool`: The SQLite connection pool
 ///
@@ -45,19 +49,20 @@ pub async fn create_verified_user(pool: &SqlitePool, email: &str, password: &str
 /// - `(user_id, email, password)` — the created admin's ID and fixed credentials
 #[allow(dead_code)]
 pub async fn create_admin_user(pool: &SqlitePool) -> (i32, String, String) {
-    let email = "admin@test.com".to_string();
+    let email = "admin2@test.com".to_string();
     let password = "TestAdmin1!".to_string();
     let password_hash = hash_password(&password).unwrap();
-    let user_repo = UserRepository::new(pool.clone());
-    let id = user_repo
-        .create_admin(
-            email.clone(),
-            "Admin".to_string(),
-            "User".to_string(),
-            password_hash,
-        )
-        .await
-        .unwrap();
+    let encryption_key = generate_encryption_key();
+    let result = sqlx::query(
+        "INSERT INTO users (email, first_name, last_name, password_hash, role, email_verified, encryption_key) VALUES (?, 'Admin', 'User', ?, 'Admin', TRUE, ?)",
+    )
+    .bind(&email)
+    .bind(&password_hash)
+    .bind(&encryption_key)
+    .execute(pool)
+    .await
+    .unwrap();
+    let id = result.last_insert_rowid() as i32;
     (id, email, password)
 }
 
