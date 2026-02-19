@@ -13,6 +13,7 @@ use tower_sessions::{
 pub struct TestApp {
     pub server: TestServer,
     pub pool: SqlitePool,
+    #[allow(dead_code)]
     pub jwt_secret: String,
 }
 

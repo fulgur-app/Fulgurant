@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use axum::http::header::{AUTHORIZATION, HeaderName, HeaderValue};
 use axum_test::TestServer;
 use fulgur_common::api::sync::AccessTokenResponse;
