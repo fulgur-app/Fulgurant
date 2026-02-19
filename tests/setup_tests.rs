@@ -2,7 +2,10 @@ mod common;
 
 use axum::http::StatusCode;
 use axum::http::header::{HeaderName, HeaderValue};
-use common::{auth_helpers::extract_csrf_token, test_app::TestApp};
+use common::{
+    auth_helpers::{create_admin_user, extract_csrf_token},
+    test_app::TestApp,
+};
 use serde::Serialize;
 use sqlx::SqlitePool;
 
@@ -55,8 +58,8 @@ async fn test_setup_page_when_needed() {
 
 #[tokio::test]
 async fn test_setup_redirects_when_admin_exists() {
-    // TestApp::new() already has the seed admin in the DB via migration
     let app = TestApp::new().await;
+    create_admin_user(&app.pool).await;
 
     let response = app.server.get("/setup").expect_failure().await;
 
