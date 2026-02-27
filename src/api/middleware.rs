@@ -32,6 +32,32 @@ struct ErrorResponse {
     error: String,
 }
 
+/// Build a log-safe header list by redacting sensitive values.
+///
+/// ### Arguments
+/// - `headers`: Incoming request headers
+///
+/// ### Returns
+/// - `Vec<(String, String)>`: Header name/value pairs with sensitive values redacted
+fn redact_headers_for_log(headers: &HeaderMap) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .map(|(name, value)| {
+            let key = name.as_str().to_ascii_lowercase();
+            let is_sensitive = matches!(
+                key.as_str(),
+                "authorization" | "cookie" | "set-cookie" | "x-api-key" | "x-auth-token"
+            );
+            if is_sensitive {
+                (name.to_string(), "[REDACTED]".to_string())
+            } else {
+                let value = value.to_str().unwrap_or("[NON-UTF8]").to_string();
+                (name.to_string(), value)
+            }
+        })
+        .collect()
+}
+
 /// Middleware that authenticates API requests via JWT access tokens
 ///
 /// ### Description
@@ -96,7 +122,8 @@ pub async fn require_api_auth(
                 )
                     .into_response());
             } else {
-                tracing::warn!("Request headers: {:?}", headers);
+                let safe_headers = redact_headers_for_log(&headers);
+                tracing::warn!("Request headers (redacted): {:?}", safe_headers);
                 tracing::warn!("Invalid access token: {:?}", e);
                 return Err((
                     StatusCode::UNAUTHORIZED,
@@ -168,4 +195,40 @@ pub async fn require_api_auth(
         device_name: claims.device_name,
     });
     Ok(next.run(request).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::header::{AUTHORIZATION, COOKIE, USER_AGENT};
+    use axum::http::{HeaderMap, HeaderValue};
+
+    #[test]
+    fn redact_headers_for_log_redacts_sensitive_values() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_static("Bearer super_secret"),
+        );
+        headers.insert(COOKIE, HeaderValue::from_static("session=secret"));
+        headers.insert(USER_AGENT, HeaderValue::from_static("fulgur-test-client"));
+
+        let redacted = redact_headers_for_log(&headers);
+
+        assert!(
+            redacted
+                .iter()
+                .any(|(k, v)| k.eq_ignore_ascii_case("authorization") && v == "[REDACTED]")
+        );
+        assert!(
+            redacted
+                .iter()
+                .any(|(k, v)| k.eq_ignore_ascii_case("cookie") && v == "[REDACTED]")
+        );
+        assert!(
+            redacted
+                .iter()
+                .any(|(k, v)| k.eq_ignore_ascii_case("user-agent") && v == "fulgur-test-client")
+        );
+    }
 }
