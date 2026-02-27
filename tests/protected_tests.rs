@@ -183,6 +183,10 @@ async fn test_create_device_for_another_user_forbidden() {
         .await;
 
     response.assert_status(StatusCode::FORBIDDEN);
+
+    let device_repo = DeviceRepository::new(app.pool.clone());
+    let victim_devices = device_repo.get_all_for_user(victim_id).await.unwrap();
+    assert!(victim_devices.is_empty());
 }
 
 // ─────────────────────────────────────────────
@@ -276,6 +280,13 @@ async fn test_update_other_users_device_forbidden() {
 
     response.assert_status(StatusCode::FORBIDDEN);
     assert_ne!(attacker_id, victim_id);
+
+    let unchanged_device = device_repo
+        .get_by_device_id(&victim_device_uuid)
+        .await
+        .unwrap();
+    assert_eq!(unchanged_device.name, "Victim Device");
+    assert_eq!(unchanged_device.device_type, "Desktop");
 }
 
 // ─────────────────────────────────────────────
@@ -331,6 +342,11 @@ async fn test_delete_other_users_device_forbidden() {
         .await;
 
     response.assert_status(StatusCode::FORBIDDEN);
+    let still_exists = device_repo
+        .get_by_device_id(&victim_device_uuid)
+        .await
+        .unwrap();
+    assert_eq!(still_exists.id, victim_device.id);
 }
 
 // ─────────────────────────────────────────────
@@ -408,6 +424,8 @@ async fn test_delete_other_users_share_forbidden() {
         .await;
 
     response.assert_status(StatusCode::FORBIDDEN);
+    let remaining_share = share_repo.get_by_id(&share.id).await.unwrap();
+    assert_eq!(remaining_share.id, share.id);
 }
 
 // ─────────────────────────────────────────────
