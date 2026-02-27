@@ -14,6 +14,7 @@ pub enum AppError {
     ApiKeyError(anyhow::Error),
     InternalError(anyhow::Error),
     Unauthorized,
+    Forbidden,
     MaxDevicesPerUserReached(i32),
     ValidationError(String),
 }
@@ -34,6 +35,7 @@ impl std::fmt::Display for AppError {
             AppError::ApiKeyError(e) => write!(f, "API key error: {}", e),
             AppError::InternalError(e) => write!(f, "Internal error: {}", e),
             AppError::Unauthorized => write!(f, "Unauthorized"),
+            AppError::Forbidden => write!(f, "Forbidden"),
             AppError::MaxDevicesPerUserReached(max) => {
                 write!(f, "Max number of devices per user reached: {}", max)
             }
@@ -79,6 +81,7 @@ impl IntoResponse for AppError {
                 )
             }
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
+            AppError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
             AppError::MaxDevicesPerUserReached(max_number_of_devices) => (
                 StatusCode::FORBIDDEN,
                 format!("Max number of devices per user reached: {max_number_of_devices}"),

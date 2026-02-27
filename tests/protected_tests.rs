@@ -159,6 +159,32 @@ async fn test_create_device_max_reached() {
     response.assert_status(StatusCode::FORBIDDEN);
 }
 
+#[tokio::test]
+async fn test_create_device_for_another_user_forbidden() {
+    let app = TestApp::new().await;
+    let attacker_id = create_verified_user(&app.pool, "attacker@test.com", "Password123!").await;
+    let victim_id = create_verified_user(&app.pool, "victim@test.com", "Password123!").await;
+    assert_ne!(attacker_id, victim_id);
+
+    login(&app.server, "attacker@test.com", "Password123!").await;
+    let page = app.server.get("/").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post(&format!("/device/{}/create", victim_id))
+        .add_header(name, value)
+        .form(&CreateDeviceFormData {
+            name: "Stolen Device",
+            device_type: "Desktop",
+            api_key_lifetime: 365,
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
 // ─────────────────────────────────────────────
 // PUT /device/{id}
 // ─────────────────────────────────────────────
@@ -218,6 +244,40 @@ async fn test_update_device_empty_name() {
     assert!(response.text().contains("cannot be empty"));
 }
 
+#[tokio::test]
+async fn test_update_other_users_device_forbidden() {
+    let app = TestApp::new().await;
+    let attacker_id = create_verified_user(&app.pool, "attacker@test.com", "Password123!").await;
+    let victim_id = create_verified_user(&app.pool, "victim@test.com", "Password123!").await;
+    let (victim_device_uuid, _) =
+        create_device_for_user(&app.pool, victim_id, "Victim Device").await;
+
+    login(&app.server, "attacker@test.com", "Password123!").await;
+
+    let device_repo = DeviceRepository::new(app.pool.clone());
+    let victim_device = device_repo
+        .get_by_device_id(&victim_device_uuid)
+        .await
+        .unwrap();
+
+    let page = app.server.get("/").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .put(&format!("/device/{}", victim_device.id))
+        .add_header(name, value)
+        .form(&UpdateDeviceFormData {
+            name: "Compromised Device",
+            device_type: "Mobile",
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+    assert_ne!(attacker_id, victim_id);
+}
+
 // ─────────────────────────────────────────────
 // DELETE /device/{id}
 // ─────────────────────────────────────────────
@@ -242,6 +302,35 @@ async fn test_delete_device_success() {
         .await;
 
     response.assert_status_ok();
+}
+
+#[tokio::test]
+async fn test_delete_other_users_device_forbidden() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "attacker@test.com", "Password123!").await;
+    let victim_id = create_verified_user(&app.pool, "victim@test.com", "Password123!").await;
+    let (victim_device_uuid, _) =
+        create_device_for_user(&app.pool, victim_id, "Victim Device").await;
+
+    login(&app.server, "attacker@test.com", "Password123!").await;
+
+    let device_repo = DeviceRepository::new(app.pool.clone());
+    let victim_device = device_repo
+        .get_by_device_id(&victim_device_uuid)
+        .await
+        .unwrap();
+
+    let page = app.server.get("/").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .delete(&format!("/device/{}", victim_device.id))
+        .add_header(name, value)
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
 }
 
 // ─────────────────────────────────────────────
@@ -281,6 +370,44 @@ async fn test_delete_share_success() {
         .await;
 
     response.assert_status_ok();
+}
+
+#[tokio::test]
+async fn test_delete_other_users_share_forbidden() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "attacker@test.com", "Password123!").await;
+    let victim_id = create_verified_user(&app.pool, "victim@test.com", "Password123!").await;
+    login(&app.server, "attacker@test.com", "Password123!").await;
+
+    // Shares require existing source/destination devices due to FK constraints.
+    let (victim_device_uuid, _) =
+        create_device_for_user(&app.pool, victim_id, "Victim Device").await;
+    let share_repo = ShareRepository::new(app.pool.clone());
+    let share = share_repo
+        .create(
+            victim_id,
+            CreateShare {
+                source_device_id: victim_device_uuid.clone(),
+                destination_device_id: victim_device_uuid,
+                file_name: "secret.txt".to_string(),
+                content: "confidential".to_string(),
+                deduplication_hash: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    let page = app.server.get("/").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .delete(&format!("/share/{}", share.id))
+        .add_header(name, value)
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
 }
 
 // ─────────────────────────────────────────────

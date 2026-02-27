@@ -116,6 +116,7 @@ pub async fn index(
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `user_id`: The ID of the user
+/// - `session`: The session
 /// - `request`: The create device request
 ///
 /// ### Returns
@@ -124,8 +125,13 @@ pub async fn index(
 pub async fn create_device(
     State(state): State<AppState>,
     Path(user_id): Path<i32>,
+    session: Session,
     Form(mut request): Form<CreateDevice>,
 ) -> Result<Html<String>, AppError> {
+    let session_user_id = session::get_session_user_id(&session).await?;
+    if session_user_id != user_id {
+        return Err(AppError::Forbidden);
+    }
     let name = request.name.trim().to_string();
     let device_type = request.device_type.trim().to_string();
     if name.is_empty() {
@@ -184,6 +190,7 @@ pub async fn create_device(
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `id`: The ID of the device
+/// - `session`: The session
 ///
 /// ### Returns
 /// - `Ok(Html<String>)`: The inline device edit form as formatted HTML
@@ -191,8 +198,13 @@ pub async fn create_device(
 pub async fn get_device_edit_form(
     State(state): State<AppState>,
     Path(id): Path<i32>,
+    session: Session,
 ) -> Result<Html<String>, AppError> {
+    let session_user_id = session::get_session_user_id(&session).await?;
     let device = state.device_repository.get_by_id(id).await?;
+    if device.user_id != session_user_id {
+        return Err(AppError::Forbidden);
+    }
     let template = templates::InlineEditFormTemplate { device };
     Ok(Html(template.render()?))
 }
@@ -202,6 +214,7 @@ pub async fn get_device_edit_form(
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `id`: The ID of the device
+/// - `session`: The session
 /// - `request`: The update device request
 ///
 /// ### Returns
@@ -210,8 +223,14 @@ pub async fn get_device_edit_form(
 pub async fn update_device(
     State(state): State<AppState>,
     Path(id): Path<i32>,
+    session: Session,
     Form(mut request): Form<UpdateDevice>,
 ) -> Result<Html<String>, AppError> {
+    let session_user_id = session::get_session_user_id(&session).await?;
+    let existing_device = state.device_repository.get_by_id(id).await?;
+    if existing_device.user_id != session_user_id {
+        return Err(AppError::Forbidden);
+    }
     let name = request.name.trim().to_string();
     let device_type = request.device_type.trim().to_string();
     if name.is_empty() {
@@ -248,6 +267,7 @@ pub async fn update_device(
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `id`: The ID of the device
+/// - `session`: The session
 ///
 /// ### Returns
 /// - `Ok(StatusCode)`: The response as status code (when not last device)
@@ -256,9 +276,13 @@ pub async fn update_device(
 pub async fn delete_device(
     State(state): State<AppState>,
     Path(id): Path<i32>,
+    session: Session,
 ) -> Result<axum::response::Response, AppError> {
-    // Get the device to find its user_id
+    let session_user_id = session::get_session_user_id(&session).await?;
     let device = state.device_repository.get_by_id(id).await?;
+    if device.user_id != session_user_id {
+        return Err(AppError::Forbidden);
+    }
     let user_id = device.user_id;
 
     // Count how many devices this user has
@@ -291,6 +315,7 @@ pub async fn delete_device(
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `id`: The ID of the device
+/// - `session`: The session
 ///
 /// ### Returns
 /// - `Ok(Html<String>)`: The inline device renew form as formatted HTML
@@ -298,8 +323,13 @@ pub async fn delete_device(
 pub async fn get_device_renew_form(
     State(state): State<AppState>,
     Path(id): Path<i32>,
+    session: Session,
 ) -> Result<Html<String>, AppError> {
+    let session_user_id = session::get_session_user_id(&session).await?;
     let device = state.device_repository.get_by_id(id).await?;
+    if device.user_id != session_user_id {
+        return Err(AppError::Forbidden);
+    }
     let template = templates::InlineRenewFormTemplate { device };
     Ok(Html(template.render()?))
 }
@@ -309,6 +339,7 @@ pub async fn get_device_renew_form(
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `id`: The ID of the device
+/// - `session`: The session
 /// - `request`: The renew device request
 ///
 /// ### Returns
@@ -317,8 +348,14 @@ pub async fn get_device_renew_form(
 pub async fn renew_device(
     State(state): State<AppState>,
     Path(id): Path<i32>,
+    session: Session,
     Form(request): Form<devices::RenewDevice>,
 ) -> Result<Html<String>, AppError> {
+    let session_user_id = session::get_session_user_id(&session).await?;
+    let existing_device = state.device_repository.get_by_id(id).await?;
+    if existing_device.user_id != session_user_id {
+        return Err(AppError::Forbidden);
+    }
     let device = state.device_repository.renew(id, request).await?;
     let template = templates::DeviceRowTemplate { device };
     Ok(Html(template.render()?))
@@ -329,6 +366,7 @@ pub async fn renew_device(
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `id`: The ID of the device
+/// - `session`: The session
 ///
 /// ### Returns
 /// - `Ok(Html<String>)`: The response as formatted HTML
@@ -336,8 +374,13 @@ pub async fn renew_device(
 pub async fn cancel_edit_device(
     State(state): State<AppState>,
     Path(id): Path<i32>,
+    session: Session,
 ) -> Result<Html<String>, AppError> {
+    let session_user_id = session::get_session_user_id(&session).await?;
     let device = state.device_repository.get_by_id(id).await?;
+    if device.user_id != session_user_id {
+        return Err(AppError::Forbidden);
+    }
     let template = templates::DeviceRowTemplate { device };
     Ok(Html(template.render()?))
 }
@@ -347,6 +390,7 @@ pub async fn cancel_edit_device(
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `id`: The ID of the share
+/// - `session`: The session
 ///
 /// ### Returns
 /// - `Ok(StatusCode)`: The response as status code
@@ -354,7 +398,13 @@ pub async fn cancel_edit_device(
 pub async fn delete_share(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    session: Session,
 ) -> Result<StatusCode, AppError> {
+    let session_user_id = session::get_session_user_id(&session).await?;
+    let share = state.share_repository.get_by_id(&id).await?;
+    if share.user_id != session_user_id {
+        return Err(AppError::Forbidden);
+    }
     match state.share_repository.delete(&id).await {
         Ok(_) => Ok(StatusCode::OK),
         Err(e) => {
