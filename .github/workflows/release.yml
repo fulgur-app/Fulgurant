@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  CARGO_TERM_COLOR: always
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  COMMIT_SHA: ${{ github.sha }}
+  ACTOR: ${{ github.actor }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  validate:
+    name: Validate Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract and validate version
+        id: version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "Tag version: $TAG_VERSION"
+          echo "Cargo.toml version: $CARGO_VERSION"
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+          echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
+
+  build:
+    name: Build and Push Docker Image
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/fulgurant
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        # Note: only the versioned tag is pushed, not `latest`
+        # Promote to `latest` manually after validation (DockerHub has no native draft concept)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/fulgurant:${{ needs.validate.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Telegram notification - Success
+        if: success()
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          MESSAGE="📦 *Fulgurant Release v${VERSION} - Published*
+
+          Docker image pushed to DockerHub (amd64 + arm64)
+          Image: \`${IMAGE}:${VERSION}\`
+          Promote to \`latest\` manually when ready
+
+          *Tag:* \`v${VERSION}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
+
+          [View on DockerHub](https://hub.docker.com/r/${IMAGE}/tags)
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
+
+      - name: Telegram notification - Failure
+        if: failure()
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          MESSAGE="❌ *Fulgurant Release v${VERSION} - Failed*
+
+          Docker build or push failed
+
+          *Tag:* \`v${VERSION}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
