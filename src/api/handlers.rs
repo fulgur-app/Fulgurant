@@ -129,6 +129,51 @@ pub async fn share_file(
             }),
         ));
     }
+    if payload.device_id == auth_user.device_id {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Source and destination devices must be different".to_string(),
+            }),
+        ));
+    }
+    let destination_device = match state
+        .device_repository
+        .get_by_device_id(&payload.device_id)
+        .await
+    {
+        Ok(device) => device,
+        Err(sqlx::Error::RowNotFound) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "Destination device does not exist".to_string(),
+                }),
+            ));
+        }
+        Err(e) => {
+            tracing::error!(
+                "Error loading destination device {}: {:?}",
+                payload.device_id,
+                e
+            );
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Internal server error".to_string(),
+                }),
+            ));
+        }
+    };
+    if destination_device.user_id != auth_user.user.id {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(ErrorResponse {
+                error: "Destination device does not belong to the authenticated user".to_string(),
+            }),
+        ));
+    }
+
     let expiration_date = OffsetDateTime::now_utc() + Duration::days(state.share_validity_days);
     let create_share = CreateShare {
         source_device_id: auth_user.device_id.clone(),

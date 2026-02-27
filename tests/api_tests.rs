@@ -1,5 +1,6 @@
 mod common;
 
+use axum::http::StatusCode;
 use axum::http::header::{AUTHORIZATION, HeaderName, HeaderValue};
 use common::{
     api_helpers::{create_device_for_user, get_jwt_token, setup_api_user},
@@ -512,6 +513,118 @@ async fn test_share_file_deduplication() {
     let shares: Vec<SharedFileResponse> = response.json();
     assert_eq!(shares.len(), 1);
     assert_eq!(shares[0].content, "version 2");
+}
+
+#[tokio::test]
+async fn test_share_file_rejects_nonexistent_destination_device() {
+    let app = TestApp::new().await;
+    let email = "share_missing_dest@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (auth_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+
+    let jwt = access_token::generate_access_token(
+        user_id,
+        auth_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "encrypted file content".to_string(),
+        file_name: "test.txt".to_string(),
+        device_id: "non-existent-device-id".to_string(),
+        deduplication_hash: None,
+    };
+
+    let response = app
+        .server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&payload)
+        .expect_failure()
+        .await;
+
+    response.assert_status_bad_request();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("does not exist"));
+}
+
+#[tokio::test]
+async fn test_share_file_rejects_other_users_destination_device() {
+    let app = TestApp::new().await;
+    let owner_email = "share_owner@test.com";
+    let other_email = "share_other@test.com";
+    let owner_user_id = create_verified_user(&app.pool, owner_email, "TestPassword1!").await;
+    let other_user_id = create_verified_user(&app.pool, other_email, "TestPassword1!").await;
+    let (auth_device_id, _) = create_device_for_user(&app.pool, owner_user_id, "Source").await;
+    let (other_device_id, _) =
+        create_device_for_user(&app.pool, other_user_id, "Other Device").await;
+
+    let jwt = access_token::generate_access_token(
+        owner_user_id,
+        auth_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "encrypted file content".to_string(),
+        file_name: "test.txt".to_string(),
+        device_id: other_device_id,
+        deduplication_hash: None,
+    };
+
+    let response = app
+        .server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&payload)
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("does not belong"));
+}
+
+#[tokio::test]
+async fn test_share_file_rejects_same_source_and_destination_device() {
+    let app = TestApp::new().await;
+    let email = "share_same_device@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (auth_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+
+    let jwt = access_token::generate_access_token(
+        user_id,
+        auth_device_id.clone(),
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "encrypted file content".to_string(),
+        file_name: "test.txt".to_string(),
+        device_id: auth_device_id,
+        deduplication_hash: None,
+    };
+
+    let response = app
+        .server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&payload)
+        .expect_failure()
+        .await;
+
+    response.assert_status_bad_request();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("must be different"));
 }
 
 // ─────────────────────────────────────────────
