@@ -17,7 +17,6 @@ use crate::handlers::AppState;
 pub struct AuthenticatedApiUser {
     pub id: i32,
     pub email: String,
-    pub encryption_key: String,
 }
 
 #[derive(Clone, Debug)]
@@ -66,7 +65,8 @@ fn redact_headers_for_log(headers: &HeaderMap) -> Vec<(String, String)> {
 /// 2. Validates JWT signature and expiry using JWT_SECRET
 /// 3. Extracts claims (user_id, device_id, device_name)
 /// 4. Loads User record from database by user_id
-/// 5. Injects AuthenticatedUser into request extensions
+/// 5. Loads Device record from database by device_id
+/// 6. Injects AuthenticatedUser into request extensions
 ///
 /// ### Arguments
 /// - `state`: The state of the application
@@ -178,6 +178,52 @@ pub async fn require_api_auth(
         )
             .into_response());
     }
+    let device = match state
+        .device_repository
+        .get_by_device_id(&claims.device_id)
+        .await
+    {
+        Ok(device) => device,
+        Err(sqlx::Error::RowNotFound) => {
+            tracing::warn!(
+                "Device not found for JWT claims: device_id={}, user_id={}",
+                claims.device_id,
+                user.id
+            );
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "Device not found".to_string(),
+                }),
+            )
+                .into_response());
+        }
+        Err(e) => {
+            tracing::error!("Database error getting device by device_id: {:?}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Internal server error".to_string(),
+                }),
+            )
+                .into_response());
+        }
+    };
+    if device.user_id != user.id {
+        tracing::warn!(
+            "Device/user mismatch in JWT claims: device_id={}, device_user_id={}, token_user_id={}",
+            claims.device_id,
+            device.user_id,
+            user.id
+        );
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Invalid token claims".to_string(),
+            }),
+        )
+            .into_response());
+    }
     tracing::debug!(
         "Authenticated API request for user {} with device {}: {}",
         user.id,
@@ -189,7 +235,6 @@ pub async fn require_api_auth(
         user: AuthenticatedApiUser {
             id: user.id,
             email: user.email,
-            encryption_key: user.encryption_key,
         },
         device_id: claims.device_id,
         device_name: claims.device_name,
