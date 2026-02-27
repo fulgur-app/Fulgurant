@@ -1,12 +1,13 @@
-use lazy_static::lazy_static;
+use rand::Rng;
 use regex::Regex;
+use std::sync::LazyLock;
 use time::OffsetDateTime;
 
-lazy_static! {
-    static ref EMAIL_REGEX: Regex = Regex::new(
+static EMAIL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
         r"^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$"
-    ).unwrap();
-}
+    ).unwrap()
+});
 
 /// Checks if the email is valid
 ///
@@ -30,12 +31,57 @@ pub fn is_password_valid(password: &str) -> bool {
     let right_length = password.len() >= 8 && password.len() <= 64;
     let has_uppercase = password.chars().any(|c| c.is_uppercase());
     let has_lowercase = password.chars().any(|c| c.is_lowercase());
-    let has_digit = password.chars().any(|c| c.is_digit(10));
+    let has_digit = password.chars().any(|c| c.is_ascii_digit());
     let has_special = password.chars().any(|c| !c.is_alphanumeric());
     if !right_length || !has_uppercase || !has_lowercase || !has_digit || !has_special {
         return false;
     }
     true
+}
+
+/// Generate a random password that meets validation requirements
+///
+/// ### Returns
+/// - A 12-character password containing at least one uppercase letter,
+///   one lowercase letter, one digit, and one special character
+pub fn generate_valid_password() -> String {
+    const UPPERCASE: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const LOWERCASE: &str = "abcdefghijklmnopqrstuvwxyz";
+    const DIGITS: &str = "0123456789";
+    const SPECIAL: &str = "!@#$%&*";
+    let mut rng = rand::rng();
+    let mut password = vec![
+        UPPERCASE
+            .chars()
+            .nth(rng.random_range(0..UPPERCASE.len()))
+            .unwrap(),
+        LOWERCASE
+            .chars()
+            .nth(rng.random_range(0..LOWERCASE.len()))
+            .unwrap(),
+        DIGITS
+            .chars()
+            .nth(rng.random_range(0..DIGITS.len()))
+            .unwrap(),
+        SPECIAL
+            .chars()
+            .nth(rng.random_range(0..SPECIAL.len()))
+            .unwrap(),
+    ];
+    let all_chars = format!("{}{}{}{}", UPPERCASE, LOWERCASE, DIGITS, SPECIAL);
+    for _ in 0..8 {
+        password.push(
+            all_chars
+                .chars()
+                .nth(rng.random_range(0..all_chars.len()))
+                .unwrap(),
+        );
+    }
+    for i in (1..password.len()).rev() {
+        let j = rng.random_range(0..=i);
+        password.swap(i, j);
+    }
+    password.into_iter().collect()
 }
 
 /// Format timestamp as YYYY-MM-DD HH:MM:SS UTC
@@ -66,13 +112,17 @@ pub fn format_datetime_utc(dt: &OffsetDateTime) -> String {
 /// ### Returns
 /// - Formatted string in the format "YYYY-MM-DD"
 pub fn format_date_utc(dt: &OffsetDateTime) -> String {
-    let dt_utc = dt.to_offset(time::UtcOffset::UTC);
-    format!(
-        "{:04}-{:02}-{:02}",
-        dt_utc.year(),
-        dt_utc.month() as u8,
-        dt_utc.day()
-    )
+    if *dt == OffsetDateTime::UNIX_EPOCH {
+        "Never".to_string()
+    } else {
+        let dt_utc = dt.to_offset(time::UtcOffset::UTC);
+        format!(
+            "{:04}-{:02}-{:02}",
+            dt_utc.year(),
+            dt_utc.month() as u8,
+            dt_utc.day()
+        )
+    }
 }
 
 #[cfg(test)]
@@ -85,15 +135,15 @@ mod tests {
         assert!(is_valid_email("user@example.com"));
         assert!(is_valid_email("test.user@example.com"));
         assert!(is_valid_email("user+tag@example.co.uk"));
-        
+
         // Edge cases that should be valid
         assert!(is_valid_email("a@b.c"));
         assert!(is_valid_email("user123@test-domain.com"));
         assert!(is_valid_email("first.last@subdomain.example.com"));
-        
+
         // Special characters allowed in local part
         assert!(is_valid_email("user!#$%&'*+/=?^_`{|}~@example.com"));
-        
+
         // Numbers in domain
         assert!(is_valid_email("user@123.456.com"));
     }
@@ -103,22 +153,22 @@ mod tests {
         // Missing @
         assert!(!is_valid_email("userexample.com"));
         assert!(!is_valid_email("user"));
-        
+
         // Multiple @
         assert!(!is_valid_email("user@@example.com"));
         assert!(!is_valid_email("user@domain@example.com"));
-        
+
         // Empty or whitespace
         assert!(!is_valid_email(""));
         assert!(!is_valid_email(" "));
         assert!(!is_valid_email("   "));
-        
+
         // Missing local part
         assert!(!is_valid_email("@example.com"));
-        
+
         // Missing domain
         assert!(!is_valid_email("user@"));
-        
+
         // Invalid characters
         assert!(!is_valid_email("user name@example.com")); // space
         assert!(!is_valid_email("user@exam ple.com")); // space in domain
@@ -136,27 +186,27 @@ mod tests {
         // Minimum valid password (8 chars with all requirements)
         assert!(is_password_valid("Pass123!"));
         assert!(is_password_valid("Abcdef1!"));
-        
+
         // Common valid passwords
         assert!(is_password_valid("MyPassword1!"));
         assert!(is_password_valid("Secure@Pass123"));
         assert!(is_password_valid("ComplexP@ssw0rd"));
-        
+
         // Various special characters
         assert!(is_password_valid("Password1#"));
         assert!(is_password_valid("Password1$"));
         assert!(is_password_valid("Password1%"));
         assert!(is_password_valid("Password1&"));
         assert!(is_password_valid("Password1*"));
-        
+
         // Maximum length (64 chars)
         assert!(is_password_valid(&format!("{}1!Aa", "a".repeat(59))));
     }
 
     #[test]
     fn test_is_password_valid_too_short() {
-        assert!(!is_password_valid("Pass1!")); 
-        assert!(!is_password_valid("Abc123!")); 
+        assert!(!is_password_valid("Pass1!"));
+        assert!(!is_password_valid("Abc123!"));
         assert!(!is_password_valid(""));
     }
 
@@ -199,9 +249,47 @@ mod tests {
     #[test]
     fn test_is_password_valid_multiple_missing_requirements() {
         // Missing multiple requirements
-        assert!(!is_password_valid("password"));    
+        assert!(!is_password_valid("password"));
         assert!(!is_password_valid("PASSWORD"));
         assert!(!is_password_valid("12345678"));
         assert!(!is_password_valid("Pass"));
+    }
+
+    #[test]
+    fn test_generate_valid_password_meets_requirements() {
+        // Generate multiple passwords and verify each one meets requirements
+        for _ in 0..100 {
+            let password = generate_valid_password();
+            assert!(
+                is_password_valid(&password),
+                "Generated password '{}' does not meet validation requirements",
+                password
+            );
+        }
+    }
+
+    #[test]
+    fn test_generate_valid_password_length() {
+        let password = generate_valid_password();
+        assert_eq!(
+            password.len(),
+            12,
+            "Generated password should be 12 characters"
+        );
+    }
+
+    #[test]
+    fn test_generate_valid_password_uniqueness() {
+        // Generate multiple passwords and verify they are different
+        let passwords: Vec<String> = (0..100).map(|_| generate_valid_password()).collect();
+        let unique_count = passwords
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        assert!(
+            unique_count > 5,
+            "Generated passwords should have high uniqueness (got {} unique out of 10)",
+            unique_count
+        );
     }
 }

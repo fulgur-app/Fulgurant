@@ -7,9 +7,7 @@ use axum::{
 };
 use tower_sessions::Session;
 
-use crate::{errors::AppError, handlers::AppState};
-
-const SESSION_USER_ID: &str = "user_id";
+use crate::{errors::AppError, handlers::AppState, session};
 
 /// Middleware that requires admin role
 ///
@@ -33,24 +31,20 @@ pub async fn require_admin(
     request: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    let user_id: Option<i32> = session
-        .get(SESSION_USER_ID)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get user_id from session: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            )
-                .into_response()
-        })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => {
-            tracing::warn!("Unauthenticated user attempted to access admin route");
-            return Err((StatusCode::UNAUTHORIZED, "Unauthorized").into_response());
+    let user_id = session::get_session_user_id(&session).await.map_err(|e| {
+        tracing::warn!("Unauthenticated user attempted to access admin route");
+        match e {
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized").into_response(),
+            _ => {
+                tracing::error!("Failed to get user_id from session: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
+                    .into_response()
+            }
         }
-    };
+    })?;
     let user = state
         .user_repository
         .get_by_id(user_id)

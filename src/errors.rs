@@ -15,6 +15,7 @@ pub enum AppError {
     InternalError(anyhow::Error),
     Unauthorized,
     MaxDevicesPerUserReached(i32),
+    ValidationError(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -36,6 +37,7 @@ impl std::fmt::Display for AppError {
             AppError::MaxDevicesPerUserReached(max) => {
                 write!(f, "Max number of devices per user reached: {}", max)
             }
+            AppError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
         }
     }
 }
@@ -81,6 +83,7 @@ impl IntoResponse for AppError {
                 StatusCode::FORBIDDEN,
                 format!("Max number of devices per user reached: {max_number_of_devices}"),
             ),
+            AppError::ValidationError(msg) => (StatusCode::BAD_REQUEST, msg),
         };
 
         let template = ErrorMessageTemplate {

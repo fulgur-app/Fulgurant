@@ -8,9 +8,13 @@ use axum::{
 };
 use tower_sessions::Session;
 
-const SESSION_USER_ID: &str = "user_id";
+use crate::session;
 
 /// Middleware that requires authentication
+///
+/// Checks for a valid session with a user_id. If the user has the force_password_update
+/// flag set in their session, they are redirected to /force-password-update for all
+/// paths except /force-password-update, /logout, and static assets.
 ///
 /// ### Arguments
 /// - `session`: The session
@@ -25,15 +29,18 @@ pub async fn require_auth(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let user_id: Option<i32> = session
-        .get(SESSION_USER_ID)
+    if session::get_session_user_id(&session).await.is_err() {
+        return Ok(Redirect::to("/login").into_response());
+    }
+    let force_password_update: Option<bool> = session
+        .get(session::SESSION_FORCE_PASSWORD_UPDATE)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    if user_id.is_none() {
-        let redirect_url = "/login".to_string();
-
-        return Ok(Redirect::to(&redirect_url).into_response());
+    if force_password_update == Some(true) {
+        let path = request.uri().path();
+        if path != "/force-password-update" && path != "/logout" && !path.starts_with("/assets/") {
+            return Ok(Redirect::to("/force-password-update").into_response());
+        }
     }
 
     Ok(next.run(request).await)

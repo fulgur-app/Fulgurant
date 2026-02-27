@@ -1,9 +1,19 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use crate::utils::format_date_utc;
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite, SqlitePool};
 use time::OffsetDateTime;
-use crate::utils::format_date_utc;
+
+pub const MAX_NAME_LEN: usize = 50;
+
+/// Escapes SQLite LIKE wildcards (`%`, `_`, `\`) in a search term.
+/// Must be used together with `LIKE ? ESCAPE '\'` in the SQL clause.
+fn escape_like(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct User {
@@ -17,12 +27,13 @@ pub struct User {
     pub encryption_key: String, // Base64-encoded 256-bit AES key for encrypting shared files
     pub last_activity: OffsetDateTime,
     pub shares: i32,
+    pub force_password_update: bool,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
 
 /// Public-facing User struct that excludes sensitive information (password_hash, encryption_key)
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct DisplayUser {
     pub id: i32,
     pub email: String,
@@ -32,6 +43,7 @@ pub struct DisplayUser {
     pub role: String,
     pub last_activity: OffsetDateTime,
     pub shares: i32,
+    pub force_password_update: bool,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
 }
@@ -73,12 +85,24 @@ impl DisplayUser {
         }
     }
 
-    /// Get the prettyn value of the email_verified field. Used in the templates.
+    /// Get the pretty value of the email_verified field. Used in the templates.
     ///
     /// ### Returns
     /// - `String`: The pretty value of the email_verified field
     pub fn is_email_verified(&self) -> String {
         if self.email_verified {
+            "Yes".to_string()
+        } else {
+            "No".to_string()
+        }
+    }
+
+    /// Get the pretty value of the force_password_update field. Used in the templates.
+    ///
+    /// ### Returns
+    /// - `String`: "Yes" if force_password_update is true, "No" otherwise
+    pub fn is_force_password_update(&self) -> String {
+        if self.force_password_update {
             "Yes".to_string()
         } else {
             "No".to_string()
@@ -103,6 +127,7 @@ impl From<User> for DisplayUser {
             role: user.role,
             last_activity: user.last_activity,
             shares: user.shares,
+            force_password_update: user.force_password_update,
             created_at: user.created_at,
             updated_at: user.updated_at,
         }
@@ -183,6 +208,8 @@ impl UserRepository {
     /// - `first_name`: The first name of the user
     /// - `last_name`: The last name of the user
     /// - `password_hash`: The password hash of the user
+    /// - `is_email_verified`: Whether the email is verified
+    /// - `force_password_update`: Whether the user must change their password on first login
     ///
     /// ### Returns
     /// - `Ok(i32)`: The ID of the created user
@@ -193,16 +220,23 @@ impl UserRepository {
         first_name: String,
         last_name: String,
         password_hash: String,
+        is_email_verified: bool,
+        force_password_update: bool,
     ) -> Result<i32, sqlx::Error> {
         let encryption_key = generate_encryption_key();
+        let now = OffsetDateTime::now_utc().unix_timestamp();
         let result = sqlx::query(
-            "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, force_password_update, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(email)
         .bind(first_name)
         .bind(last_name)
         .bind(password_hash)
         .bind(encryption_key)
+        .bind(is_email_verified)
+        .bind(force_password_update)
+        .bind(now)
+        .bind(now)
         .execute(&self.pool)
         .await?;
         let id = result.last_insert_rowid() as i32;
@@ -225,6 +259,49 @@ impl UserRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    /// Update the password and clear the force_password_update flag in a single operation
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the user
+    /// - `password_hash`: The new password hash
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The password was updated and force_password_update was cleared
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn update_password_and_clear_force_update(
+        &self,
+        id: i32,
+        password_hash: String,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE users SET password_hash = ?, force_password_update = FALSE WHERE id = ?",
+        )
+        .bind(password_hash)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Toggle the force_password_update flag for a user
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the user
+    ///
+    /// ### Returns
+    /// - `Ok(DisplayUser)`: The updated user
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn toggle_force_password_update(&self, id: i32) -> Result<DisplayUser, sqlx::Error> {
+        sqlx::query(
+            "UPDATE users SET force_password_update = NOT force_password_update WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        let updated_user = self.get_by_id(id).await?.ok_or(sqlx::Error::RowNotFound)?;
+        Ok(updated_user.into())
     }
 
     /// Mark a user as verified
@@ -356,16 +433,15 @@ impl UserRepository {
         let offset = (page - 1) * page_size;
         let total_count = self.count_all().await?;
         let total_pages = (total_count + page_size - 1) / page_size;
-        let users = sqlx::query_as::<_, User>(
-            "SELECT * FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        let users = sqlx::query_as::<_, DisplayUser>(
+            "SELECT id, email, first_name, last_name, email_verified, role, last_activity, shares, force_password_update, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
         )
         .bind(page_size)
         .bind(offset)
         .fetch_all(&self.pool)
         .await?;
-        let display_users: Vec<DisplayUser> = users.into_iter().map(|u| u.into()).collect();
         Ok(PaginatedUsers {
-            users: display_users,
+            users,
             total_count,
             page,
             page_size,
@@ -413,16 +489,16 @@ impl UserRepository {
         let mut where_clauses = Vec::new();
         let mut params = Vec::new();
         if let Some(e) = email.as_ref().filter(|s| !s.trim().is_empty()) {
-            where_clauses.push("email LIKE ?");
-            params.push(format!("%{}%", e.trim()));
+            where_clauses.push("email LIKE ? ESCAPE '\\'");
+            params.push(format!("%{}%", escape_like(e.trim())));
         }
         if let Some(f) = first_name.as_ref().filter(|s| !s.trim().is_empty()) {
-            where_clauses.push("first_name LIKE ?");
-            params.push(format!("%{}%", f.trim()));
+            where_clauses.push("first_name LIKE ? ESCAPE '\\'");
+            params.push(format!("%{}%", escape_like(f.trim())));
         }
         if let Some(l) = last_name.as_ref().filter(|s| !s.trim().is_empty()) {
-            where_clauses.push("last_name LIKE ?");
-            params.push(format!("%{}%", l.trim()));
+            where_clauses.push("last_name LIKE ? ESCAPE '\\'");
+            params.push(format!("%{}%", escape_like(l.trim())));
         }
         if let Some(r) = role
             .as_ref()
@@ -445,18 +521,17 @@ impl UserRepository {
 
         let total_pages = (total_count + page_size - 1) / page_size;
         let query = format!(
-            "SELECT * FROM users {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT id, email, first_name, last_name, email_verified, role, last_activity, shares, force_password_update, created_at, updated_at FROM users {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             where_clause
         );
-        let mut query_builder = sqlx::query_as::<_, User>(&query);
+        let mut query_builder = sqlx::query_as::<_, DisplayUser>(&query);
         for param in &params {
             query_builder = query_builder.bind(param);
         }
         query_builder = query_builder.bind(page_size).bind(offset);
         let users = query_builder.fetch_all(&self.pool).await?;
-        let display_users: Vec<DisplayUser> = users.into_iter().map(|u| u.into()).collect();
         Ok(PaginatedUsers {
-            users: display_users,
+            users,
             total_count,
             page,
             page_size,
@@ -540,5 +615,40 @@ impl UserRepository {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_like;
+
+    #[test]
+    fn test_escape_like_plain_string() {
+        assert_eq!(escape_like("hello"), "hello");
+    }
+
+    #[test]
+    fn test_escape_like_escapes_percent() {
+        assert_eq!(escape_like("100%"), "100\\%");
+    }
+
+    #[test]
+    fn test_escape_like_escapes_underscore() {
+        assert_eq!(escape_like("test_user"), "test\\_user");
+    }
+
+    #[test]
+    fn test_escape_like_escapes_backslash() {
+        assert_eq!(escape_like("path\\file"), "path\\\\file");
+    }
+
+    #[test]
+    fn test_escape_like_escapes_multiple() {
+        assert_eq!(escape_like("50% off_sale"), "50\\% off\\_sale");
+    }
+
+    #[test]
+    fn test_escape_like_empty_string() {
+        assert_eq!(escape_like(""), "");
     }
 }

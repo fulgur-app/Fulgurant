@@ -1,117 +1,187 @@
-{% extends "layout.html" %}
+{% extends "layout.html" %} {% block page_title %}Admin{% endblock %} {% block head %}
+<style>
+	.pagination-container {
+		display: flex;
+		justify-content: center;
+		margin-top: 1rem;
+		padding: 0.5rem 0;
+		max-width: 50%;
+		margin: 0 auto;
+	}
 
-{% block page_title %}Admin{% endblock %}
+	.pagination {
+		align-items: center;
+	}
 
-{% block head %}
-    <style>
-        .pagination-container {
-            display: flex;
-            justify-content: center;
-            margin-top: 1rem;
-            padding: 0.5rem 0;
-            max-width: 50%;
-            margin: 0 auto;
-        }
+	.pagination-button {
+		min-width: 2.5rem;
+		padding: 0.5rem 0.75rem;
+		margin: 0;
+	}
 
-        .pagination { 
-            align-items: center;
-        }
+	.pagination-button.active {
+		background-color: var(--primary);
+		color: var(--primary-inverse);
+		border-color: var(--primary);
+	}
 
-        .pagination-button {
-            min-width: 2.5rem;
-            padding: 0.5rem 0.75rem;
-            margin: 0;
-        }
+	.pagination-button:disabled {
+		cursor: not-allowed;
+	}
 
-        .pagination-button.active {
-            background-color: var(--primary);
-            color: var(--primary-inverse);
-            border-color: var(--primary);
-        }
+	.api-key-display {
+		display: flex;
+		flex-direction: row;
+		gap: 0.25rem;
+		align-items: center;
+	}
 
-        .pagination-button:disabled {
-            
-            cursor: not-allowed;
-        }
-    </style>
-{% endblock %}
+	.copy-feedback {
+		display: none;
+		margin-left: 8px;
+		color: #e7ffec;
+		font-weight: 500;
+	}
 
-{% block content %}
-     <article>
-        <header>
-            <div class="container-between">
-                <strong>Users</strong>
-                <div class="info">
-                    {{ total_users }} user{{ total_users | pluralize("s") }}
-                </div>
-            </div>
-        </header>
+	.password-update {
+		display: inline-block;
+		padding: 0rem 0.25rem;
+		color: #ff9500;
+		border-radius: 4px;
+		font-size: 0.6rem;
+		font-weight: 500;
+	}
+</style>
+{% endblock %} {% block content %}
+<!-- Add Device Form -->
+<article id="add-user-form">
+	<header><strong>Add New User</strong></header>
+	<div id="user-error-message"></div>
+	<form
+		id="add-user-form-element"
+		hx-post="/user/create"
+		hx-target="#user-list"
+		hx-swap="afterbegin"
+	>
+		<div class="grid">
+			<label>
+				First Name
+				<input type="text" name="first_name" placeholder="John" required />
+			</label>
+			<label>
+				Last Name
+				<input type="text" name="last_name" placeholder="Doe" required />
+			</label>
+			<label>
+				Email
+				<input type="email" name="email" placeholder="john.doe@example.com" required />
+			</label>
+			<div class="submit-container">
+				<button type="submit">Add User</button>
+			</div>
+		</div>
+	</form>
+</article>
+<article>
+	<header>
+		<div class="container-between">
+			<strong>Users</strong>
+			<div class="info">{{ total_users }} user{{ total_users | pluralize("s") }}</div>
+		</div>
+	</header>
 
-        <form id="user-search-form"
-              hx-get="/admin/users/search"
-              hx-target="#user-list-container"
-              hx-trigger="submit, input delay:500ms from:find input"
-              hx-indicator="#search-indicator">
-            <div class="grid">
-                <label>
-                    E-mail
-                    <input type="text" name="email" placeholder="john.doe@example.com">
-                </label>
-                <label>
-                    First Name
-                    <input type="text" name="first_name" placeholder="John">
-                </label>
-                <label>
-                    Last Name
-                    <input type="text" name="last_name" placeholder="Doe">
-                </label>
-                <label>
-                    Role
-                    <select name="role">
-                        <option value="All" selected>All</option>
-                        <option value="User">User</option>
-                        <option value="Admin">Admin</option>
-                    </select>
-                </label>
-                <div class="submit-container">
-                    <button type="submit">Search</button>
-                </div>
-            </div>
-        </form>
+	<form
+		id="user-search-form"
+		hx-get="/admin/users/search"
+		hx-target="#user-list-container"
+		hx-trigger="submit, input delay:500ms from:find input"
+		hx-indicator="#search-indicator"
+	>
+		<div class="grid">
+			<label>
+				E-mail
+				<input type="text" name="email" placeholder="john.doe@example.com" />
+			</label>
+			<label>
+				First Name
+				<input type="text" name="first_name" placeholder="John" />
+			</label>
+			<label>
+				Last Name
+				<input type="text" name="last_name" placeholder="Doe" />
+			</label>
+			<label>
+				Role
+				<select name="role">
+					<option value="All" selected>All</option>
+					<option value="User">User</option>
+					<option value="Admin">Admin</option>
+				</select>
+			</label>
+			<div class="submit-container">
+				<button type="submit">Search</button>
+			</div>
+		</div>
+	</form>
 
-        <div id="user-list-container">
-            <div class="overflow-auto">
-                <table role="grid">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Email</th>
-                            <th>First Name</th>
-                            <th>Last Name</th>
-                            <th>Shares</th>
-                            <th>Verified</th>
-                            <th>Role</th>
-                            <th>Created at</th>
-                            <th>Last Activity</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="user-list">
-                        {% if users.is_empty() %}
-                            <tr id="user-empty-state">
-                                <td colspan="10">
-                                    {% include "partials/admin/empty_state.html" %}
-                                </td>
-                            </tr>
-                        {% else %}
-                            {% for display_user in users %}
-                                {% include "partials/admin/user_row.html" %}
-                            {% endfor %}
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
-            {% include "partials/admin/pagination.html" %}
-        </div>
-    </article>
+	<div id="user-list-container">
+		{% include "partials/admin/user_list.html" %}
+	</div>
+</article>
+
+<script>
+	// Copy password to clipboard
+	function copyPassword(button) {
+		const passwordElement = button.parentElement.querySelector('.api-key-value');
+		if (!passwordElement) return;
+		const passwordText = passwordElement.textContent.trim();
+		let success = false;
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			navigator.clipboard
+				.writeText(passwordText)
+				.then(() => {
+					success = true;
+					showCopyFeedback(button);
+				})
+				.catch((err) => {
+					console.error('Clipboard API failed:', err);
+					success = fallbackCopy(passwordText);
+					if (success) showCopyFeedback(button);
+				});
+		} else {
+			success = fallbackCopy(passwordText);
+			if (success) showCopyFeedback(button);
+		}
+	}
+
+	// Fallback copy to clipboard for older browsers
+	function fallbackCopy(text) {
+		const textarea = document.createElement('textarea');
+		textarea.value = text;
+		textarea.style.position = 'fixed';
+		textarea.style.opacity = '0';
+		document.body.appendChild(textarea);
+		textarea.select();
+		try {
+			const success = document.execCommand('copy');
+			document.body.removeChild(textarea);
+			return success;
+		} catch (err) {
+			console.error('Failed to copy:', err);
+			document.body.removeChild(textarea);
+			return false;
+		}
+	}
+
+	// Show "Copied!" feedback
+	function showCopyFeedback(button) {
+		const feedback = button.nextElementSibling;
+		if (feedback && feedback.classList.contains('copy-feedback')) {
+			feedback.style.display = 'inline';
+			setTimeout(() => {
+				feedback.style.display = 'none';
+			}, 3000);
+		}
+	}
+</script>
 {% endblock %}

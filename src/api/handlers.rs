@@ -3,9 +3,9 @@ use crate::{
     api::sse::{ChannelTag, ShareNotification},
     devices::Device,
     handlers::AppState,
-    shares::{CreateShare, Share, MAX_FILE_SIZE},
+    shares::{CreateShare, MAX_FILE_SIZE, Share},
 };
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use axum::{Extension, Json, extract::State, http::StatusCode};
 use fulgur_common::api::{
     devices::DeviceResponse,
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
@@ -22,7 +22,6 @@ use super::middleware::AuthenticatedUser;
 ///
 /// ### Returns
 /// - `Json(PingResponse)`: The response containing the status of the server
-/// @return Json<PingResponse>: The response containing the status of the server
 pub async fn ping() -> Json<PingResponse> {
     Json(PingResponse { ok: true })
 }
@@ -130,13 +129,13 @@ pub async fn share_file(
             }),
         ));
     }
-    let expiration_date =
-        OffsetDateTime::now_utc() + Duration::days(crate::shares::SHARE_VALIDITY_DAYS);
+    let expiration_date = OffsetDateTime::now_utc() + Duration::days(state.share_validity_days);
     let create_share = CreateShare {
         source_device_id: auth_user.device_id.clone(),
         destination_device_id: payload.device_id.clone(),
         file_name: payload.file_name.clone(),
         content: payload.content.clone(),
+        deduplication_hash: payload.deduplication_hash.clone(),
     };
     let share = match state
         .share_repository
@@ -448,35 +447,90 @@ pub async fn obtain_access_token(
             }),
         ));
     }
-    let devices = match state.device_repository.get_all_for_user(user.id).await {
-        Ok(devices) => devices,
+    let fast_hash = crate::api_key::hash_api_key_fast(device_key);
+    let mut authenticated_device = None;
+    match state.device_repository.get_by_fast_hash(&fast_hash).await {
+        Ok(Some(device)) => match crate::api_key::verify_api_key(device_key, &device.device_key) {
+            Ok(true) if device.user_id == user.id => {
+                authenticated_device = Some((device.device_id.clone(), device.name.clone()));
+                tracing::debug!(
+                    "Access token requested for user {} with device {} (fast path)",
+                    user.id,
+                    device.device_id
+                );
+            }
+            Ok(true) => {
+                tracing::warn!(
+                    "Fast hash matched but user_id mismatch: device user {}, requesting user {}",
+                    device.user_id,
+                    user.id
+                );
+            }
+            Ok(false) => {
+                tracing::warn!("Fast hash matched but Argon2 failed - possible hash collision");
+            }
+            Err(e) => {
+                tracing::error!("Error verifying device key after fast hash match: {:?}", e);
+            }
+        },
+        Ok(None) => {
+            tracing::debug!("No fast hash match for user {} - trying slow path", user.id);
+            let devices = match state.device_repository.get_all_for_user(user.id).await {
+                Ok(devices) => devices,
+                Err(e) => {
+                    tracing::error!("Database error getting devices: {:?}", e);
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: "Internal server error".to_string(),
+                        }),
+                    ));
+                }
+            };
+            for device in &devices {
+                match crate::api_key::verify_api_key(device_key, &device.device_key) {
+                    Ok(true) => {
+                        authenticated_device =
+                            Some((device.device_id.clone(), device.name.clone()));
+                        tracing::info!(
+                            "Access token for user {} device {} (slow path - populating fast hash)",
+                            user.id,
+                            device.device_id
+                        );
+                        // Lazy migration: populate fast hash for future requests
+                        if device.device_key_fast_hash.is_none() {
+                            if let Err(e) = state
+                                .device_repository
+                                .update_fast_hash(device.id, fast_hash.clone())
+                                .await
+                            {
+                                tracing::error!(
+                                    "Failed to populate fast hash for device {}: {:?}",
+                                    device.id,
+                                    e
+                                );
+                            } else {
+                                tracing::info!("Populated fast hash for device {}", device.id);
+                            }
+                        }
+                        break;
+                    }
+                    Ok(false) => continue,
+                    Err(e) => {
+                        tracing::error!("Error verifying device key: {:?}", e);
+                        continue;
+                    }
+                }
+            }
+        }
         Err(e) => {
-            tracing::error!("Database error getting devices for token: {:?}", e);
+            tracing::error!("Database error looking up device by fast hash: {:?}", e);
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: "Internal server error".to_string(),
                 }),
             ));
-        }
-    };
-    let mut authenticated_device = None;
-    for device in &devices {
-        match crate::api_key::verify_api_key(device_key, &device.device_key) {
-            Ok(true) => {
-                authenticated_device = Some((device.device_id.clone(), device.name.clone()));
-                tracing::debug!(
-                    "Access token requested for user {} with device {}",
-                    user.id,
-                    device.device_id
-                );
-                break;
-            }
-            Ok(false) => continue,
-            Err(e) => {
-                tracing::error!("Error verifying device key for token: {:?}", e);
-                continue;
-            }
         }
     }
     let (device_id, device_name) = authenticated_device.ok_or_else(|| {

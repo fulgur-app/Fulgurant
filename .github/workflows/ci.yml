@@ -1,0 +1,290 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, dev-*]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  BRANCH: ${{ github.ref_name }}
+  COMMIT_SHA: ${{ github.sha }}
+  ACTOR: ${{ github.actor }}
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install Linux dependencies
+        run: &linux_deps |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libssl-dev
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-latest-cargo
+
+      # -- Coverage setup (main/PRs only) --
+
+      - name: Install coverage tools
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+        run: rustup component add llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      # -- Test phase --
+
+      - name: Run tests with coverage
+        id: coverage
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Run tests
+        if: steps.coverage.outcome == 'skipped'
+        run: cargo test --all-features
+
+      # -- Coverage upload --
+
+      - name: Upload coverage to Codecov
+        if: steps.coverage.outcome == 'success'
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Generate coverage summary
+        id: cov_summary
+        if: steps.coverage.outcome == 'success'
+        run: |
+          COVERAGE=$(awk -F: '/^LF:/{lf+=$2} /^LH:/{lh+=$2} END{if(lf>0) printf "%.2f", (lh/lf)*100; else print "0.00"}' lcov.info)
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+
+      # -- Lint phase --
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      # -- Notifications --
+
+      - name: Telegram notification - Success
+        if: success()
+        env:
+          COVERAGE: ${{ steps.cov_summary.outputs.percentage }}
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          if [ -n "$COVERAGE" ]; then
+            DESCRIPTION="All tests and checks passed
+          Coverage: *${COVERAGE}%*"
+          else
+            DESCRIPTION="All tests and checks passed"
+          fi
+
+          MESSAGE="✅ *Fulgurant CI - Build Passed*
+
+          ${DESCRIPTION}
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
+
+      - name: Telegram notification - Failure
+        if: failure()
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          MESSAGE="❌ *Fulgurant CI - Build Failed*
+
+          Build or tests failed
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
+
+  msrv:
+    name: Minimum Rust Version (1.90.0)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.90.0
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.90.0
+
+      - name: Install Linux dependencies
+        run: *linux_deps
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-msrv-cargo
+
+      - name: Check with minimum Rust version
+        run: cargo check --all-features --quiet
+
+  docs:
+    name: Documentation
+    needs: [test]
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        run: *linux_deps
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-latest-cargo
+
+      - name: Build documentation
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: '-D warnings'
+
+      - name: Telegram notification - Success
+        if: success()
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          MESSAGE="✅ *Fulgurant Documentation - Built Successfully*
+
+          Documentation built without errors or warnings
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
+
+      - name: Telegram notification - Failure
+        if: failure()
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          MESSAGE="❌ *Fulgurant Documentation - Build Failed*
+
+          Documentation build errors or warnings detected
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
+
+  unused-deps:
+    name: Unused Dependencies Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install Linux dependencies
+        run: *linux_deps
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-udeps
+        uses: taiki-e/install-action@cargo-udeps
+
+      - name: Check for unused dependencies
+        run: cargo +nightly udeps --all-targets
+
+      - name: Telegram notification - Success
+        if: success()
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          MESSAGE="✅ *Fulgurant Dependency Check - Passed*
+
+          No unused dependencies detected
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-
+
+      - name: Telegram notification - Failure
+        if: failure()
+        run: |
+          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+
+          MESSAGE="⚠️ *Fulgurant Dependency Check - Unused Dependencies Found*
+
+          Unused dependencies detected in Cargo.toml
+
+          *Branch:* \`${BRANCH}\`
+          *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
+          *Author:* ${ACTOR}
+
+          [View Run](${RUN_URL})"
+
+          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" -d @-

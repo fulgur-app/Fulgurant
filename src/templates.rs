@@ -1,4 +1,8 @@
-use crate::{devices::Device, shares::DisplayShare, users::{DisplayUser, User}};
+use crate::{
+    devices::Device,
+    shares::DisplayShare,
+    users::{DisplayUser, User},
+};
 use askama::Template;
 
 /// User context for templates - represents the authenticated user (if any)
@@ -12,7 +16,7 @@ pub struct UserContext {
 
 impl UserContext {
     /// Create a new UserContext
-    /// 
+    ///
     /// ### Arguments
     /// - `user_id`: The ID of the user
     /// - `first_name`: The first name of the user
@@ -21,25 +25,38 @@ impl UserContext {
     /// ### Returns
     /// - `UserContext`: The UserContext
     pub fn new(user_id: i32, first_name: String, role: String, shares: i32) -> Self {
-        Self { user_id, first_name, role, shares }
+        Self {
+            user_id,
+            first_name,
+            role,
+            shares,
+        }
     }
 
-    /// Create a new UserContext from a User
-    ///
-    /// ### Arguments
-    /// - `user`: The User to convert
-    ///
-    /// ### Returns
-    /// - `UserContext`: The UserContext
-    pub fn from(user: &User) -> Self {
-        Self::new(user.id, user.first_name.clone(), user.role.clone(), user.shares)
-    }
     /// Check if the user is an admin
     ///
     /// ### Returns
     /// - `True` if the user is an admin, `False` otherwise
     pub fn is_admin(&self) -> bool {
         self.role == "Admin"
+    }
+}
+
+impl From<&User> for UserContext {
+    /// Convert a User reference into a UserContext
+    ///
+    /// ### Arguments
+    /// - `user`: The User to convert
+    ///
+    /// ### Returns
+    /// - `UserContext`: The UserContext
+    fn from(user: &User) -> Self {
+        Self::new(
+            user.id,
+            user.first_name.clone(),
+            user.role.clone(),
+            user.shares,
+        )
     }
 }
 
@@ -117,7 +134,17 @@ pub struct DeviceCreationResponseTemplate {
     pub api_key: String,
 }
 
-/// Empty state template
+/// Logout page template
+#[derive(Template)]
+#[template(path = "logout.html")]
+pub struct LogoutTemplate {}
+
+/// 404 Not Found page template
+#[derive(Template)]
+#[template(path = "404.html")]
+pub struct NotFoundTemplate {}
+
+/// Login page template
 #[derive(Template)]
 #[template(path = "login.html")]
 pub struct LoginTemplate {
@@ -234,6 +261,21 @@ pub struct ForgotPasswordStep3Template {
 #[template(path = "partials/auth/forgot_password_success.html")]
 pub struct ForgotPasswordSuccessTemplate {}
 
+/// Force password update page template (full page)
+#[derive(Template)]
+#[template(path = "force_password_update.html")]
+pub struct ForcePasswordUpdateTemplate {
+    pub csrf_token: String,
+    pub error_message: String,
+}
+
+/// Force password update form partial template (for HTMX re-render on validation error)
+#[derive(Template)]
+#[template(path = "partials/auth/force_password_update_form.html")]
+pub struct ForcePasswordUpdateFormTemplate {
+    pub error_message: String,
+}
+
 /// Initial setup template (create first admin user)
 #[derive(Template)]
 #[template(path = "setup.html")]
@@ -300,4 +342,20 @@ pub struct RoleChangeSuccessTemplate {
 pub struct DeleteUserSuccessTemplate {
     pub first_name: String,
     pub last_name: String,
+}
+
+/// User creation response template (includes user row and password display)
+#[derive(Template)]
+#[template(path = "partials/admin/user_creation_response.html")]
+pub struct UserCreationResponseTemplate {
+    pub display_user: crate::users::DisplayUser,
+    pub user: UserContext,
+}
+
+/// User row template (for HTMX updates)
+#[derive(Template)]
+#[template(path = "partials/admin/user_row.html")]
+pub struct UserRowTemplate {
+    pub display_user: crate::users::DisplayUser,
+    pub user: UserContext,
 }

@@ -5,6 +5,8 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 pub const MAX_DEVICES_PER_USER: i32 = 99;
+pub const MAX_DEVICE_NAME_LEN: usize = 50;
+pub const MAX_DEVICE_TYPE_LEN: usize = 20;
 
 /// Get the maximum number of devices per user from the environment variable, defaults to 99
 ///
@@ -21,8 +23,9 @@ pub fn get_max_devices_per_user() -> i32 {
 pub struct Device {
     pub id: i32,
     pub user_id: i32,
-    pub device_id: String,  // UUID v4 (public identifier)
-    pub device_key: String, // Hashed API key (private)
+    pub device_id: String,                    // UUID v4 (public identifier)
+    pub device_key: String,                   // Hashed API key (private)
+    pub device_key_fast_hash: Option<String>, // SHA256 for fast lookup
     pub name: String,
     pub device_type: String,
     pub encryption_key: Option<String>, // Base64-encoded 256-bit AES key for encrypting shared files (nullable)
@@ -150,12 +153,14 @@ impl DeviceRepository {
             api_key_lifetime,
         } = data;
         let expires_at = now + Duration::days(api_key_lifetime);
+        let fast_hash = crate::api_key::hash_api_key_fast(&device_key);
         let result = sqlx::query(
-            "INSERT INTO devices (user_id, device_id, device_key, name, device_type, encryption_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, encryption_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(user_id)
         .bind(&device_id)
         .bind(&device_key)
+        .bind(&fast_hash)
         .bind(name)
         .bind(device_type)
         .bind(None::<String>) // encryption_key defaults to NULL
@@ -292,6 +297,40 @@ impl DeviceRepository {
             .bind(device_key)
             .fetch_one(&self.pool)
             .await
+    }
+
+    /// Get device by fast hash (O(1) lookup for token endpoint)
+    ///
+    /// ### Arguments
+    /// - `fast_hash`: The SHA256 fast hash
+    ///
+    /// ### Returns
+    /// - `Ok(Some(Device))`: The device if found
+    /// - `Ok(None)`: No device with this fast hash
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn get_by_fast_hash(&self, fast_hash: &str) -> Result<Option<Device>, sqlx::Error> {
+        sqlx::query_as::<_, Device>("SELECT * FROM devices WHERE device_key_fast_hash = ?")
+            .bind(fast_hash)
+            .fetch_optional(&self.pool)
+            .await
+    }
+
+    /// Update fast hash for lazy migration
+    ///
+    /// ### Arguments
+    /// - `id`: The device ID
+    /// - `fast_hash`: The SHA256 fast hash
+    ///
+    /// ### Returns
+    /// - `Ok(())`: Success
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn update_fast_hash(&self, id: i32, fast_hash: String) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE devices SET device_key_fast_hash = ? WHERE id = ?")
+            .bind(fast_hash)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     /// Count the number of devices for a user

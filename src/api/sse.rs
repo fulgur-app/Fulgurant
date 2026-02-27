@@ -1,9 +1,9 @@
 use crate::api::middleware::AuthenticatedUser;
 use crate::handlers::AppState;
 use axum::{
+    Extension,
     extract::State,
     response::sse::{Event, KeepAlive, Sse},
-    Extension,
 };
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};

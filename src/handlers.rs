@@ -1,27 +1,29 @@
 use askama::Template;
 use axum::{
+    Form,
     extract::{Path, State},
     http::StatusCode,
     response::{Html, IntoResponse},
-    Form,
 };
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{Arc, atomic::AtomicBool};
 use tower_sessions::Session;
 
 use crate::{
     api::sse::SseChannelManager,
     api_key::{self},
-    devices::{self, CreateDevice, Device, DeviceRepository, UpdateDevice},
+    devices::{
+        self, CreateDevice, Device, DeviceRepository, MAX_DEVICE_NAME_LEN, MAX_DEVICE_TYPE_LEN,
+        UpdateDevice,
+    },
     errors::AppError,
     logging::sanitize_for_log,
-    mail::Mailer,
+    mail,
+    session::{self},
     shares::{DisplayShare, ShareRepository},
     templates::{self},
-    users::UserRepository,
+    users::{MAX_NAME_LEN, UserRepository},
     verification_code::{self, VerificationCodeRepository},
 };
-
-const SESSION_USER_ID: &str = "user_id";
 
 #[derive(Clone)]
 pub struct AppState {
@@ -29,7 +31,7 @@ pub struct AppState {
     pub user_repository: UserRepository,
     pub verification_code_repository: VerificationCodeRepository,
     pub share_repository: ShareRepository,
-    pub mailer: Mailer,
+    pub mailer: Arc<mail::Mailer>,
     pub is_prod: bool,
     pub can_register: bool,
     pub setup_needed: Arc<AtomicBool>,
@@ -39,6 +41,18 @@ pub struct AppState {
     pub sse_heartbeat_seconds: u64,
     pub jwt_secret: String,
     pub jwt_expiry_seconds: i64,
+}
+
+/// Fallback handler for 404 Not Found
+///
+/// ### Returns
+/// - `(StatusCode, Html<String>)`: The 404 page with proper status code
+pub async fn not_found() -> impl IntoResponse {
+    let template = templates::NotFoundTemplate {};
+    match template.render() {
+        Ok(html) => (StatusCode::NOT_FOUND, Html(html)),
+        Err(_) => (StatusCode::NOT_FOUND, Html("404 - Not Found".to_string())),
+    }
 }
 
 /// GET / - Returns the index page
@@ -54,13 +68,7 @@ pub async fn index(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
     let user = match user {
         Some(user) => user,
@@ -87,7 +95,7 @@ pub async fn index(
     };
     let shares = raw_shares
         .into_iter()
-        .map(|s| s.to_display_shares(devices.clone()))
+        .map(|s| s.to_display_shares(&devices))
         .collect::<Vec<DisplayShare>>();
     let template = templates::IndexTemplate {
         devices,
@@ -116,8 +124,34 @@ pub async fn index(
 pub async fn create_device(
     State(state): State<AppState>,
     Path(user_id): Path<i32>,
-    Form(request): Form<CreateDevice>,
+    Form(mut request): Form<CreateDevice>,
 ) -> Result<Html<String>, AppError> {
+    let name = request.name.trim().to_string();
+    let device_type = request.device_type.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::ValidationError(
+            "Device name cannot be empty".to_string(),
+        ));
+    }
+    if name.len() > MAX_DEVICE_NAME_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Device name cannot exceed {} characters",
+            MAX_DEVICE_NAME_LEN
+        )));
+    }
+    if device_type.is_empty() {
+        return Err(AppError::ValidationError(
+            "Device type cannot be empty".to_string(),
+        ));
+    }
+    if device_type.len() > MAX_DEVICE_TYPE_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Device type cannot exceed {} characters",
+            MAX_DEVICE_TYPE_LEN
+        )));
+    }
+    request.name = name;
+    request.device_type = device_type;
     let devices_number = state
         .device_repository
         .count_devices_for_user(user_id)
@@ -176,8 +210,34 @@ pub async fn get_device_edit_form(
 pub async fn update_device(
     State(state): State<AppState>,
     Path(id): Path<i32>,
-    Form(request): Form<UpdateDevice>,
+    Form(mut request): Form<UpdateDevice>,
 ) -> Result<Html<String>, AppError> {
+    let name = request.name.trim().to_string();
+    let device_type = request.device_type.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::ValidationError(
+            "Device name cannot be empty".to_string(),
+        ));
+    }
+    if name.len() > MAX_DEVICE_NAME_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Device name cannot exceed {} characters",
+            MAX_DEVICE_NAME_LEN
+        )));
+    }
+    if device_type.is_empty() {
+        return Err(AppError::ValidationError(
+            "Device type cannot be empty".to_string(),
+        ));
+    }
+    if device_type.len() > MAX_DEVICE_TYPE_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Device type cannot exceed {} characters",
+            MAX_DEVICE_TYPE_LEN
+        )));
+    }
+    request.name = name;
+    request.device_type = device_type;
     let device = state.device_repository.update(id, request).await?;
     let template = templates::DeviceRowTemplate { device };
     Ok(Html(template.render()?))
@@ -221,7 +281,7 @@ pub async fn delete_device(
         }
         Err(e) => {
             tracing::error!("Error deleting device: {:?}", e);
-            return Err(AppError::DatabaseError(e));
+            Err(AppError::DatabaseError(e))
         }
     }
 }
@@ -282,11 +342,11 @@ pub async fn cancel_edit_device(
     Ok(Html(template.render()?))
 }
 
-/// DELETE /device/{id} - Deletes a device
+/// DELETE /share/{id} - Deletes a share
 ///
 /// ### Arguments
 /// - `state`: The state of the application
-/// - `id`: The ID of the device
+/// - `id`: The ID of the share
 ///
 /// ### Returns
 /// - `Ok(StatusCode)`: The response as status code
@@ -299,7 +359,7 @@ pub async fn delete_share(
         Ok(_) => Ok(StatusCode::OK),
         Err(e) => {
             tracing::error!("Error deleting share: {:?}", e);
-            return Err(AppError::DatabaseError(e));
+            Err(AppError::DatabaseError(e))
         }
     }
 }
@@ -317,13 +377,7 @@ pub async fn get_settings(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
     let user = match user {
         Some(user) => user,
@@ -365,26 +419,39 @@ pub async fn update_name(
     session: Session,
     Form(request): Form<UpdateNameRequest>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
-    //TODO: add validation for first and last name
+    let user_id = session::get_session_user_id(&session).await?;
+    let first_name = request.first_name.trim().to_string();
+    let last_name = request.last_name.trim().to_string();
+    if first_name.is_empty() {
+        return Err(AppError::ValidationError(
+            "First name cannot be empty".to_string(),
+        ));
+    }
+    if first_name.len() > MAX_NAME_LEN {
+        return Err(AppError::ValidationError(format!(
+            "First name cannot exceed {} characters",
+            MAX_NAME_LEN
+        )));
+    }
+    if last_name.is_empty() {
+        return Err(AppError::ValidationError(
+            "Last name cannot be empty".to_string(),
+        ));
+    }
+    if last_name.len() > MAX_NAME_LEN {
+        return Err(AppError::ValidationError(format!(
+            "Last name cannot exceed {} characters",
+            MAX_NAME_LEN
+        )));
+    }
     state
         .user_repository
-        .update_name(
-            user_id,
-            request.first_name.clone(),
-            request.last_name.clone(),
-        )
+        .update_name(user_id, first_name.clone(), last_name.clone())
         .await?;
     tracing::info!("User {} updated their name", user_id);
     let template = templates::UpdateNameSuccessTemplate {
-        first_name: request.first_name,
-        last_name: request.last_name,
+        first_name,
+        last_name,
     };
     Ok(Html(template.render()?))
 }
@@ -409,12 +476,7 @@ pub async fn update_email_step_1(
     session: Session,
     Form(request): Form<UpdateEmailRequest>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    if user_id.is_none() {
-        return Err(AppError::Unauthorized);
-    }
+    let _user_id = session::get_session_user_id(&session).await?;
     if !request.email.contains('@') || !request.email.contains('.') {
         //TODO: improve email validation
         let template = templates::EmailChangeStep2Template {
@@ -490,13 +552,7 @@ pub async fn update_email_step_2(
     session: Session,
     Form(request): Form<VerifyEmailChangeRequest>,
 ) -> Result<Html<String>, AppError> {
-    let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
-    })?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
-    };
+    let user_id = session::get_session_user_id(&session).await?;
     let result = state
         .verification_code_repository
         .verify_code(

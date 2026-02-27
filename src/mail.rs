@@ -1,35 +1,52 @@
 use lettre::{
-    message::{header, Mailbox, MultiPart, SinglePart},
-    transport::smtp::authentication::Credentials,
     Address, Message, SmtpTransport, Transport,
+    message::{Mailbox, MultiPart, SinglePart, header},
+    transport::smtp::authentication::Credentials,
 };
 
-#[derive(Clone)]
 pub struct Mailer {
-    smtp_host: String,
-    smtp_port: u16,
     smtp_user: String,
-    smtp_password: String,
+    transport: Option<SmtpTransport>,
 }
 
 impl Mailer {
     /// Creates a new Mailer
     ///
+    /// ### Arguments
+    /// - `is_prod`: If true, requires SMTP env vars and creates transport. If false, transport is None (emails logged).
+    ///
     /// ### Returns
-    /// - `Mailer`: The Mailer
-    pub fn new() -> Self {
-        let smtp_host = std::env::var("SMTP_HOST").expect("SMTP_HOST must be set");
-        let smtp_port = std::env::var("SMTP_PORT")
-            .expect("SMTP_PORT must be set")
-            .parse()
-            .expect("SMTP_PORT must be a number");
-        let smtp_user = std::env::var("SMTP_LOGIN").expect("SMTP_LOGIN must be set");
-        let smtp_password = std::env::var("SMTP_PASSWORD").expect("SMTP_PASSWORD must be set");
-        Self {
-            smtp_host,
-            smtp_port,
-            smtp_user,
-            smtp_password,
+    /// - `Mailer`: The Mailer with optional transport
+    pub fn new(is_prod: bool) -> Self {
+        if is_prod {
+            let smtp_host =
+                std::env::var("SMTP_HOST").expect("SMTP_HOST must be set in production mode");
+            let smtp_user =
+                std::env::var("SMTP_LOGIN").expect("SMTP_LOGIN must be set in production mode");
+            let smtp_password = std::env::var("SMTP_PASSWORD")
+                .expect("SMTP_PASSWORD must be set in production mode");
+            let smtp_port = std::env::var("SMTP_PORT")
+                .unwrap_or_else(|_| "587".to_string())
+                .parse::<u16>()
+                .expect("SMTP_PORT must be a valid port number (1-65535)");
+            let transport = SmtpTransport::starttls_relay(&smtp_host)
+                .expect("Failed to create SMTP transport")
+                .port(smtp_port)
+                .credentials(Credentials::new(smtp_user.clone(), smtp_password))
+                .build();
+
+            Self {
+                smtp_user,
+                transport: Some(transport),
+            }
+        } else {
+            tracing::debug!(
+                "Development mode: Mailer created without SMTP transport (emails will be logged)"
+            );
+            Self {
+                smtp_user: String::from("dev@example.com"),
+                transport: None,
+            }
         }
     }
 
@@ -73,7 +90,7 @@ impl Mailer {
             .await
     }
 
-    /// Sends an email  
+    /// Sends an email
     ///
     /// ### Arguments
     /// - `to`: The email address to send the email to
@@ -91,12 +108,11 @@ impl Mailer {
         text_body: String,
         html_body: String,
     ) -> Result<(), anyhow::Error> {
-        let mailer = SmtpTransport::starttls_relay(&self.smtp_host)?;
-        let mailer = mailer.credentials(Credentials::new(
-            self.smtp_user.clone(),
-            self.smtp_password.clone(),
-        ));
-        let mailer = mailer.build();
+        let transport = self
+            .transport
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("SMTP transport not configured (development mode)"))?;
+
         let email = Message::builder()
             .from(Mailbox::new(
                 None,
@@ -118,13 +134,10 @@ impl Mailer {
                     ),
             )?;
 
-        let _ = match mailer.send(&email) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                tracing::error!("Failed to send email: {}", e);
-                Err(anyhow::anyhow!("Failed to send email: {}", e))
-            }
-        };
+        transport.send(&email).map_err(|e| {
+            tracing::error!("Failed to send email: {}", e);
+            anyhow::anyhow!("Failed to send email: {}", e)
+        })?;
         Ok(())
     }
 }

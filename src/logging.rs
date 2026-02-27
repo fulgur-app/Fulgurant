@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Gets the log folder path from environment variable or uses default
 ///
@@ -13,14 +13,15 @@ pub fn get_log_folder() -> PathBuf {
 }
 
 /// Sanitizes the input for logging by removing control characters and taking the first 100 characters
-/// 
+///
 /// ### Arguments
 /// * `input`: The input string to sanitize
 ///
 /// ### Returns
 /// * `String`: The sanitized string
 pub fn sanitize_for_log(input: &str) -> String {
-    input.chars()
+    input
+        .chars()
         .filter(|c| !c.is_control())
         .take(100)
         .collect()

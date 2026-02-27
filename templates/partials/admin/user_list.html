@@ -1,33 +1,27 @@
 <div class="overflow-auto">
-    <table role="grid">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Email</th>
-                <th>First Name</th>
-                <th>Last Name</th>
-                <th>Shares</th>
-                <th>Verified</th>
-                <th>Role</th>
-                <th>Created at</th>
-                <th>Last Activity</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody id="user-list">
-            {% if users.is_empty() %}
-                <tr id="user-empty-state">
-                    <td colspan="10">
-                        {% include "partials/admin/empty_state.html" %}
-                    </td>
-                </tr>
-            {% else %}
-                {% for display_user in users %}
-                    {% include "partials/admin/user_row.html" %}
-                {% endfor %}
-            {% endif %}
-        </tbody>
-    </table>
+	<table role="grid">
+		<thead>
+			<tr>
+				<th>ID</th>
+				<th>Email</th>
+				<th>First Name</th>
+				<th>Last Name</th>
+				<th>Shares</th>
+				<th>Verified</th>
+				<th>Role</th>
+				<th>Created at</th>
+				<th>Last Activity</th>
+				<th>Actions</th>
+			</tr>
+		</thead>
+		<tbody id="user-list">
+			{% if users.is_empty() %}
+			<tr id="user-empty-state">
+				<td colspan="10">{% include "partials/admin/empty_state.html" %}</td>
+			</tr>
+			{% else %} {% for display_user in users %} {% include "partials/admin/user_row.html" %}
+			{% endfor %} {% endif %}
+		</tbody>
+	</table>
 </div>
 {% include "partials/admin/pagination.html" %}
-

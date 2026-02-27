@@ -1,10 +1,10 @@
 // src/api/middleware.rs
 use axum::{
+    Json,
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Serialize;
 
@@ -26,7 +26,7 @@ struct ErrorResponse {
 ///
 /// ### Description
 /// This middleware validates JWT access tokens in the Authorization header:
-/// 1. Extracts JWT from Authorization: Bearer <token>
+/// 1. Extracts JWT from Authorization header
 /// 2. Validates JWT signature and expiry using JWT_SECRET
 /// 3. Extracts claims (user_id, device_id, device_name)
 /// 4. Loads User record from database by user_id

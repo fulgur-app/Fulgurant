@@ -1,13 +1,14 @@
 use crate::utils::{is_password_valid, is_valid_email};
 use argon2::{
-    password_hash::{rand_core::OsRng, SaltString},
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+    password_hash::{SaltString, rand_core::OsRng},
 };
 use askama::Template;
 use axum::{
-    extract::{Query, State},
-    response::{Html, IntoResponse, Response},
     Form,
+    extract::{Query, State},
+    http::HeaderValue,
+    response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
 use tower_sessions::Session;
@@ -16,11 +17,11 @@ use crate::{
     errors::AppError,
     handlers::AppState,
     logging::sanitize_for_log,
+    session,
     templates::{self, LoginTemplate},
-    verification_code::{self, generate_code, VerificationResult},
+    users::MAX_NAME_LEN,
+    verification_code::{self, VerificationResult, generate_code},
 };
-
-const SESSION_USER_ID: &str = "user_id";
 
 /// Checks if the registration is allowed
 ///
@@ -100,7 +101,6 @@ pub async fn login(
         }
     };
     let password_verified = verify_password(password, user.password_hash.clone());
-    tracing::info!("Password verified: {}", password_verified);
     if !password_verified {
         let template = templates::ErrorMessageTemplate {
             message: "Invalid password. Please try again.".to_string(),
@@ -121,13 +121,126 @@ pub async fn login(
             AppError::InternalError(anyhow::anyhow!("Failed to update last_activity"))
         })?;
     session
-        .insert(SESSION_USER_ID, user.id)
+        .insert(session::SESSION_USER_ID, user.id)
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    let redirect_url = if user.force_password_update {
+        session
+            .insert("force_password_update", true)
+            .await
+            .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+        "/force-password-update"
+    } else {
+        "/"
+    };
+    let mut response = Html("").into_response();
+    let header_value = redirect_url.parse().map_err(|e| {
+        tracing::error!("Failed to parse redirect URL as header value: {}", e);
+        AppError::InternalError(anyhow::anyhow!("Invalid redirect URL"))
+    })?;
+    response.headers_mut().insert("HX-Redirect", header_value);
+    Ok(response)
+}
+
+/// GET /force-password-update - Returns the force password update page
+///
+/// ### Arguments
+/// - `session`: The session
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The force password update page
+/// - `Err(AppError)`: An error occurred while rendering the template
+pub async fn get_force_password_update_page(session: Session) -> Result<Html<String>, AppError> {
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+        })?;
+    let template = templates::ForcePasswordUpdateTemplate {
+        csrf_token,
+        error_message: String::new(),
+    };
+    Ok(Html(template.render()?))
+}
+
+#[derive(Deserialize)]
+pub struct ForcePasswordUpdateRequest {
+    password: String,
+}
+
+/// POST /force-password-update - Updates the password and clears the force_password_update flag
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+/// - `request`: The force password update request
+///
+/// ### Returns
+/// - `Ok(Response)`: Redirect to home page on success
+/// - `Err(AppError)`: An error occurred while updating the password
+pub async fn force_password_update(
+    State(state): State<AppState>,
+    session: Session,
+    Form(request): Form<ForcePasswordUpdateRequest>,
+) -> Result<Response, AppError> {
+    let user_id: Option<i32> = session
+        .get(session::SESSION_USER_ID)
+        .await
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    let user_id = match user_id {
+        Some(id) => id,
+        None => return Err(AppError::Unauthorized),
+    };
+    if !is_password_valid(&request.password) {
+        let template = templates::ForcePasswordUpdateFormTemplate {
+            error_message: "Password must be 8-64 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.".to_string(),
+        };
+        return Ok(Html(
+            template
+                .render()
+                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?,
+        )
+        .into_response());
+    }
+    let user = state
+        .user_repository
+        .get_by_id(user_id)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Database error: {}", e)))?
+        .ok_or(AppError::Unauthorized)?;
+    if verify_password(&request.password, user.password_hash) {
+        let template = templates::ForcePasswordUpdateFormTemplate {
+            error_message: "New password must be different from your current password.".to_string(),
+        };
+        return Ok(Html(
+            template
+                .render()
+                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?,
+        )
+        .into_response());
+    }
+    let password_hash = hash_password(&request.password)
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {}", e)))?;
+    state
+        .user_repository
+        .update_password_and_clear_force_update(user_id, password_hash)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to update password: {}", e);
+            AppError::InternalError(anyhow::anyhow!("Failed to update password"))
+        })?;
+    session
+        .remove::<bool>("force_password_update")
+        .await
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    tracing::info!(
+        "User {} updated password via force password update",
+        user_id
+    );
     let mut response = Html("").into_response();
     response
         .headers_mut()
-        .insert("HX-Redirect", "/".parse().unwrap());
+        .insert("HX-Redirect", HeaderValue::from_static("/"));
     Ok(response)
 }
 
@@ -173,29 +286,17 @@ pub async fn get_register_page(
 /// POST /logout - Logs out a user
 ///
 /// ### Arguments
-/// - `state`: The state of the application
 /// - `session`: The session
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The response
+/// - `Ok(Html<String>)`: The logout page
 /// - `Err(AppError)`: An error occurred while logging out the user
-pub async fn logout(
-    State(state): State<AppState>,
-    session: Session,
-) -> Result<Html<String>, AppError> {
+pub async fn logout(session: Session) -> Result<Html<String>, AppError> {
     session
         .delete()
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
-    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
-        .await
-        .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
-        })?;
-    let template = templates::LoginTemplate {
-        can_register: state.can_register,
-        csrf_token,
-    };
+    let template = templates::LogoutTemplate {};
     Ok(Html(template.render()?))
 }
 
@@ -232,6 +333,28 @@ pub async fn register_step_1(
     let last_name = request.last_name.trim();
     let password = request.password.trim();
     let email = request.email.trim().to_lowercase();
+    if first_name.is_empty()
+        || last_name.is_empty()
+        || first_name.len() > MAX_NAME_LEN
+        || last_name.len() > MAX_NAME_LEN
+    {
+        let error_message = if first_name.is_empty() {
+            "First name cannot be empty".to_string()
+        } else if last_name.is_empty() {
+            "Last name cannot be empty".to_string()
+        } else {
+            format!("Names cannot exceed {} characters", MAX_NAME_LEN)
+        };
+        let template = templates::RegisterStep1Template {
+            error_message,
+            email: email.clone(),
+            first_name: first_name.to_string(),
+            last_name: last_name.to_string(),
+        };
+        return Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+        })?));
+    }
     if !is_valid_email(&email) {
         let template = templates::RegisterStep1Template {
             error_message: "Invalid email".to_string(),
@@ -260,7 +383,7 @@ pub async fn register_step_1(
             return Err(AppError::InternalError(anyhow::anyhow!(
                 "Failed to get user by email: {:?}",
                 e.to_string()
-            )))
+            )));
         }
     };
     if !is_password_valid(password) {
@@ -295,6 +418,8 @@ pub async fn register_step_1(
             first_name.to_string(),
             last_name.to_string(),
             password_hash,
+            false,
+            false,
         )
         .await
         .map_err(|e| {
@@ -332,7 +457,7 @@ pub async fn register_step_2(
             return Err(AppError::InternalError(anyhow::anyhow!(
                 "Failed to get user by email: {:?}",
                 e.to_string()
-            )))
+            )));
         }
     };
     let verification_result = match state
@@ -680,11 +805,11 @@ async fn create_and_send_verification_code(
                 tracing::error!("Failed to send email: {}", e);
                 AppError::InternalError(anyhow::anyhow!("Failed to send email: {}", e))
             })?;
-        tracing::info!("Verification email sent to {}", sanitize_for_log(&email));
+        tracing::info!("Verification email sent to {}", sanitize_for_log(email));
     } else {
         tracing::info!(
             "Development mode - verification email not sent\nVerification code for {}: {}",
-            sanitize_for_log(&email),
+            sanitize_for_log(email),
             &code
         );
     }
@@ -745,9 +870,15 @@ pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Er
 /// - `password_hash`: The hashed password
 ///
 /// ### Returns
-/// - `true` if the password is valid, `false` otherwise
+/// - `true` if the password is valid, `false` otherwise (including on malformed hash)
 fn verify_password(password: &str, password_hash: String) -> bool {
-    let password_hash = PasswordHash::new(&password_hash).unwrap();
+    let password_hash = match PasswordHash::new(&password_hash) {
+        Ok(hash) => hash,
+        Err(_) => {
+            tracing::warn!("Failed to parse password hash - treating as invalid");
+            return false;
+        }
+    };
     let argon2 = Argon2::default();
     argon2
         .verify_password(password.as_bytes(), &password_hash)

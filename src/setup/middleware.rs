@@ -7,9 +7,7 @@ use axum::{
 };
 use tower_sessions::Session;
 
-use crate::handlers::AppState;
-
-const SESSION_USER_ID: &str = "user_id";
+use crate::{handlers::AppState, session};
 
 /// Middleware that redirects to setup if no admin exists
 ///
@@ -37,15 +35,11 @@ pub async fn require_setup_complete(
     if path.starts_with("/setup") {
         return Ok(next.run(request).await);
     }
-    let has_admin = !state.setup_needed.load(std::sync::atomic::Ordering::Relaxed);
-    if !has_admin {
-        let user_id: Option<i32> = session
-            .get(SESSION_USER_ID)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        if user_id.is_none() {
-            return Ok(Redirect::to("/setup").into_response());
-        }
+    let has_admin = !state
+        .setup_needed
+        .load(std::sync::atomic::Ordering::Relaxed);
+    if !has_admin && session::get_session_user_id(&session).await.is_err() {
+        return Ok(Redirect::to("/setup").into_response());
     }
     Ok(next.run(request).await)
 }
