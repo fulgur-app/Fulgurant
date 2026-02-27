@@ -1,6 +1,7 @@
 use dotenvy::dotenv;
 use fulgurant::{
-    api, auth, database_backup, devices, handlers, logging, mail, shares, users, verification_code,
+    api, auth, database_backup, devices, handlers, logging, mail, shares, users,
+    users::UserRepository, verification_code,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::{
@@ -118,6 +119,8 @@ async fn main() -> anyhow::Result<()> {
     make_share_cleanup_task(cleanup_share_repo, shutdown_token.clone());
     let cleanup_verification_repo = app_state.verification_code_repository.clone();
     make_verification_code_cleanup_task(cleanup_verification_repo, shutdown_token.clone());
+    let cleanup_user_repo = app_state.user_repository.clone();
+    make_unverified_user_cleanup_task(cleanup_user_repo, shutdown_token.clone());
     let backup_pool = connection.clone();
     database_backup::make_daily_backup_task(backup_pool, shutdown_token.clone(), is_prod);
     let bind_host = std::env::var("BIND_HOST").unwrap_or_else(|_| "127.0.0.1".to_string()); // default to localhost only for safety
@@ -234,6 +237,45 @@ fn make_share_cleanup_task(share_repository: ShareRepository, shutdown_token: Ca
                 },
                 _ = shutdown_token.cancelled() => {
                     tracing::info!("Share cleanup task shutting down gracefully");
+                    break;
+                }
+            }
+        }
+    });
+}
+
+/// Make the unverified user cleanup task. Runs every hour. Deletes users who registered but never completed email verification within 24 hours.
+///
+/// ### Arguments
+/// - `user_repository`: The user repository
+/// - `shutdown_token`: Token to signal graceful shutdown
+fn make_unverified_user_cleanup_task(
+    user_repository: UserRepository,
+    shutdown_token: CancellationToken,
+) {
+    tracing::info!("Starting unverified user cleanup task (runs every 1 hour, 24h retention)");
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // 1 hour
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    match user_repository.delete_unverified_older_than(24).await {
+                        Ok(count) => {
+                            if count > 0 {
+                                tracing::info!("Cleaned up {} unverified user(s)", count);
+                            } else {
+                                tracing::debug!(
+                                    "Unverified user cleanup check complete - no stale unverified users found"
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Error cleaning up unverified users: {:?}", e);
+                        }
+                    }
+                },
+                _ = shutdown_token.cancelled() => {
+                    tracing::info!("Unverified user cleanup task shutting down gracefully");
                     break;
                 }
             }
