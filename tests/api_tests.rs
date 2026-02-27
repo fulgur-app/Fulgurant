@@ -611,6 +611,10 @@ async fn test_share_file_rejects_other_users_destination_device() {
     response.assert_status(StatusCode::FORBIDDEN);
     let body: ErrorResponse = response.json();
     assert!(body.error.contains("does not belong"));
+
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
+    let owner_shares = share_repo.get_all_for_user(owner_user_id).await.unwrap();
+    assert!(owner_shares.is_empty());
 }
 
 #[tokio::test]
