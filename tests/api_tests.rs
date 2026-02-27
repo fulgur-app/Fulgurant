@@ -10,9 +10,7 @@ use common::{
 use fulgur_common::api::{
     devices::DeviceResponse,
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
-    sync::{
-        AccessTokenResponse, BeginResponse, EncryptionKeyResponse, ErrorResponse, PingResponse,
-    },
+    sync::{AccessTokenResponse, BeginResponse, ErrorResponse, PingResponse},
 };
 use fulgurant::access_token;
 
@@ -297,26 +295,6 @@ async fn test_get_devices_empty_when_single_device() {
 
     let devices: Vec<DeviceResponse> = response.json();
     assert!(devices.is_empty());
-}
-
-// ─────────────────────────────────────────────
-// GET /api/encryption-key
-// ─────────────────────────────────────────────
-
-#[tokio::test]
-async fn test_get_encryption_key() {
-    let app = TestApp::new().await;
-    let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
-
-    let response = app
-        .server
-        .get("/api/encryption-key")
-        .add_header(AUTHORIZATION, bearer(&jwt))
-        .await;
-
-    let body: EncryptionKeyResponse = response.json();
-    // User has an encryption key generated at creation
-    assert!(!body.encryption_key.is_empty());
 }
 
 // ─────────────────────────────────────────────

@@ -201,10 +201,6 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
         .route("/api/ping", get(api::handlers::ping))
         .route("/api/begin", post(api::handlers::begin))
         .route("/api/devices", get(api::handlers::get_devices))
-        .route(
-            "/api/encryption-key",
-            get(api::handlers::get_encryption_key),
-        )
         .route("/api/share", post(api::handlers::share_file))
         .route("/api/shares", get(api::handlers::get_shares))
         .route("/api/sse", get(api::sse::handle_sse_connection))

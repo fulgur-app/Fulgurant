@@ -10,8 +10,8 @@ use fulgur_common::api::{
     devices::DeviceResponse,
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
     sync::{
-        AccessTokenResponse, BeginResponse, EncryptionKeyResponse, ErrorResponse,
-        InitialSynchronizationPayload, PingResponse,
+        AccessTokenResponse, BeginResponse, ErrorResponse, InitialSynchronizationPayload,
+        PingResponse,
     },
 };
 use time::{Duration, OffsetDateTime};
@@ -241,28 +241,6 @@ pub async fn share_file(
     Ok(Json(ShareFileResponse {
         message: "Share created successfully".to_string(),
         expiration_date: expiration_date.format(&date_format).unwrap_or_default(),
-    }))
-}
-
-/// GET /api/encryption-key - Returns the user's encryption key for end-to-end encryption.
-///
-/// ### Description
-/// The encryption key is a 256-bit (32-byte) AES key encoded as base64.
-/// All devices for a user share the same encryption key to enable decryption of shared files.
-///
-/// ### Arguments
-/// - `state`: The state of the application
-/// - `auth_user`: The authenticated user
-///
-/// ### Returns
-/// - `Ok(Json(EncryptionKeyResponse))`: The response containing the encryption key
-/// - `Err((StatusCode, Json(ErrorResponse)))`: The error response if the encryption key retrieval fails
-pub async fn get_encryption_key(
-    State(_state): State<AppState>,
-    Extension(auth_user): Extension<AuthenticatedUser>,
-) -> Result<Json<EncryptionKeyResponse>, (StatusCode, Json<ErrorResponse>)> {
-    Ok(Json(EncryptionKeyResponse {
-        encryption_key: auth_user.user.encryption_key.clone(),
     }))
 }
 
