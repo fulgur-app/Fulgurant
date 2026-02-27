@@ -84,6 +84,50 @@ async fn test_ping_expired_token() {
     assert!(body.error.contains("expired"));
 }
 
+#[tokio::test]
+async fn test_ping_deleted_device_rejected() {
+    let app = TestApp::new().await;
+    let (_user_id, device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
+    let device = device_repo.get_by_device_id(&device_id).await.unwrap();
+    device_repo.delete(device.id).await.unwrap();
+
+    let response = app
+        .server
+        .get("/api/ping")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .expect_failure()
+        .await;
+
+    response.assert_status_unauthorized();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("Device not found"));
+}
+
+#[tokio::test]
+async fn test_ping_expired_device_rejected() {
+    let app = TestApp::new().await;
+    let (_user_id, device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    sqlx::query("UPDATE devices SET expires_at = unixepoch('now') - 60 WHERE device_id = ?")
+        .bind(&device_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let response = app
+        .server
+        .get("/api/ping")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .expect_failure()
+        .await;
+
+    response.assert_status_unauthorized();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("Device has expired"));
+}
+
 // ─────────────────────────────────────────────
 // POST /api/token
 // ─────────────────────────────────────────────

@@ -66,7 +66,8 @@ fn redact_headers_for_log(headers: &HeaderMap) -> Vec<(String, String)> {
 /// 3. Extracts claims (user_id, device_id, device_name)
 /// 4. Loads User record from database by user_id
 /// 5. Loads Device record from database by device_id
-/// 6. Injects AuthenticatedUser into request extensions
+/// 6. Verifies the device belongs to the user and is not expired
+/// 7. Injects AuthenticatedUser into request extensions
 ///
 /// ### Arguments
 /// - `state`: The state of the application
@@ -220,6 +221,20 @@ pub async fn require_api_auth(
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
                 error: "Invalid token claims".to_string(),
+            }),
+        )
+            .into_response());
+    }
+    if device.is_expired() {
+        tracing::warn!(
+            "Expired device used with valid JWT: device_id={}, user_id={}",
+            device.device_id,
+            user.id
+        );
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Device has expired".to_string(),
             }),
         )
             .into_response());
