@@ -599,6 +599,27 @@ impl UserRepository {
         Ok(())
     }
 
+    /// Delete unverified users whose accounts are older than the given number of hours. Used by the background cleanup task to remove abandoned registrations.
+    ///
+    /// ### Arguments
+    /// - `older_than_hours`: Delete users created more than this many hours ago
+    ///
+    /// ### Returns
+    /// - `Ok(u64)`: The number of deleted users
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn delete_unverified_older_than(
+        &self,
+        older_than_hours: i64,
+    ) -> Result<u64, sqlx::Error> {
+        let cutoff = OffsetDateTime::now_utc().unix_timestamp() - older_than_hours * 3600;
+        let result =
+            sqlx::query("DELETE FROM users WHERE email_verified = FALSE AND created_at < ?")
+                .bind(cutoff)
+                .execute(&self.pool)
+                .await?;
+        Ok(result.rows_affected())
+    }
+
     /// Increment user's shares count and update last_activity
     ///
     /// ### Arguments
