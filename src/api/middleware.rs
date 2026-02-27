@@ -8,11 +8,21 @@ use axum::{
 };
 use serde::Serialize;
 
-use crate::{handlers::AppState, users::User};
+use crate::handlers::AppState;
+
+/// Lightweight user data injected into API request extensions.
+/// Contains only the fields actually used by API handlers, avoiding
+/// sensitive fields like `password_hash` being passed through the request pipeline.
+#[derive(Clone, Debug)]
+pub struct AuthenticatedApiUser {
+    pub id: i32,
+    pub email: String,
+    pub encryption_key: String,
+}
 
 #[derive(Clone, Debug)]
 pub struct AuthenticatedUser {
-    pub user: User,
+    pub user: AuthenticatedApiUser,
     pub device_id: String,
     pub device_name: String,
 }
@@ -149,7 +159,11 @@ pub async fn require_api_auth(
     );
 
     request.extensions_mut().insert(AuthenticatedUser {
-        user,
+        user: AuthenticatedApiUser {
+            id: user.id,
+            email: user.email,
+            encryption_key: user.encryption_key,
+        },
         device_id: claims.device_id,
         device_name: claims.device_name,
     });
