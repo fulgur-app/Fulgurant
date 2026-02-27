@@ -474,7 +474,7 @@ pub async fn register_step_2(
             )));
         }
     };
-    let _error_message = match verification_result {
+    match verification_result {
         VerificationResult::Verified => {
             state
                 .user_repository
@@ -486,14 +486,19 @@ pub async fn register_step_2(
                         e.to_string()
                     ))
                 })?;
-            "Yeah! You're registered!".to_string()
+            let template = templates::RegisterStep3Template {
+                first_name: user.first_name,
+            };
+            Ok(Html(template.render()?))
         }
-        _ => format_verification_error(&verification_result),
-    };
-    let template = templates::RegisterStep3Template {
-        first_name: user.first_name,
-    };
-    Ok(Html(template.render()?))
+        _ => {
+            let template = templates::RegisterStep2Template {
+                email,
+                error_message: format_verification_error(&verification_result),
+            };
+            Ok(Html(template.render()?))
+        }
+    }
 }
 
 /// GET /auth/forgot-password - Returns the forgot password page

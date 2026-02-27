@@ -25,6 +25,12 @@ struct RegisterFormData<'a> {
 }
 
 #[derive(Serialize)]
+struct RegisterStep2FormData<'a> {
+    email: &'a str,
+    code: &'a str,
+}
+
+#[derive(Serialize)]
 struct PasswordFormData<'a> {
     password: &'a str,
 }
@@ -255,6 +261,44 @@ async fn test_register_empty_name() {
 
     response.assert_status_ok();
     assert!(response.text().contains("First name cannot be empty"));
+}
+
+#[tokio::test]
+async fn test_register_step2_invalid_code_shows_error_step2() {
+    let app = TestApp::new().await;
+
+    let page = app.server.get("/register").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let step1_response = app
+        .server
+        .post("/auth/register")
+        .add_header(name.clone(), value.clone())
+        .form(&RegisterFormData {
+            email: "verify@test.com",
+            first_name: "Verify",
+            last_name: "User",
+            password: "Password123!",
+        })
+        .await;
+
+    step1_response.assert_status_ok();
+    assert!(step1_response.text().contains("Check your email!"));
+
+    let step2_response = app
+        .server
+        .post("/auth/register/step2")
+        .add_header(name, value)
+        .form(&RegisterStep2FormData {
+            email: "verify@test.com",
+            code: "000000",
+        })
+        .await;
+
+    step2_response.assert_status_ok();
+    assert!(step2_response.text().contains("Invalid verification code"));
+    assert!(step2_response.text().contains("Check your email!"));
+    assert!(!step2_response.text().contains("Congratulations"));
 }
 
 // ─────────────────────────────────────────────
