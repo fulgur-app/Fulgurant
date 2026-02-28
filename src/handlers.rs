@@ -13,7 +13,7 @@ use crate::{
     api::sse::SseChannelManager,
     api_key::{self},
     devices::{
-        self, CreateDevice, Device, DeviceRepository, MAX_DEVICE_NAME_LEN, MAX_DEVICE_TYPE_LEN,
+        self, CreateDevice, DeviceRepository, MAX_DEVICE_NAME_LEN, MAX_DEVICE_TYPE_LEN,
         UpdateDevice,
     },
     errors::AppError,
@@ -81,7 +81,7 @@ pub async fn index(
             AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
         })?;
     let devices = match state.device_repository.get_all_for_user(user_id).await {
-        Ok(devices) => devices.into_iter().rev().collect::<Vec<Device>>(),
+        Ok(devices) => devices,
         Err(e) => {
             tracing::error!("Error getting devices: {:?}", e);
             return Err(AppError::DatabaseError(e));

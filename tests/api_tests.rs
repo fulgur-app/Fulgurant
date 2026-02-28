@@ -341,6 +341,37 @@ async fn test_get_devices_empty_when_single_device() {
     assert!(devices.is_empty());
 }
 
+#[tokio::test]
+async fn test_get_devices_returns_deterministic_newest_first_order() {
+    let app = TestApp::new().await;
+    let email = "devices_order@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+
+    let (auth_device_id, _) = create_device_for_user(&app.pool, user_id, "Auth Device").await;
+    let (_older_device_id, _) = create_device_for_user(&app.pool, user_id, "Older Device").await;
+    let (_newer_device_id, _) = create_device_for_user(&app.pool, user_id, "Newer Device").await;
+
+    let jwt = access_token::generate_access_token(
+        user_id,
+        auth_device_id,
+        "Auth Device".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let response = app
+        .server
+        .get("/api/devices")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .await;
+
+    let devices: Vec<DeviceResponse> = response.json();
+    assert_eq!(devices.len(), 2);
+    assert_eq!(devices[0].name, "Newer Device");
+    assert_eq!(devices[1].name, "Older Device");
+}
+
 // ─────────────────────────────────────────────
 // POST /api/share
 // ─────────────────────────────────────────────
