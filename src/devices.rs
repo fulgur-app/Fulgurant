@@ -120,13 +120,15 @@ impl DeviceRepository {
     /// - `user_id`: The ID of the user
     ///
     /// ### Returns
-    /// - `Ok(Vec<Device>)`: The devices for the user
+    /// - `Ok(Vec<Device>)`: The devices for the user, newest first
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn get_all_for_user(&self, user_id: i32) -> Result<Vec<Device>, sqlx::Error> {
-        sqlx::query_as::<_, Device>("SELECT * FROM devices WHERE user_id = ?")
-            .bind(user_id)
-            .fetch_all(&self.pool)
-            .await
+        sqlx::query_as::<_, Device>(
+            "SELECT * FROM devices WHERE user_id = ? ORDER BY created_at DESC, id DESC",
+        )
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
     }
 
     /// Create a new device
