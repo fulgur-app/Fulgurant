@@ -185,7 +185,7 @@ fn parse_env_u64_bounded(name: &str, default: u64, min: u64, max: u64) -> anyhow
 /// - `Ok(RuntimeConfig)`: Validated runtime configuration
 /// - `Err(anyhow::Error)`: Invalid or unsafe configuration
 fn load_runtime_config() -> anyhow::Result<RuntimeConfig> {
-    let is_prod = parse_env_bool("IS_PROD", false)?;
+    let is_prod = parse_env_bool("IS_PROD", true)?;
     let can_register = parse_env_bool("CAN_REGISTER", false)?;
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string());
