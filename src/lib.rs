@@ -1,5 +1,6 @@
 pub mod access_token;
 pub mod api_key;
+pub mod csp;
 pub mod database_backup;
 pub mod errors;
 pub mod auth {
@@ -248,12 +249,7 @@ fn make_web_routes(
             header::STRICT_TRANSPORT_SECURITY,
             HeaderValue::from_static("max-age=31536000; includeSubDomains"),
         ))
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_static(
-                "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;"
-            ),
-        ))
+        .layer(axum::middleware::from_fn(csp::add_csp_nonce_and_header))
 }
 
 /// Make the protected routes

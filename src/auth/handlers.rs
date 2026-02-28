@@ -6,7 +6,7 @@ use argon2::{
 use askama::Template;
 use axum::{
     Form,
-    extract::{Query, State},
+    extract::{Extension, Query, State},
     http::HeaderValue,
     response::{Html, IntoResponse, Response},
 };
@@ -255,6 +255,7 @@ pub async fn force_password_update(
 /// - `Err(AppError)`: An error occurred while rendering the template
 pub async fn get_register_page(
     State(state): State<AppState>,
+    Extension(csp_nonce): Extension<crate::csp::CspNonce>,
     session: Session,
 ) -> Result<Html<String>, AppError> {
     if !state.can_register {
@@ -279,6 +280,7 @@ pub async fn get_register_page(
         first_name: "".to_string(),
         last_name: "".to_string(),
         csrf_token,
+        csp_nonce: csp_nonce.0,
     };
     Ok(Html(template.render()?))
 }
@@ -509,7 +511,10 @@ pub async fn register_step_2(
 /// ### Returns
 /// - `Ok(Html<String>)`: The forgot password page as formatted HTML
 /// - `Err(AppError)`: Error that occurred while rendering the template
-pub async fn get_forgot_password_page(session: Session) -> Result<Html<String>, AppError> {
+pub async fn get_forgot_password_page(
+    Extension(csp_nonce): Extension<crate::csp::CspNonce>,
+    session: Session,
+) -> Result<Html<String>, AppError> {
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
@@ -519,6 +524,7 @@ pub async fn get_forgot_password_page(session: Session) -> Result<Html<String>, 
         error_message: String::new(),
         email: String::new(),
         csrf_token,
+        csp_nonce: csp_nonce.0,
     };
     Ok(Html(template.render()?))
 }

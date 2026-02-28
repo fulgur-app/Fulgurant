@@ -1,5 +1,5 @@
 {% extends "layout.html" %} {% block page_title %}Admin{% endblock %} {% block head %}
-<style>
+<style nonce="{{ csp_nonce }}">
 	.pagination-container {
 		display: flex;
 		justify-content: center;
@@ -129,7 +129,7 @@
 	</div>
 </article>
 
-<script>
+<script nonce="{{ csp_nonce }}">
 	// Copy password to clipboard
 	function copyPassword(button) {
 		const passwordElement = button.parentElement.querySelector('.api-key-value');

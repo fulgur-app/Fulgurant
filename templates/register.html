@@ -3,7 +3,7 @@
 {% block page_title %}Register{% endblock %}
 
 {% block head %}
-    <style>
+    <style nonce="{{ csp_nonce }}">
         .start-over {
             margin-top: 1rem;
         }
