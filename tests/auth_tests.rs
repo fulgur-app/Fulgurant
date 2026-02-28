@@ -316,11 +316,7 @@ async fn test_logout_clears_session() {
     dashboard.assert_status_ok();
     let (name, value) = csrf_header(&extract_csrf_token(&dashboard.text()));
 
-    let logout_response = app
-        .server
-        .post("/logout")
-        .add_header(name, value)
-        .await;
+    let logout_response = app.server.post("/logout").add_header(name, value).await;
     logout_response.assert_status_ok();
     assert_eq!(logout_response.header("HX-Redirect"), "/logout");
 
