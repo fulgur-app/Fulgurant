@@ -83,7 +83,7 @@ impl TestApp {
             user_repository: UserRepository::new(pool.clone()),
             verification_code_repository: VerificationCodeRepository::new(pool.clone()),
             share_repository: ShareRepository::new(pool.clone()),
-            mailer: Arc::new(Mailer::new(false)),
+            mailer: Arc::new(Mailer::new(false).unwrap()),
             is_prod: false,
             can_register: opts.can_register,
             setup_needed: Arc::new(AtomicBool::new(opts.setup_needed)),
