@@ -60,66 +60,46 @@ cargo test
 
 ## Configuration
 
-Create a `.env` file in the project root with the following settings:
+Create a `.env` file in the project root. Use `.env.example` as a starting point.
 
-### Required Settings
+### Authentication flow configuration
+
+Fulgurant uses:
+- **Device key** (`fulgur_...`) only for `POST /api/token`
+- **JWT access token** for all other `/api/*` calls
+
+### Environment variables (authoritative)
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `DATABASE_URL` | No | `sqlite:data/database.db` | SQLite connection string |
+| `JWT_SECRET` | Yes | - | JWT signing secret (minimum 32 characters) |
+| `JWT_EXPIRY_SECONDS` | No | `900` | JWT access token lifetime in seconds (60-86400) |
+| `IS_PROD` | No | `true` | Enables production mode (SMTP required when `true`) |
+| `CAN_REGISTER` | No | `false` | Enable public self-registration |
+| `SHARE_VALIDITY_DAYS` | No | `3` | Share expiry in days (1-30) |
+| `MAX_DEVICES_PER_USER` | No | `99` | Max devices per user (0-10000) |
+| `SSE_HEARTBEAT_SECONDS` | No | `30` | SSE heartbeat interval in seconds (5-300) |
+| `BIND_HOST` | No | `127.0.0.1` | Bind address (`0.0.0.0` for external access) |
+| `BIND_PORT` | No | `3000` | Bind port |
+| `TLS_CERT_PATH` | No | unset | TLS cert path (must be set together with `TLS_KEY_PATH`) |
+| `TLS_KEY_PATH` | No | unset | TLS key path (must be set together with `TLS_CERT_PATH`) |
+| `RUST_LOG` | No | `debug` (dev), `info` (prod) | Log filter |
+| `LOG_FOLDER` | No | `logs` | Log directory |
+| `DAILY_DATABASE_BACKUP` | No | `false` | Enable daily SQLite backup task |
+| `BACKUP_FOLDER` | No | `backups` | Backup output directory |
+| `SMTP_HOST` | Yes if `IS_PROD=true` | - | SMTP host |
+| `SMTP_LOGIN` | Yes if `IS_PROD=true` | - | SMTP username/login |
+| `SMTP_PASSWORD` | Yes if `IS_PROD=true` | - | SMTP password |
+| `SMTP_PORT` | No | `587` | SMTP port |
+
+### Minimal local development example
 
 ```env
-# Database location
 DATABASE_URL=sqlite:./data/fulgurant.db
-
-# JWT Authentication configuration
-# Generate a secure secret: openssl rand -base64 32
-# Example given here, do not use in production
-JWT_SECRET='CJALi2JE9jlPVSax+xS7E2+R8UOCpxI3nEPbeKpGcaA=' 
-```
-
-### Optional Settings
-
-```env
-# Environment mode (enables email sending in production, default: true)
-IS_PROD=false
-
-# Enable user registration (default: false for security)
-CAN_REGISTER=false
-
-# Share expiration (default: 3 days)
-SHARE_VALIDITY_DAYS=3
-
-# Maximum devices per user (default: unlimited)
-MAX_DEVICES_PER_USER=10
-
-# SSE Heartbeat in seconds (default: 30 seconds)
-SSE_HEARTBEAT_SECONDS=30
-
-# Logging
-RUST_LOG=Fulgurant=debug,tower_http=debug,sqlx=info
-LOG_FOLDER=logs
-
-# Network configuration
-BIND_HOST=127.0.0.1  # Use 0.0.0.0 to accept connections from any interface (production)
-BIND_PORT=3000       # Port to listen on
-
-# TLS/HTTPS configuration - server runs HTTP if not configured
-TLS_CERT_PATH=certs/cert.pem 
-TLS_KEY_PATH=certs/key.pem
-
-# Access token expiry (default: 15 minutes)
-JWT_EXPIRY_SECONDS=900
-
-# Database backup configuration
-DAILY_DATABASE_BACKUP=false  # Enable daily database backups (default: false)
-BACKUP_FOLDER=backups        # Folder to store database backups (default: backups)
-```
-
-### Email Settings (Required when IS_PROD=true)
-
-```env
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USERNAME=your-email@example.com
-SMTP_PASSWORD=your-password
-SMTP_FROM=noreply@example.com
+JWT_SECRET='replace_with_at_least_32_characters'
+IS_PROD=true
+CAN_REGISTER=true
 ```
 
 ## Running with Docker
@@ -168,16 +148,16 @@ SMTP_FROM=noreply@example.com
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:/data/fulgurant.db` | SQLite database path |
+| `DATABASE_URL` | `sqlite:data/database.db` | SQLite database path |
 | `BIND_HOST` | `0.0.0.0` | Bind address (0.0.0.0 for all interfaces) |
 | `BIND_PORT` | `3000` | Port to listen on |
 | `IS_PROD` | `true` | Production mode (true/false) |
 | `CAN_REGISTER` | `false` | Allow user registration |
-| `MAX_DEVICES_PER_USER` | `10` | Maximum devices per user |
+| `MAX_DEVICES_PER_USER` | `99` | Maximum devices per user |
 | `SHARE_VALIDITY_DAYS` | `3` | Days until shares expire |
 | `SSE_HEARTBEAT_SECONDS` | `30` | SSE keep-alive interval |
-| `RUST_LOG` | `info` | Log level (trace, debug, info, warn, error) |
-| `LOG_FOLDER` | `/data/logs` | Log file directory |
+| `RUST_LOG` | `debug` | Log level (trace, debug, info, warn, error) |
+| `LOG_FOLDER` | `logs` | Log file directory |
 | `PUID` | `1000` | User ID for file permissions |
 | `PGID` | `1000` | Group ID for file permissions |
 
