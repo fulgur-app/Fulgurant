@@ -16,37 +16,41 @@ impl Mailer {
     /// - `is_prod`: If true, requires SMTP env vars and creates transport. If false, transport is None (emails logged).
     ///
     /// ### Returns
-    /// - `Mailer`: The Mailer with optional transport
-    pub fn new(is_prod: bool) -> Self {
+    /// - `Ok(Mailer)`: The Mailer with optional transport
+    /// - `Err(anyhow::Error)`: Configuration error while initializing SMTP transport
+    pub fn new(is_prod: bool) -> Result<Self, anyhow::Error> {
         if is_prod {
-            let smtp_host =
-                std::env::var("SMTP_HOST").expect("SMTP_HOST must be set in production mode");
-            let smtp_user =
-                std::env::var("SMTP_LOGIN").expect("SMTP_LOGIN must be set in production mode");
+            let smtp_host = std::env::var("SMTP_HOST")
+                .map_err(|_| anyhow::anyhow!("SMTP_HOST must be set in production mode"))?;
+            let smtp_user = std::env::var("SMTP_LOGIN")
+                .map_err(|_| anyhow::anyhow!("SMTP_LOGIN must be set in production mode"))?;
             let smtp_password = std::env::var("SMTP_PASSWORD")
-                .expect("SMTP_PASSWORD must be set in production mode");
+                .map_err(|_| anyhow::anyhow!("SMTP_PASSWORD must be set in production mode"))?;
             let smtp_port = std::env::var("SMTP_PORT")
                 .unwrap_or_else(|_| "587".to_string())
                 .parse::<u16>()
-                .expect("SMTP_PORT must be a valid port number (1-65535)");
+                .map_err(|_| anyhow::anyhow!("SMTP_PORT must be a valid integer"))?;
+            if smtp_port == 0 {
+                return Err(anyhow::anyhow!("SMTP_PORT must be in range 1-65535"));
+            }
             let transport = SmtpTransport::starttls_relay(&smtp_host)
-                .expect("Failed to create SMTP transport")
+                .map_err(|e| anyhow::anyhow!("Failed to create SMTP transport: {}", e))?
                 .port(smtp_port)
                 .credentials(Credentials::new(smtp_user.clone(), smtp_password))
                 .build();
 
-            Self {
+            Ok(Self {
                 smtp_user,
                 transport: Some(transport),
-            }
+            })
         } else {
             tracing::debug!(
                 "Development mode: Mailer created without SMTP transport (emails will be logged)"
             );
-            Self {
+            Ok(Self {
                 smtp_user: String::from("dev@example.com"),
                 transport: None,
-            }
+            })
         }
     }
 
