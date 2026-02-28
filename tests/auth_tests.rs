@@ -113,7 +113,7 @@ async fn test_login_wrong_password() {
         .await;
 
     response.assert_status_ok();
-    assert!(response.text().contains("Invalid password"));
+    assert!(response.text().contains("Invalid email or password"));
 }
 
 #[tokio::test]

@@ -85,13 +85,7 @@ pub async fn login(
                 "Login attempt for non-existent user: {}",
                 sanitize_for_log(&email)
             );
-            let template = templates::ErrorMessageTemplate {
-                message: "Invalid email or password. Please try again.".to_string(),
-            };
-            let rendered = template
-                .render()
-                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?;
-            return Ok(Html(rendered).into_response());
+            return invalid_credentials_response();
         }
         Err(e) => {
             return Err(AppError::InternalError(anyhow::anyhow!(
@@ -102,15 +96,11 @@ pub async fn login(
     };
     let password_verified = verify_password(password, user.password_hash.clone());
     if !password_verified {
-        let template = templates::ErrorMessageTemplate {
-            message: "Invalid password. Please try again.".to_string(),
-        };
-        return Ok(Html(
-            template
-                .render()
-                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?,
-        )
-        .into_response());
+        tracing::warn!(
+            "Login attempt with invalid password for user: {}",
+            sanitize_for_log(&email)
+        );
+        return invalid_credentials_response();
     }
     state
         .user_repository
@@ -140,6 +130,21 @@ pub async fn login(
     })?;
     response.headers_mut().insert("HX-Redirect", header_value);
     Ok(response)
+}
+
+/// Build the generic credential failure response for login attempts.
+///
+/// ### Returns
+/// - `Ok(Response)`: Generic authentication error response
+/// - `Err(AppError)`: Template rendering error
+fn invalid_credentials_response() -> Result<Response, AppError> {
+    let template = templates::ErrorMessageTemplate {
+        message: "Invalid email or password. Please try again.".to_string(),
+    };
+    let rendered = template
+        .render()
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?;
+    Ok(Html(rendered).into_response())
 }
 
 /// GET /force-password-update - Returns the force password update page
