@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse},
 };
+use std::collections::HashMap;
 use std::sync::{Arc, atomic::AtomicBool};
 use tower_sessions::Session;
 
@@ -93,9 +94,13 @@ pub async fn index(
             return Err(AppError::DatabaseError(e));
         }
     };
+    let device_names = devices
+        .iter()
+        .map(|device| (device.device_id.clone(), device.name.clone()))
+        .collect::<HashMap<String, String>>();
     let shares = raw_shares
         .into_iter()
-        .map(|s| s.to_display_shares(&devices))
+        .map(|s| s.to_display_shares(&device_names))
         .collect::<Vec<DisplayShare>>();
     let template = templates::IndexTemplate {
         devices,

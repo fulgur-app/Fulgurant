@@ -1,10 +1,11 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Sqlite, SqlitePool};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
-use crate::devices::Device;
 use crate::utils::format_datetime_utc;
 
 // Default validity period for shares (3 days)
@@ -47,25 +48,19 @@ impl Share {
     /// Convert the share to a display share
     ///
     /// ### Arguments
-    /// - `devices`: The devices to convert the share to a display share
+    /// - `device_names`: Map of `device_id -> device_name`
     ///
     /// ### Returns
     /// - `DisplayShare`: The display share
-    pub fn to_display_shares(&self, devices: &[Device]) -> DisplayShare {
-        let from = match devices
-            .iter()
-            .find(|d| d.device_id == self.source_device_id)
-        {
-            Some(d) => d.name.clone(),
-            None => "Unknown".to_string(),
-        };
-        let to = match devices
-            .iter()
-            .find(|d| d.device_id == self.destination_device_id)
-        {
-            Some(d) => d.name.clone(),
-            None => "Unknown".to_string(),
-        };
+    pub fn to_display_shares(&self, device_names: &HashMap<String, String>) -> DisplayShare {
+        let from = device_names
+            .get(&self.source_device_id)
+            .cloned()
+            .unwrap_or_else(|| "Unknown".to_string());
+        let to = device_names
+            .get(&self.destination_device_id)
+            .cloned()
+            .unwrap_or_else(|| "Unknown".to_string());
         let created_at = format_datetime_utc(&self.created_at);
         let expires_at = format_datetime_utc(&self.expires_at);
         DisplayShare {
