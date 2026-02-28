@@ -134,7 +134,10 @@ fn make_auth_routes(
 fn make_public_routes(app_state: &handlers::AppState) -> Router {
     Router::new()
         .route("/login", get(auth::handlers::get_login_page))
-        .route("/logout", get(auth::handlers::logout))
+        .route(
+            "/logout",
+            get(auth::handlers::get_logout_page).post(auth::handlers::logout),
+        )
         .route("/register", get(auth::handlers::get_register_page))
         .route(
             "/auth/forgot-password",
