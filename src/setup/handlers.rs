@@ -5,7 +5,7 @@ use crate::{
 use askama::Template;
 use axum::{
     Form,
-    extract::State,
+    extract::{Extension, State},
     http::{HeaderValue, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
 };
@@ -31,6 +31,7 @@ pub struct SetupRequest {
 /// - `Err(AppError)`: An error occurred while rendering the template
 pub async fn get_setup_page(
     State(state): State<AppState>,
+    Extension(csp_nonce): Extension<crate::csp::CspNonce>,
     session: Session,
 ) -> Result<Response, AppError> {
     let has_admin = state.user_repository.has_admin().await.map_err(|e| {
@@ -53,6 +54,7 @@ pub async fn get_setup_page(
         first_name: String::new(),
         last_name: String::new(),
         csrf_token,
+        csp_nonce: csp_nonce.0,
     };
     Ok(Html(template.render()?).into_response())
 }

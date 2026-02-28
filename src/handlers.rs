@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
     Form,
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse},
 };
@@ -67,6 +67,7 @@ pub async fn not_found() -> impl IntoResponse {
 /// - `Err(AppError)`: Error that occurred while rendering the template
 pub async fn index(
     State(state): State<AppState>,
+    Extension(csp_nonce): Extension<crate::csp::CspNonce>,
     session: Session,
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
@@ -112,6 +113,7 @@ pub async fn index(
             Some(state.max_devices_per_user)
         },
         csrf_token,
+        csp_nonce: csp_nonce.0,
     };
     Ok(Html(template.render()?))
 }
@@ -430,6 +432,7 @@ pub async fn delete_share(
 /// - `Err(AppError)`: Error that occurred while rendering the template
 pub async fn get_settings(
     State(state): State<AppState>,
+    Extension(csp_nonce): Extension<crate::csp::CspNonce>,
     session: Session,
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
@@ -449,6 +452,7 @@ pub async fn get_settings(
         first_name: user.first_name,
         last_name: user.last_name,
         csrf_token,
+        csp_nonce: csp_nonce.0,
     };
     Ok(Html(template.render()?))
 }
