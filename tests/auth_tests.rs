@@ -302,7 +302,7 @@ async fn test_register_step2_invalid_code_shows_error_step2() {
 }
 
 // ─────────────────────────────────────────────
-// GET /logout
+// POST /logout
 // ─────────────────────────────────────────────
 
 #[tokio::test]
@@ -312,9 +312,13 @@ async fn test_logout_clears_session() {
     login(&app.server, "user@test.com", "Password123!").await;
 
     // Confirm the session is active
-    app.server.get("/").await.assert_status_ok();
+    let dashboard = app.server.get("/").await;
+    dashboard.assert_status_ok();
+    let (name, value) = csrf_header(&extract_csrf_token(&dashboard.text()));
 
-    app.server.get("/logout").await.assert_status_ok();
+    let logout_response = app.server.post("/logout").add_header(name, value).await;
+    logout_response.assert_status_ok();
+    assert_eq!(logout_response.header("HX-Redirect"), "/logout");
 
     // After logout, / must redirect to login
     let response = app.server.get("/").expect_failure().await;

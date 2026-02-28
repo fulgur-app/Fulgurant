@@ -77,9 +77,9 @@
                     This ensures your account remains secure by verifying your email address.
                 </p>
                 <div>
-                    <a href="/logout">
-                        <button type="button" class="secondary">Log Out</button>
-                    </a>
+                    <form hx-post="/logout" hx-swap="none">
+                        <button type="submit" class="secondary">Log Out</button>
+                    </form>
                 </div>
             </div>
 

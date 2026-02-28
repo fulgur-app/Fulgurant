@@ -31,7 +31,7 @@
           <li><a href="/admin" class="contrast">Admin</a></li>
           {% endif %}
           <li><a href="/settings" class="contrast">Settings</a></li>
-          <li><a href="/logout" class="contrast">Logout</a></li>
+          <li><a href="/logout" class="contrast" hx-post="/logout" hx-swap="none">Logout</a></li>
           {% endif %}
         </ul>
       </nav>

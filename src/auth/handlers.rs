@@ -285,21 +285,38 @@ pub async fn get_register_page(
     Ok(Html(template.render()?))
 }
 
-/// POST /logout - Logs out a user
+/// GET /logout - Returns the logged-out confirmation page
+///
+/// ### Arguments
+/// - None
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The logged-out confirmation page
+/// - `Err(AppError)`: An error occurred while rendering the template
+pub async fn get_logout_page() -> Result<Html<String>, AppError> {
+    let template = templates::LogoutTemplate {};
+    Ok(Html(template.render()?))
+}
+
+/// POST /logout - Logs out the current user and redirects to confirmation page
 ///
 /// ### Arguments
 /// - `session`: The session
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The logout page
+/// - `Ok(Response)`: Empty response with `HX-Redirect` to `/logout`
 /// - `Err(AppError)`: An error occurred while logging out the user
-pub async fn logout(session: Session) -> Result<Html<String>, AppError> {
+pub async fn logout(session: Session) -> Result<Response, AppError> {
     session
         .delete()
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
-    let template = templates::LogoutTemplate {};
-    Ok(Html(template.render()?))
+
+    let mut response = Html("").into_response();
+    response
+        .headers_mut()
+        .insert("HX-Redirect", HeaderValue::from_static("/logout"));
+    Ok(response)
 }
 
 #[derive(Deserialize)]
