@@ -1,7 +1,7 @@
 use dotenvy::dotenv;
 use fulgurant::{
-    api, database_backup, devices, handlers, logging, mail, shares, users, users::UserRepository,
-    verification_code,
+    api, database_backup, db, devices, handlers, logging, mail, shares, users,
+    users::UserRepository, verification_code,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::{
@@ -17,6 +17,9 @@ use tower_sessions::{
 
 use shares::ShareRepository;
 use verification_code::VerificationCodeRepository;
+
+static SQLITE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./data/migrations");
+static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./data/migrations_postgres");
 
 const DEFAULT_DATABASE_URL: &str = "sqlite:data/database.db";
 const DEFAULT_BIND_HOST: &str = "127.0.0.1";
@@ -266,23 +269,40 @@ async fn main() -> anyhow::Result<()> {
     );
     tracing::info!("Log folder: {}", log_folder.display());
     tracing::info!("========================================");
-    let options = SqliteConnectOptions::from_str(config.database_url.as_str())?
-        .create_if_missing(true)
-        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-        .busy_timeout(std::time::Duration::from_secs(30));
-    let connection = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect_with(options)
-        .await?;
+    let pool = if config.database_url.starts_with("postgres://")
+        || config.database_url.starts_with("postgresql://")
+    {
+        let opts = sqlx::postgres::PgConnectOptions::from_str(config.database_url.as_str())?;
+        let pg_pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(20)
+            .connect_with(opts)
+            .await?;
+        tracing::info!("Connected to PostgreSQL");
+        db::DbPool::Postgres(pg_pool)
+    } else {
+        let opts = SqliteConnectOptions::from_str(config.database_url.as_str())?
+            .create_if_missing(true)
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+            .busy_timeout(std::time::Duration::from_secs(30));
+        let sqlite_pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(opts)
+            .await?;
+        tracing::info!("Connected to SQLite");
+        db::DbPool::Sqlite(sqlite_pool)
+    };
     tracing::info!("Database connection established");
     tracing::info!("Running migrations...");
-    sqlx::migrate!("./data/migrations").run(&connection).await?;
+    match &pool {
+        db::DbPool::Sqlite(p) => SQLITE_MIGRATOR.run(p).await?,
+        db::DbPool::Postgres(p) => POSTGRES_MIGRATOR.run(p).await?,
+    };
     tracing::info!("Migrations completed successfully");
-    let device_repository = devices::DeviceRepository::new(connection.clone());
-    let user_repository = users::UserRepository::new(connection.clone());
+    let device_repository = devices::DeviceRepository::new(pool.clone());
+    let user_repository = users::UserRepository::new(pool.clone());
     let verification_code_repository =
-        verification_code::VerificationCodeRepository::new(connection.clone());
-    let share_repository = shares::ShareRepository::new(connection.clone());
+        verification_code::VerificationCodeRepository::new(pool.clone());
+    let share_repository = shares::ShareRepository::new(pool.clone());
     let has_admin = user_repository.has_admin().await?;
     let setup_needed = !has_admin;
     if setup_needed {
@@ -344,8 +364,7 @@ async fn main() -> anyhow::Result<()> {
     make_verification_code_cleanup_task(cleanup_verification_repo, shutdown_token.clone());
     let cleanup_user_repo = app_state.user_repository.clone();
     make_unverified_user_cleanup_task(cleanup_user_repo, shutdown_token.clone());
-    let backup_pool = connection.clone();
-    database_backup::make_daily_backup_task(backup_pool, shutdown_token.clone(), is_prod);
+    database_backup::make_daily_backup_task(pool.clone(), shutdown_token.clone(), is_prod);
     let bind_host = config.bind_host.clone();
     let bind_port = config.bind_port;
     let addr = format!("{}:{}", bind_host, bind_port).parse::<SocketAddr>()?;

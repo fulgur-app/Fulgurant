@@ -2,6 +2,7 @@ pub mod access_token;
 pub mod api_key;
 pub mod csp;
 pub mod database_backup;
+pub mod db;
 pub mod errors;
 pub mod auth {
     pub mod handlers;

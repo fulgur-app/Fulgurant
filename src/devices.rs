@@ -1,6 +1,7 @@
+use crate::db::DbPool;
 use crate::utils::{format_date_utc, format_datetime_utc};
+use crate::{db_execute, db_execute_dual, db_fetch_all, db_fetch_one, db_fetch_optional};
 use serde::{Deserialize, Serialize};
-use sqlx::{Pool, Row, Sqlite, SqlitePool};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
@@ -99,18 +100,18 @@ pub struct RenewDevice {
 
 #[derive(Clone)]
 pub struct DeviceRepository {
-    pool: SqlitePool,
+    pool: DbPool,
 }
 
 impl DeviceRepository {
     /// Create a new device repository
     ///
     /// ### Arguments
-    /// - `pool`: The SQLite pool
+    /// - `pool`: The database pool (SQLite or PostgreSQL)
     ///
     /// ### Returns
     /// - `DeviceRepository`: The device repository
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 
@@ -123,12 +124,12 @@ impl DeviceRepository {
     /// - `Ok(Vec<Device>)`: The devices for the user, newest first
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn get_all_for_user(&self, user_id: i32) -> Result<Vec<Device>, sqlx::Error> {
-        sqlx::query_as::<_, Device>(
+        db_fetch_all!(
+            self.pool,
             "SELECT * FROM devices WHERE user_id = ? ORDER BY created_at DESC, id DESC",
+            Device,
+            user_id
         )
-        .bind(user_id)
-        .fetch_all(&self.pool)
-        .await
     }
 
     /// Create a new device
@@ -156,21 +157,41 @@ impl DeviceRepository {
         } = data;
         let expires_at = now + Duration::days(api_key_lifetime);
         let fast_hash = crate::api_key::hash_api_key_fast(&device_key);
-        let result = sqlx::query(
-            "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, encryption_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(user_id)
-        .bind(&device_id)
-        .bind(&device_key)
-        .bind(&fast_hash)
-        .bind(name)
-        .bind(device_type)
-        .bind(None::<String>) // encryption_key defaults to NULL
-        .bind(expires_at.unix_timestamp())
-        .bind(now.unix_timestamp())
-        .execute(&self.pool)
-        .await?;
-        let id = result.last_insert_rowid() as i32;
+        let id = match &self.pool {
+            DbPool::Sqlite(pool) => {
+                let result = sqlx::query(
+                    "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, encryption_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(user_id)
+                .bind(&device_id)
+                .bind(&device_key)
+                .bind(&fast_hash)
+                .bind(&name)
+                .bind(&device_type)
+                .bind(None::<String>)
+                .bind(expires_at.unix_timestamp())
+                .bind(now.unix_timestamp())
+                .execute(pool)
+                .await?;
+                result.last_insert_rowid() as i32
+            }
+            DbPool::Postgres(pool) => {
+                let row: (i32,) = sqlx::query_as(
+                    "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, encryption_key, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8)) RETURNING id",
+                )
+                .bind(user_id)
+                .bind(&device_id)
+                .bind(&device_key)
+                .bind(&fast_hash)
+                .bind(&name)
+                .bind(&device_type)
+                .bind(None::<String>)
+                .bind(expires_at.unix_timestamp())
+                .fetch_one(pool)
+                .await?;
+                row.0
+            }
+        };
         self.get_by_id(id).await
     }
 
@@ -185,12 +206,14 @@ impl DeviceRepository {
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn update(&self, id: i32, data: UpdateDevice) -> Result<Device, sqlx::Error> {
         let UpdateDevice { name, device_type } = data;
-        sqlx::query("UPDATE devices SET name = ?, device_type = ?, updated_at = unixepoch('now') WHERE id = ?")
-            .bind(name)
-            .bind(device_type)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute_dual!(
+            self.pool,
+            sqlite: "UPDATE devices SET name = ?, device_type = ?, updated_at = unixepoch('now') WHERE id = ?",
+            postgres: "UPDATE devices SET name = $1, device_type = $2, updated_at = NOW() WHERE id = $3",
+            name,
+            device_type,
+            id
+        )?;
         self.get_by_id(id).await
     }
 
@@ -208,11 +231,13 @@ impl DeviceRepository {
         device_id: &str,
         encryption_key: String,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE devices SET encryption_key = ?, updated_at = unixepoch('now') WHERE device_id = ?")
-            .bind(encryption_key)
-            .bind(device_id)
-            .execute(&self.pool)
-            .await?;
+        db_execute_dual!(
+            self.pool,
+            sqlite: "UPDATE devices SET encryption_key = ?, updated_at = unixepoch('now') WHERE device_id = ?",
+            postgres: "UPDATE devices SET encryption_key = $1, updated_at = NOW() WHERE device_id = $2",
+            encryption_key,
+            device_id
+        )?;
         Ok(())
     }
 
@@ -229,12 +254,14 @@ impl DeviceRepository {
         let now = OffsetDateTime::now_utc();
         let RenewDevice { api_key_lifetime } = data;
         let new_expires_at = now + Duration::days(api_key_lifetime);
-        sqlx::query("UPDATE devices SET expires_at = ?, updated_at = ? WHERE id = ?")
-            .bind(new_expires_at.unix_timestamp())
-            .bind(now.unix_timestamp())
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute_dual!(
+            self.pool,
+            sqlite: "UPDATE devices SET expires_at = ?, updated_at = ? WHERE id = ?",
+            postgres: "UPDATE devices SET expires_at = to_timestamp($1), updated_at = to_timestamp($2) WHERE id = $3",
+            new_expires_at.unix_timestamp(),
+            now.unix_timestamp(),
+            id
+        )?;
         self.get_by_id(id).await
     }
 
@@ -249,10 +276,7 @@ impl DeviceRepository {
     pub async fn delete(&self, id: i32) -> Result<(), sqlx::Error> {
         let device = self.get_by_id(id).await?;
         tracing::info!("Deleting device: {} (ID: {})", device.name, device.id);
-        sqlx::query("DELETE FROM devices WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute!(self.pool, "DELETE FROM devices WHERE id = ?", id)?;
         Ok(())
     }
 
@@ -265,10 +289,7 @@ impl DeviceRepository {
     /// - `Ok(Device)`: The device
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn get_by_id(&self, id: i32) -> Result<Device, sqlx::Error> {
-        sqlx::query_as::<_, Device>("SELECT * FROM devices WHERE id = ?")
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await
+        db_fetch_one!(self.pool, "SELECT * FROM devices WHERE id = ?", Device, id)
     }
 
     /// Get a device by device ID
@@ -280,10 +301,12 @@ impl DeviceRepository {
     /// - `Ok(Device)`: The device
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn get_by_device_id(&self, device_id: &str) -> Result<Device, sqlx::Error> {
-        sqlx::query_as::<_, Device>("SELECT * FROM devices WHERE device_id = ?")
-            .bind(device_id)
-            .fetch_one(&self.pool)
-            .await
+        db_fetch_one!(
+            self.pool,
+            "SELECT * FROM devices WHERE device_id = ?",
+            Device,
+            device_id
+        )
     }
 
     /// Get a device by device key
@@ -295,10 +318,12 @@ impl DeviceRepository {
     /// - `Ok(Device)`: The device
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn get_by_device_key(&self, device_key: &str) -> Result<Device, sqlx::Error> {
-        sqlx::query_as::<_, Device>("SELECT * FROM devices WHERE device_key = ?")
-            .bind(device_key)
-            .fetch_one(&self.pool)
-            .await
+        db_fetch_one!(
+            self.pool,
+            "SELECT * FROM devices WHERE device_key = ?",
+            Device,
+            device_key
+        )
     }
 
     /// Get device by fast hash (O(1) lookup for token endpoint)
@@ -311,10 +336,12 @@ impl DeviceRepository {
     /// - `Ok(None)`: No device with this fast hash
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn get_by_fast_hash(&self, fast_hash: &str) -> Result<Option<Device>, sqlx::Error> {
-        sqlx::query_as::<_, Device>("SELECT * FROM devices WHERE device_key_fast_hash = ?")
-            .bind(fast_hash)
-            .fetch_optional(&self.pool)
-            .await
+        db_fetch_optional!(
+            self.pool,
+            "SELECT * FROM devices WHERE device_key_fast_hash = ?",
+            Device,
+            fast_hash
+        )
     }
 
     /// Update fast hash for lazy migration
@@ -327,11 +354,12 @@ impl DeviceRepository {
     /// - `Ok(())`: Success
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn update_fast_hash(&self, id: i32, fast_hash: String) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE devices SET device_key_fast_hash = ? WHERE id = ?")
-            .bind(fast_hash)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute!(
+            self.pool,
+            "UPDATE devices SET device_key_fast_hash = ? WHERE id = ?",
+            fast_hash,
+            id
+        )?;
         Ok(())
     }
 
@@ -344,10 +372,12 @@ impl DeviceRepository {
     /// - `Ok(i32)`: The number of devices for the user
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn count_devices_for_user(&self, user_id: i32) -> Result<i32, sqlx::Error> {
-        sqlx::query("SELECT COUNT(*) FROM devices WHERE user_id = ?")
-            .bind(user_id)
-            .fetch_one(&self.pool)
-            .await
-            .and_then(|row| row.try_get::<i32, _>(0))
+        let count: (i64,) = db_fetch_one!(
+            self.pool,
+            "SELECT COUNT(*) FROM devices WHERE user_id = ?",
+            (i64,),
+            user_id
+        )?;
+        Ok(count.0 as i32)
     }
 }

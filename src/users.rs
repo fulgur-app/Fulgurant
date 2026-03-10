@@ -1,8 +1,9 @@
+use crate::db::DbPool;
 use crate::utils::format_date_utc;
+use crate::{db_execute, db_execute_dual, db_fetch_all, db_fetch_one, db_fetch_optional};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use sqlx::{Pool, Sqlite, SqlitePool};
 use time::OffsetDateTime;
 
 pub const MAX_NAME_LEN: usize = 50;
@@ -156,18 +157,18 @@ pub fn generate_encryption_key() -> String {
 
 #[derive(Clone)]
 pub struct UserRepository {
-    pool: SqlitePool,
+    pool: DbPool,
 }
 
 impl UserRepository {
     /// Create a new user repository
     ///
     /// ### Arguments
-    /// - `pool`: The SQLite pool
+    /// - `pool`: The database pool (SQLite or PostgreSQL)
     ///
     /// ### Returns
     /// - `UserRepository`: The user repository
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 
@@ -180,10 +181,12 @@ impl UserRepository {
     /// - `Ok(Option<User>)`: The user if found, otherwise None
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn get_by_email(&self, email: String) -> Result<Option<User>, sqlx::Error> {
-        sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = ?")
-            .bind(email)
-            .fetch_optional(&self.pool)
-            .await
+        db_fetch_optional!(
+            self.pool,
+            "SELECT * FROM users WHERE email = ?",
+            User,
+            email
+        )
     }
 
     /// Get user by ID
@@ -195,10 +198,7 @@ impl UserRepository {
     /// - `Ok(Option<User>)`: The user if found, otherwise None
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn get_by_id(&self, id: i32) -> Result<Option<User>, sqlx::Error> {
-        sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
+        db_fetch_optional!(self.pool, "SELECT * FROM users WHERE id = ?", User, id)
     }
 
     /// Create a new user
@@ -224,23 +224,41 @@ impl UserRepository {
         force_password_update: bool,
     ) -> Result<i32, sqlx::Error> {
         let encryption_key = generate_encryption_key();
-        let now = OffsetDateTime::now_utc().unix_timestamp();
-        let result = sqlx::query(
-            "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, force_password_update, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(email)
-        .bind(first_name)
-        .bind(last_name)
-        .bind(password_hash)
-        .bind(encryption_key)
-        .bind(is_email_verified)
-        .bind(force_password_update)
-        .bind(now)
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-        let id = result.last_insert_rowid() as i32;
-        Ok(id)
+        match &self.pool {
+            DbPool::Sqlite(pool) => {
+                let now = OffsetDateTime::now_utc().unix_timestamp();
+                let result = sqlx::query(
+                    "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, force_password_update, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(&email)
+                .bind(&first_name)
+                .bind(&last_name)
+                .bind(&password_hash)
+                .bind(&encryption_key)
+                .bind(is_email_verified)
+                .bind(force_password_update)
+                .bind(now)
+                .bind(now)
+                .execute(pool)
+                .await?;
+                Ok(result.last_insert_rowid() as i32)
+            }
+            DbPool::Postgres(pool) => {
+                let id: (i32,) = sqlx::query_as(
+                    "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, force_password_update) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+                )
+                .bind(&email)
+                .bind(&first_name)
+                .bind(&last_name)
+                .bind(&password_hash)
+                .bind(&encryption_key)
+                .bind(is_email_verified)
+                .bind(force_password_update)
+                .fetch_one(pool)
+                .await?;
+                Ok(id.0)
+            }
+        }
     }
 
     /// Update the password of a user
@@ -253,11 +271,12 @@ impl UserRepository {
     /// - `Ok(())`: The result of the operation if the password was updated successfully
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn update_password(&self, id: i32, password_hash: String) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
-            .bind(password_hash)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute!(
+            self.pool,
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            password_hash,
+            id
+        )?;
         Ok(())
     }
 
@@ -275,13 +294,12 @@ impl UserRepository {
         id: i32,
         password_hash: String,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query(
+        db_execute!(
+            self.pool,
             "UPDATE users SET password_hash = ?, force_password_update = FALSE WHERE id = ?",
-        )
-        .bind(password_hash)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+            password_hash,
+            id
+        )?;
         Ok(())
     }
 
@@ -294,12 +312,11 @@ impl UserRepository {
     /// - `Ok(DisplayUser)`: The updated user
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn toggle_force_password_update(&self, id: i32) -> Result<DisplayUser, sqlx::Error> {
-        sqlx::query(
+        db_execute!(
+            self.pool,
             "UPDATE users SET force_password_update = NOT force_password_update WHERE id = ?",
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+            id
+        )?;
         let updated_user = self.get_by_id(id).await?.ok_or(sqlx::Error::RowNotFound)?;
         Ok(updated_user.into())
     }
@@ -313,10 +330,11 @@ impl UserRepository {
     /// - `Ok(())`: The result of the operation if the user was marked as verified successfully
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn mark_as_verified(&self, id: i32) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE users SET email_verified = TRUE WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute!(
+            self.pool,
+            "UPDATE users SET email_verified = TRUE WHERE id = ?",
+            id
+        )?;
         Ok(())
     }
 
@@ -336,12 +354,13 @@ impl UserRepository {
         first_name: String,
         last_name: String,
     ) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE users SET first_name = ?, last_name = ? WHERE id = ?")
-            .bind(first_name)
-            .bind(last_name)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute!(
+            self.pool,
+            "UPDATE users SET first_name = ?, last_name = ? WHERE id = ?",
+            first_name,
+            last_name,
+            id
+        )?;
         Ok(())
     }
 
@@ -355,11 +374,12 @@ impl UserRepository {
     /// - `Ok(())`: The result of the operation if the user's email was updated successfully
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn update_email(&self, id: i32, email: String) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE users SET email = ?, email_verified = TRUE WHERE id = ?")
-            .bind(email)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute!(
+            self.pool,
+            "UPDATE users SET email = ?, email_verified = TRUE WHERE id = ?",
+            email,
+            id
+        )?;
         Ok(())
     }
 
@@ -369,9 +389,11 @@ impl UserRepository {
     /// - `Ok(bool)`: True if at least one admin exists, false otherwise
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn has_admin(&self) -> Result<bool, sqlx::Error> {
-        let count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'Admin'")
-            .fetch_one(&self.pool)
-            .await?;
+        let count: (i64,) = db_fetch_one!(
+            self.pool,
+            "SELECT COUNT(*) FROM users WHERE role = 'Admin'",
+            (i64,)
+        )?;
         Ok(count.0 > 0)
     }
 
@@ -393,29 +415,55 @@ impl UserRepository {
         last_name: String,
         password_hash: String,
     ) -> Result<i32, sqlx::Error> {
-        // Use transaction to prevent race condition
-        let mut tx = self.pool.begin().await?;
-        let count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'Admin'")
-            .fetch_one(&mut *tx)
-            .await?;
-        if count.0 > 0 {
-            tx.rollback().await?;
-            return Err(sqlx::Error::RowNotFound);
-        }
         let encryption_key = generate_encryption_key();
-        let result = sqlx::query(
-            "INSERT INTO users (email, first_name, last_name, password_hash, role, encryption_key, email_verified) VALUES (?, ?, ?, ?, 'Admin', ?, TRUE)",
-        )
-        .bind(email)
-        .bind(first_name)
-        .bind(last_name)
-        .bind(password_hash)
-        .bind(encryption_key)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        let id = result.last_insert_rowid() as i32;
-        Ok(id)
+        match &self.pool {
+            DbPool::Sqlite(pool) => {
+                let mut tx = pool.begin().await?;
+                let count: (i64,) =
+                    sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'Admin'")
+                        .fetch_one(&mut *tx)
+                        .await?;
+                if count.0 > 0 {
+                    tx.rollback().await?;
+                    return Err(sqlx::Error::RowNotFound);
+                }
+                let result = sqlx::query(
+                    "INSERT INTO users (email, first_name, last_name, password_hash, role, encryption_key, email_verified) VALUES (?, ?, ?, ?, 'Admin', ?, TRUE)",
+                )
+                .bind(&email)
+                .bind(&first_name)
+                .bind(&last_name)
+                .bind(&password_hash)
+                .bind(&encryption_key)
+                .execute(&mut *tx)
+                .await?;
+                tx.commit().await?;
+                Ok(result.last_insert_rowid() as i32)
+            }
+            DbPool::Postgres(pool) => {
+                let mut tx = pool.begin().await?;
+                let count: (i64,) =
+                    sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'Admin'")
+                        .fetch_one(&mut *tx)
+                        .await?;
+                if count.0 > 0 {
+                    tx.rollback().await?;
+                    return Err(sqlx::Error::RowNotFound);
+                }
+                let id: (i32,) = sqlx::query_as(
+                    "INSERT INTO users (email, first_name, last_name, password_hash, role, encryption_key, email_verified) VALUES ($1, $2, $3, $4, 'Admin', $5, TRUE) RETURNING id",
+                )
+                .bind(&email)
+                .bind(&first_name)
+                .bind(&last_name)
+                .bind(&password_hash)
+                .bind(&encryption_key)
+                .fetch_one(&mut *tx)
+                .await?;
+                tx.commit().await?;
+                Ok(id.0)
+            }
+        }
     }
 
     /// Get all users with pagination
@@ -433,13 +481,13 @@ impl UserRepository {
         let offset = (page - 1) * page_size;
         let total_count = self.count_all().await?;
         let total_pages = (total_count + page_size - 1) / page_size;
-        let users = sqlx::query_as::<_, DisplayUser>(
+        let users = db_fetch_all!(
+            self.pool,
             "SELECT id, email, first_name, last_name, email_verified, role, last_activity, shares, force_password_update, created_at, updated_at FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?",
-        )
-        .bind(page_size)
-        .bind(offset)
-        .fetch_all(&self.pool)
-        .await?;
+            DisplayUser,
+            page_size,
+            offset
+        )?;
         Ok(PaginatedUsers {
             users,
             total_count,
@@ -455,10 +503,8 @@ impl UserRepository {
     /// - `Ok(i32)`: The total number of users
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn count_all(&self) -> Result<i32, sqlx::Error> {
-        let count: (i32,) = sqlx::query_as("SELECT COUNT(*) FROM users")
-            .fetch_one(&self.pool)
-            .await?;
-        Ok(count.0)
+        let count: (i64,) = db_fetch_one!(self.pool, "SELECT COUNT(*) FROM users", (i64,))?;
+        Ok(count.0 as i32)
     }
 
     /// Search users with filters and pagination
@@ -483,6 +529,8 @@ impl UserRepository {
         page: i32,
         page_size: i32,
     ) -> Result<PaginatedUsers, sqlx::Error> {
+        use crate::db::pg_params;
+
         let page = page.max(1);
         let page_size = page_size.max(1);
         let offset = (page - 1) * page_size;
@@ -512,24 +560,49 @@ impl UserRepository {
         } else {
             format!("WHERE {}", where_clauses.join(" AND "))
         };
-        let count_query = format!("SELECT COUNT(*) FROM users {}", where_clause);
-        let mut count_query_builder = sqlx::query_as::<_, (i32,)>(&count_query);
-        for param in &params {
-            count_query_builder = count_query_builder.bind(param);
-        }
-        let total_count = count_query_builder.fetch_one(&self.pool).await?.0;
-
-        let total_pages = (total_count + page_size - 1) / page_size;
-        let query = format!(
+        let count_sql = format!("SELECT COUNT(*) FROM users {}", where_clause);
+        let data_sql = format!(
             "SELECT id, email, first_name, last_name, email_verified, role, last_activity, shares, force_password_update, created_at, updated_at FROM users {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             where_clause
         );
-        let mut query_builder = sqlx::query_as::<_, DisplayUser>(&query);
-        for param in &params {
-            query_builder = query_builder.bind(param);
-        }
-        query_builder = query_builder.bind(page_size).bind(offset);
-        let users = query_builder.fetch_all(&self.pool).await?;
+
+        // Build and execute with the correct pool type
+        let (total_count, users) = match &self.pool {
+            DbPool::Sqlite(pool) => {
+                let mut cq = sqlx::query_as::<_, (i64,)>(&count_sql);
+                for param in &params {
+                    cq = cq.bind(param);
+                }
+                let count = cq.fetch_one(pool).await?.0 as i32;
+
+                let mut dq = sqlx::query_as::<_, DisplayUser>(&data_sql);
+                for param in &params {
+                    dq = dq.bind(param);
+                }
+                dq = dq.bind(page_size).bind(offset);
+                let rows = dq.fetch_all(pool).await?;
+                (count, rows)
+            }
+            DbPool::Postgres(pool) => {
+                let pg_count_sql = pg_params(&count_sql);
+                let mut cq = sqlx::query_as::<_, (i64,)>(&pg_count_sql);
+                for param in &params {
+                    cq = cq.bind(param);
+                }
+                let count = cq.fetch_one(pool).await?.0 as i32;
+
+                let pg_data_sql = pg_params(&data_sql);
+                let mut dq = sqlx::query_as::<_, DisplayUser>(&pg_data_sql);
+                for param in &params {
+                    dq = dq.bind(param);
+                }
+                dq = dq.bind(page_size).bind(offset);
+                let rows = dq.fetch_all(pool).await?;
+                (count, rows)
+            }
+        };
+
+        let total_pages = (total_count + page_size - 1) / page_size;
         Ok(PaginatedUsers {
             users,
             total_count,
@@ -555,13 +628,13 @@ impl UserRepository {
         } else {
             "Admin"
         };
-        sqlx::query("UPDATE users SET role = ? WHERE id = ?")
-            .bind(new_role)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        let updated_user = self.get_by_id(id).await?;
-        let updated_user = updated_user.ok_or(sqlx::Error::RowNotFound)?;
+        db_execute!(
+            self.pool,
+            "UPDATE users SET role = ? WHERE id = ?",
+            new_role,
+            id
+        )?;
+        let updated_user = self.get_by_id(id).await?.ok_or(sqlx::Error::RowNotFound)?;
         Ok(updated_user.into())
     }
 
@@ -576,10 +649,7 @@ impl UserRepository {
     pub async fn delete(&self, id: i32) -> Result<DisplayUser, sqlx::Error> {
         let user = self.get_by_id(id).await?;
         let user = user.ok_or(sqlx::Error::RowNotFound)?;
-        sqlx::query("DELETE FROM users WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute!(self.pool, "DELETE FROM users WHERE id = ?", id)?;
         Ok(user.into())
     }
 
@@ -592,10 +662,12 @@ impl UserRepository {
     /// - `Ok(())`: The result of the operation if the last_activity was updated successfully
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn update_last_activity(&self, id: i32) -> Result<(), sqlx::Error> {
-        sqlx::query("UPDATE users SET last_activity = unixepoch('now') WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute_dual!(
+            self.pool,
+            sqlite: "UPDATE users SET last_activity = unixepoch('now') WHERE id = ?",
+            postgres: "UPDATE users SET last_activity = NOW() WHERE id = $1",
+            id
+        )?;
         Ok(())
     }
 
@@ -612,12 +684,12 @@ impl UserRepository {
         older_than_hours: i64,
     ) -> Result<u64, sqlx::Error> {
         let cutoff = OffsetDateTime::now_utc().unix_timestamp() - older_than_hours * 3600;
-        let result =
-            sqlx::query("DELETE FROM users WHERE email_verified = FALSE AND created_at < ?")
-                .bind(cutoff)
-                .execute(&self.pool)
-                .await?;
-        Ok(result.rows_affected())
+        db_execute_dual!(
+            self.pool,
+            sqlite: "DELETE FROM users WHERE email_verified = FALSE AND created_at < ?",
+            postgres: "DELETE FROM users WHERE email_verified = FALSE AND created_at < to_timestamp($1)",
+            cutoff
+        )
     }
 
     /// Increment user's shares count and update last_activity
@@ -629,12 +701,12 @@ impl UserRepository {
     /// - `Ok(())`: The result of the operation if the shares count was incremented successfully
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn increment_shares(&self, id: i32) -> Result<(), sqlx::Error> {
-        sqlx::query(
-            "UPDATE users SET shares = shares + 1, last_activity = unixepoch('now') WHERE id = ?",
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+        db_execute_dual!(
+            self.pool,
+            sqlite: "UPDATE users SET shares = shares + 1, last_activity = unixepoch('now') WHERE id = ?",
+            postgres: "UPDATE users SET shares = shares + 1, last_activity = NOW() WHERE id = $1",
+            id
+        )?;
         Ok(())
     }
 }

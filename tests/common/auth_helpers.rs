@@ -1,6 +1,7 @@
 use axum::http::header::{HeaderName, HeaderValue};
 use axum_test::TestServer;
 use fulgurant::auth::handlers::hash_password;
+use fulgurant::db::DbPool;
 use fulgurant::users::{UserRepository, generate_encryption_key};
 use serde::Serialize;
 use sqlx::SqlitePool;
@@ -22,7 +23,7 @@ struct LoginFormData<'a> {
 /// - `i32`: The created user's ID
 pub async fn create_verified_user(pool: &SqlitePool, email: &str, password: &str) -> i32 {
     let password_hash = hash_password(password).unwrap();
-    let user_repo = UserRepository::new(pool.clone());
+    let user_repo = UserRepository::new(DbPool::Sqlite(pool.clone()));
     user_repo
         .create(
             email.to_string(),
@@ -78,7 +79,7 @@ pub async fn create_admin_user(pool: &SqlitePool) -> (i32, String, String) {
 #[allow(dead_code)]
 pub async fn create_user_with_force_update(pool: &SqlitePool, email: &str, password: &str) -> i32 {
     let password_hash = hash_password(password).unwrap();
-    let user_repo = UserRepository::new(pool.clone());
+    let user_repo = UserRepository::new(DbPool::Sqlite(pool.clone()));
     user_repo
         .create(
             email.to_string(),

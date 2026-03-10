@@ -184,7 +184,7 @@ async fn test_create_device_for_another_user_forbidden() {
 
     response.assert_status(StatusCode::FORBIDDEN);
 
-    let device_repo = DeviceRepository::new(app.pool.clone());
+    let device_repo = DeviceRepository::new(app.db_pool.clone());
     let victim_devices = device_repo.get_all_for_user(victim_id).await.unwrap();
     assert!(victim_devices.is_empty());
 }
@@ -200,7 +200,7 @@ async fn test_update_device_success() {
     login(&app.server, "user@test.com", "Password123!").await;
 
     let (device_uuid, _) = create_device_for_user(&app.pool, user_id, "Old Name").await;
-    let device_repo = DeviceRepository::new(app.pool.clone());
+    let device_repo = DeviceRepository::new(app.db_pool.clone());
     let device = device_repo.get_by_device_id(&device_uuid).await.unwrap();
 
     let page = app.server.get("/").await;
@@ -227,7 +227,7 @@ async fn test_update_device_empty_name() {
     login(&app.server, "user@test.com", "Password123!").await;
 
     let (device_uuid, _) = create_device_for_user(&app.pool, user_id, "My Device").await;
-    let device_repo = DeviceRepository::new(app.pool.clone());
+    let device_repo = DeviceRepository::new(app.db_pool.clone());
     let device = device_repo.get_by_device_id(&device_uuid).await.unwrap();
 
     let page = app.server.get("/").await;
@@ -258,7 +258,7 @@ async fn test_update_other_users_device_forbidden() {
 
     login(&app.server, "attacker@test.com", "Password123!").await;
 
-    let device_repo = DeviceRepository::new(app.pool.clone());
+    let device_repo = DeviceRepository::new(app.db_pool.clone());
     let victim_device = device_repo
         .get_by_device_id(&victim_device_uuid)
         .await
@@ -300,7 +300,7 @@ async fn test_delete_device_success() {
     login(&app.server, "user@test.com", "Password123!").await;
 
     let (device_uuid, _) = create_device_for_user(&app.pool, user_id, "My Device").await;
-    let device_repo = DeviceRepository::new(app.pool.clone());
+    let device_repo = DeviceRepository::new(app.db_pool.clone());
     let device = device_repo.get_by_device_id(&device_uuid).await.unwrap();
 
     let page = app.server.get("/").await;
@@ -325,7 +325,7 @@ async fn test_delete_other_users_device_forbidden() {
 
     login(&app.server, "attacker@test.com", "Password123!").await;
 
-    let device_repo = DeviceRepository::new(app.pool.clone());
+    let device_repo = DeviceRepository::new(app.db_pool.clone());
     let victim_device = device_repo
         .get_by_device_id(&victim_device_uuid)
         .await
@@ -361,7 +361,7 @@ async fn test_delete_share_success() {
 
     // Shares require real devices due to the FK constraint on source_device_id
     let (source_uuid, _) = create_device_for_user(&app.pool, user_id, "Source Device").await;
-    let share_repo = ShareRepository::new(app.pool.clone());
+    let share_repo = ShareRepository::new(app.db_pool.clone());
     let share = share_repo
         .create(
             user_id,
@@ -398,7 +398,7 @@ async fn test_delete_other_users_share_forbidden() {
     // Shares require existing source/destination devices due to FK constraints.
     let (victim_device_uuid, _) =
         create_device_for_user(&app.pool, victim_id, "Victim Device").await;
-    let share_repo = ShareRepository::new(app.pool.clone());
+    let share_repo = ShareRepository::new(app.db_pool.clone());
     let share = share_repo
         .create(
             victim_id,

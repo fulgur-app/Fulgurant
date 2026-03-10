@@ -6,6 +6,7 @@ use fulgur_common::api::sync::AccessTokenResponse;
 use fulgurant::{
     access_token,
     api_key::{self, hash_api_key_fast},
+    db::DbPool,
     devices::{CreateDevice, DeviceRepository},
 };
 use sqlx::SqlitePool;
@@ -27,7 +28,7 @@ pub async fn create_device_for_user(
     let api_key = api_key::generate_api_key();
     let hash = api_key::hash_api_key(&api_key).unwrap();
     let fast_hash = hash_api_key_fast(&api_key);
-    let device_repo = DeviceRepository::new(pool.clone());
+    let device_repo = DeviceRepository::new(DbPool::Sqlite(pool.clone()));
     let device = device_repo
         .create(
             user_id,

@@ -89,7 +89,7 @@ async fn test_ping_deleted_device_rejected() {
     let app = TestApp::new().await;
     let (_user_id, device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
 
-    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
     let device = device_repo.get_by_device_id(&device_id).await.unwrap();
     device_repo.delete(device.id).await.unwrap();
 
@@ -259,7 +259,7 @@ async fn test_token_unverified_email() {
     let app = TestApp::new().await;
     let email = "unverified@test.com";
     let password_hash = fulgurant::auth::handlers::hash_password("TestPassword1!").unwrap();
-    let user_repo = fulgurant::users::UserRepository::new(app.pool.clone());
+    let user_repo = fulgurant::users::UserRepository::new(app.db_pool.clone());
     let user_id = user_repo
         .create(
             email.to_string(),
@@ -643,7 +643,7 @@ async fn test_share_file_rejects_other_users_destination_device() {
     let body: ErrorResponse = response.json();
     assert!(body.error.contains("does not belong"));
 
-    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
     let owner_shares = share_repo.get_all_for_user(owner_user_id).await.unwrap();
     assert!(owner_shares.is_empty());
 }
@@ -826,7 +826,7 @@ async fn test_begin_returns_shares_and_updates_key() {
     assert_eq!(body.shares[0].file_name, "begin.txt");
 
     // Verify encryption key was updated
-    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
     let device = device_repo.get_by_device_id(&dest_id).await.unwrap();
     assert_eq!(
         device.encryption_key.as_deref(),
@@ -848,7 +848,7 @@ async fn test_begin_updates_last_activity() {
         .await;
 
     // Verify last_activity was updated (it should be very recent)
-    let user_repo = fulgurant::users::UserRepository::new(app.pool.clone());
+    let user_repo = fulgurant::users::UserRepository::new(app.db_pool.clone());
     let user = user_repo
         .get_by_email("api_user@test.com".to_string())
         .await
@@ -888,7 +888,7 @@ async fn test_begin_empty_public_key_skips_update() {
         .await;
 
     // Verify encryption key was NOT set (still None)
-    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
     let device = device_repo.get_by_device_id(&device_id).await.unwrap();
     assert!(device.encryption_key.is_none());
 }

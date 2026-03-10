@@ -1,10 +1,11 @@
+use crate::db::DbPool;
+use crate::{db_execute, db_execute_dual, db_fetch_one_dual, db_fetch_optional};
 use argon2::{
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
     password_hash::{SaltString, rand_core::OsRng},
 };
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use sqlx::{Pool, Row, Sqlite, SqlitePool};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
@@ -81,18 +82,18 @@ pub struct VerificationCode {
 
 #[derive(Clone)]
 pub struct VerificationCodeRepository {
-    pool: SqlitePool,
+    pool: DbPool,
 }
 
 impl VerificationCodeRepository {
     /// Create a new verification code repository
     ///
     /// ### Arguments
-    /// - `pool`: The SQLite pool
+    /// - `pool`: The database pool (SQLite or PostgreSQL)
     ///
     /// ### Returns
     /// - `VerificationCodeRepository`: The verification code repository
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 
@@ -116,16 +117,16 @@ impl VerificationCodeRepository {
         let id = Uuid::new_v4().to_string();
         let expires_at =
             OffsetDateTime::now_utc() + Duration::minutes(VERIFICATION_CODE_EXPIRATION_MINUTES);
-        sqlx::query(
-            "INSERT INTO verification_codes (id, email, code_hash, expires_at, purpose) VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind(id.clone())
-        .bind(email.clone())
-        .bind(code_hash)
-        .bind(expires_at.unix_timestamp())
-        .bind(purpose.clone())
-        .execute(&self.pool)
-        .await?;
+        db_execute_dual!(
+            self.pool,
+            sqlite: "INSERT INTO verification_codes (id, email, code_hash, expires_at, purpose) VALUES (?, ?, ?, ?, ?)",
+            postgres: "INSERT INTO verification_codes (id, email, code_hash, expires_at, purpose) VALUES ($1, $2, $3, to_timestamp($4), $5)",
+            id.clone(),
+            email.clone(),
+            code_hash,
+            expires_at.unix_timestamp(),
+            purpose.clone()
+        )?;
         let verification_code = self.get_for(email, purpose).await?;
         let verification_code = match verification_code {
             Some(code) => code,
@@ -144,11 +145,12 @@ impl VerificationCodeRepository {
     /// - `Ok(())`: The result of the operation if the verification code was deleted successfully
     /// - `Err(anyhow::Error)`: The error if the operation fails
     pub async fn delete_for(&self, email: String, purpose: String) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM verification_codes WHERE email = ? AND purpose = ?")
-            .bind(email)
-            .bind(purpose)
-            .execute(&self.pool)
-            .await?;
+        db_execute!(
+            self.pool,
+            "DELETE FROM verification_codes WHERE email = ? AND purpose = ?",
+            email,
+            purpose
+        )?;
         Ok(())
     }
 
@@ -166,13 +168,13 @@ impl VerificationCodeRepository {
         email: String,
         purpose: String,
     ) -> anyhow::Result<Option<VerificationCode>> {
-        let verification_code = sqlx::query_as::<_, VerificationCode>(
+        let verification_code = db_fetch_optional!(
+            self.pool,
             "SELECT * FROM verification_codes WHERE email = ? AND purpose = ? AND verified_at IS NULL",
-        )
-        .bind(email)
-        .bind(purpose)
-        .fetch_optional(&self.pool)
-        .await?;
+            VerificationCode,
+            email,
+            purpose
+        )?;
         Ok(verification_code)
     }
 
@@ -185,10 +187,11 @@ impl VerificationCodeRepository {
     /// - `Ok(())`: The result of the operation if the attempts were updated successfully
     /// - `Err(anyhow::Error)`: The error if the operation fails
     pub async fn update_attempts(&self, id: String) -> anyhow::Result<()> {
-        sqlx::query("UPDATE verification_codes SET attempts = attempts + 1 WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute!(
+            self.pool,
+            "UPDATE verification_codes SET attempts = attempts + 1 WHERE id = ?",
+            id
+        )?;
         Ok(())
     }
 
@@ -202,11 +205,13 @@ impl VerificationCodeRepository {
     /// - `Err(anyhow::Error)`: The error if the operation fails
     pub async fn mark_as_verified(&self, id: String) -> anyhow::Result<()> {
         let now = OffsetDateTime::now_utc();
-        sqlx::query("UPDATE verification_codes SET verified_at = ? WHERE id = ?")
-            .bind(now.unix_timestamp())
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute_dual!(
+            self.pool,
+            sqlite: "UPDATE verification_codes SET verified_at = ? WHERE id = ?",
+            postgres: "UPDATE verification_codes SET verified_at = to_timestamp($1) WHERE id = $2",
+            now.unix_timestamp(),
+            id
+        )?;
         Ok(())
     }
 
@@ -268,15 +273,16 @@ impl VerificationCodeRepository {
         purpose: String,
     ) -> Result<i32, sqlx::Error> {
         let now = OffsetDateTime::now_utc();
-        let result = sqlx::query(
-            "SELECT COUNT(*) FROM verification_codes WHERE email = ? AND purpose = ? AND expires_at > ?"
-        )
-        .bind(email)
-        .bind(purpose)
-        .bind(now.unix_timestamp())
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(result.get::<i32, _>(0))
+        let count: (i64,) = db_fetch_one_dual!(
+            self.pool,
+            sqlite: "SELECT COUNT(*) FROM verification_codes WHERE email = ? AND purpose = ? AND expires_at > ?",
+            postgres: "SELECT COUNT(*) FROM verification_codes WHERE email = $1 AND purpose = $2 AND expires_at > to_timestamp($3)",
+            (i64,),
+            email,
+            purpose,
+            now.unix_timestamp()
+        )?;
+        Ok(count.0 as i32)
     }
 
     /// Delete all expired verification codes (for cleanup job)
@@ -286,10 +292,11 @@ impl VerificationCodeRepository {
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn delete_expired(&self) -> Result<u64, sqlx::Error> {
         let now = OffsetDateTime::now_utc();
-        let result = sqlx::query("DELETE FROM verification_codes WHERE expires_at < ?")
-            .bind(now.unix_timestamp())
-            .execute(&self.pool)
-            .await?;
-        Ok(result.rows_affected())
+        db_execute_dual!(
+            self.pool,
+            sqlite: "DELETE FROM verification_codes WHERE expires_at < ?",
+            postgres: "DELETE FROM verification_codes WHERE expires_at < to_timestamp($1)",
+            now.unix_timestamp()
+        )
     }
 }
