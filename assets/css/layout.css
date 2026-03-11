@@ -101,6 +101,7 @@ table {
 
 th {
 	height: 46px;
+	white-space: nowrap;
 }
 
 #add-car-form {
