@@ -101,6 +101,7 @@ table {
 
 th {
 	height: 46px;
+	white-space: nowrap;
 }
 
 #add-car-form {
@@ -123,6 +124,24 @@ th {
 .login-card {
 	max-width: 400px;
 	width: 100%;
+}
+
+@media (max-width: 767px) {
+	#content:has(.login-container) {
+		min-height: 100svh;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.login-container {
+		padding: 0;
+		flex: 1;
+		min-height: 0;
+	}
+
+	.login-card {
+		max-width: 100%;
+	}
 }
 
 .logout-button {
@@ -191,4 +210,88 @@ article > header {
 
 .primary {
 	color: var(--pico-primary);
+}
+
+/* Burger menu */
+
+.burger-menu {
+	display: none;
+}
+
+@media (max-width: 767px) {
+	#main-nav {
+		flex-wrap: wrap;
+		row-gap: 0;
+		align-items: center;
+	}
+
+	#main-nav > ul:first-child {
+		flex: 1;
+	}
+
+	#main-nav h1 {
+		margin: 0;
+	}
+
+	.burger-menu {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 5px;
+		margin-left: auto;
+		padding: 0.5rem;
+		background: none;
+		border: none;
+		cursor: pointer;
+		width: 2.5rem;
+		height: 2.5rem;
+	}
+
+	.burger-menu span {
+		display: block;
+		height: 2px;
+		width: 100%;
+		background-color: var(--pico-color);
+		border-radius: 2px;
+		transition:
+			transform 0.25s ease,
+			opacity 0.25s ease;
+		transform-origin: center;
+	}
+
+	#main-nav.nav-open .burger-menu span:nth-child(1) {
+		transform: translateY(7px) rotate(45deg);
+	}
+
+	#main-nav.nav-open .burger-menu span:nth-child(2) {
+		opacity: 0;
+		transform: scaleX(0);
+	}
+
+	#main-nav.nav-open .burger-menu span:nth-child(3) {
+		transform: translateY(-7px) rotate(-45deg);
+	}
+
+	#nav-links {
+		display: none;
+		flex-direction: column;
+		width: 100%;
+		padding: 0.5rem 0 0.75rem;
+		margin: 0;
+		border-top: 1px solid var(--pico-muted-border-color);
+	}
+
+	#main-nav.nav-open #nav-links {
+		display: flex;
+	}
+
+	#nav-links li {
+		width: 100%;
+	}
+
+	#nav-links li a {
+		display: block;
+		padding: 0.5rem 0.25rem;
+		width: 100%;
+	}
 }

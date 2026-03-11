@@ -16,24 +16,30 @@
         href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
     >
     <link rel="stylesheet" href="/assets/css/layout.css">
+    <script src="/assets/js/burger.js" defer></script>
 
   </head>
   <body>
     <main id="content" class="container-fluid container-max-width">
-      <nav>
+      <nav id="main-nav">
         <ul>
           <li><h1>Fulgur<span class="primary">ant</span></h1></li>
         </ul>
-        <ul>
-          {% if user is defined %}
+        {% if user is defined %}
+        <button class="burger-menu" id="burger-toggle" aria-label="Toggle navigation" aria-expanded="false">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <ul id="nav-links">
           <li><a href="/" class="contrast">Dashboard</a></li>
           {% if user.is_admin() %}
           <li><a href="/admin" class="contrast">Admin</a></li>
           {% endif %}
           <li><a href="/settings" class="contrast">Settings</a></li>
           <li><a href="/logout" class="contrast" hx-post="/logout" hx-swap="none">Logout</a></li>
-          {% endif %}
         </ul>
+        {% endif %}
       </nav>
       {% block content %}{% endblock %}
     </main>
