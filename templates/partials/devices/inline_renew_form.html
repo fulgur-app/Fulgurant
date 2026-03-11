@@ -17,7 +17,7 @@
                 </label>
                 <div class="submit-container">
                     <div class="container-row gap-1">
-                        <button type="button" class="secondary" onclick="document.getElementById('inline-renew-{{ device.id }}').remove()">
+                        <button type="button" class="secondary" data-remove-target="inline-renew-{{ device.id }}">
                             Cancel
                         </button>
                         <button type="submit" class="inline-submit-button">Renew</button>

@@ -237,6 +237,22 @@
             }
         }
 
+        // Event delegation for dynamically-inserted HTMX content (onclick attributes are blocked by CSP)
+        document.body.addEventListener('click', function(event) {
+            const actionBtn = event.target.closest('[data-action]');
+            if (actionBtn) {
+                if (actionBtn.dataset.action === 'copy-api-key') {
+                    copyApiKey(actionBtn);
+                }
+                return;
+            }
+            const removeBtn = event.target.closest('[data-remove-target]');
+            if (removeBtn) {
+                const el = document.getElementById(removeBtn.dataset.removeTarget);
+                if (el) el.remove();
+            }
+        });
+
         // Prevent opening multiple device forms at once
         document.body.addEventListener('htmx:beforeRequest', function(event) {
             const target = event.target;
