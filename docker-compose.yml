@@ -1,4 +1,21 @@
 services:
+  # ── PostgreSQL (optional, uncomment to use instead of SQLite) ────────
+  # postgres:
+  #   image: postgres:17-alpine
+  #   container_name: fulgurant-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: fulgurant
+  #     POSTGRES_PASSWORD: fulgurant
+  #     POSTGRES_DB: fulgurant
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U fulgurant"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 5
+
   fulgurant:
     build:
       context: .
@@ -6,6 +23,9 @@ services:
     image: fulgurant:latest
     container_name: fulgurant
     restart: unless-stopped
+    # depends_on:        # Uncomment when using PostgreSQL
+    #   postgres:
+    #     condition: service_healthy
 
     # Port mapping
     ports:
@@ -13,14 +33,20 @@ services:
 
     # Environment variables
     environment:
-      # Database
+      # Database (SQLite - default)
       - DATABASE_URL=sqlite:/data/fulgurant.db
+      # Database (PostgreSQL - uncomment and comment out SQLite above)
+      # - DATABASE_URL=postgresql://fulgurant:fulgurant@postgres:5432/fulgurant
 
       # SMTP configuration (required for production)
       - SMTP_HOST=smtp.mail.ovh.net
       - SMTP_PORT=587
       - SMTP_LOGIN=mail@example.com
       - SMTP_PASSWORD=your_password_here
+
+      # JWT Authentication (REQUIRED - generate with: openssl rand -base64 32)
+      - JWT_SECRET=change_me_use_openssl_rand_base64_32
+      - JWT_EXPIRY_SECONDS=900
 
       # Server configuration
       - IS_PROD=true
@@ -40,6 +66,10 @@ services:
       # Logging
       - RUST_LOG=info
       - LOG_FOLDER=/data/logs
+
+      # Database backup
+      - DAILY_DATABASE_BACKUP=false
+      - BACKUP_FOLDER=/data/backups
 
       # User/Group IDs (match your host user for proper permissions)
       - PUID=1000
@@ -77,3 +107,7 @@ services:
     # read_only: true
     # tmpfs:
     #   - /tmp
+
+# ── Volumes (uncomment when using PostgreSQL) ────────
+# volumes:
+#   pgdata:

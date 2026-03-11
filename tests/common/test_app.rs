@@ -1,7 +1,8 @@
 use axum_test::TestServer;
 use fulgurant::{
-    api::sse::SseChannelManager, devices::DeviceRepository, handlers::AppState, mail::Mailer,
-    shares::ShareRepository, users::UserRepository, verification_code::VerificationCodeRepository,
+    api::sse::SseChannelManager, db::DbPool, devices::DeviceRepository, handlers::AppState,
+    mail::Mailer, shares::ShareRepository, users::UserRepository,
+    verification_code::VerificationCodeRepository,
 };
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
@@ -14,6 +15,8 @@ use tower_sessions::{
 pub struct TestApp {
     pub server: TestServer,
     pub pool: SqlitePool,
+    #[allow(dead_code)]
+    pub db_pool: DbPool,
     #[allow(dead_code)]
     pub jwt_secret: String,
 }
@@ -75,14 +78,16 @@ impl TestApp {
             .await
             .unwrap();
 
+        let db_pool = DbPool::Sqlite(pool.clone());
+
         let jwt_secret =
             "test_jwt_secret_key_minimum_32_bytes_long_for_testing_purposes".to_string();
 
         let app_state = AppState {
-            device_repository: DeviceRepository::new(pool.clone()),
-            user_repository: UserRepository::new(pool.clone()),
-            verification_code_repository: VerificationCodeRepository::new(pool.clone()),
-            share_repository: ShareRepository::new(pool.clone()),
+            device_repository: DeviceRepository::new(db_pool.clone()),
+            user_repository: UserRepository::new(db_pool.clone()),
+            verification_code_repository: VerificationCodeRepository::new(db_pool.clone()),
+            share_repository: ShareRepository::new(db_pool.clone()),
             mailer: Arc::new(Mailer::new(false).unwrap()),
             is_prod: false,
             can_register: opts.can_register,
@@ -112,6 +117,7 @@ impl TestApp {
         TestApp {
             server,
             pool,
+            db_pool,
             jwt_secret,
         }
     }

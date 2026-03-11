@@ -21,14 +21,13 @@ The Admin dashboard (for Admin users only): allows to manage the users (edit the
 - Admin and User type accounts
 - Web interface for profile, shares and device management
 - Web interface for Admin users for user management
-- SQLite database
+- SQLite and PostgreSQL database support
 - HTTPS support
 - REST API for desktop app integration
 - SSE support for notifying a Fulgur instance of available shares
 
 ## In the backlog
 
-* PostgreSQL support
 * More polished Admin interface (accounts creation/edition,...)
 * Docker image
 
@@ -72,7 +71,7 @@ Fulgurant uses:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `DATABASE_URL` | No | `sqlite:data/database.db` | SQLite connection string |
+| `DATABASE_URL` | No | `sqlite:data/database.db` | Database connection string. SQLite: `sqlite:data/database.db`. PostgreSQL: `postgresql://user:pass@host:5432/db` |
 | `JWT_SECRET` | Yes | - | JWT signing secret (minimum 32 characters) |
 | `JWT_EXPIRY_SECONDS` | No | `900` | JWT access token lifetime in seconds (60-86400) |
 | `IS_PROD` | No | `true` | Enables production mode (SMTP required when `true`) |
@@ -148,7 +147,7 @@ CAN_REGISTER=true
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:data/database.db` | SQLite database path |
+| `DATABASE_URL` | `sqlite:data/database.db` | Database connection string (SQLite or PostgreSQL) |
 | `BIND_HOST` | `0.0.0.0` | Bind address (0.0.0.0 for all interfaces) |
 | `BIND_PORT` | `3000` | Port to listen on |
 | `IS_PROD` | `true` | Production mode (true/false) |
@@ -161,9 +160,39 @@ CAN_REGISTER=true
 | `PUID` | `1000` | User ID for file permissions |
 | `PGID` | `1000` | Group ID for file permissions |
 
-## Database Migrations
+## Database
 
-Migrations run automatically on server startup. Migration files are in `data/migrations/`.
+### SQLite (default)
+
+SQLite requires no external setup. Set `DATABASE_URL=sqlite:data/database.db` (or omit for the default).
+
+### PostgreSQL
+
+PostgreSQL is auto-detected when `DATABASE_URL` starts with `postgres://` or `postgresql://`. No migration from SQLite is supported — PostgreSQL is intended for new deployments.
+
+**Local development with Docker:**
+
+```bash
+docker compose -f docker-compose.pg.yml up -d
+```
+
+Then set in `.env`:
+
+```env
+DATABASE_URL=postgresql://fulgurant:fulgurant@localhost:5432/fulgurant
+```
+
+**Notes:**
+
+- Built-in database backup (`DAILY_DATABASE_BACKUP`) is SQLite only. For PostgreSQL, use `pg_dump`.
+- All timestamps are stored as Unix epoch integers (`BIGINT`) in both backends for consistency.
+
+### Migrations
+
+Migrations run automatically on server startup.
+
+- SQLite migration files: `data/migrations/`
+- PostgreSQL migration files: `data/migrations_postgres/`
 
 ## Background Tasks
 
@@ -171,7 +200,7 @@ The server runs the following background tasks:
 
 - **Share cleanup**: Runs every hour, removes expired shares
 - **Verification code cleanup**: Runs every minute, removes expired verification codes
-- **Database backup**: Runs every 24 hours when enabled via `DAILY_DATABASE_BACKUP=true`, creates timestamped backup files using SQLite's VACUUM INTO command
+- **Database backup**: Runs every 24 hours when enabled via `DAILY_DATABASE_BACKUP=true`, creates timestamped backup files using SQLite's VACUUM INTO command (SQLite only)
 
 ## Development vs Production
 

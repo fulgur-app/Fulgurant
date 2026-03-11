@@ -1,3 +1,4 @@
+use crate::db::{DbBackend, DbPool};
 use sqlx::SqlitePool;
 use std::path::PathBuf;
 use time::OffsetDateTime;
@@ -71,17 +72,26 @@ pub async fn perform_backup(pool: &SqlitePool) -> anyhow::Result<PathBuf> {
     Ok(backup_path)
 }
 
-/// Create a background task that performs daily database backups
+/// Create a background task that performs daily database backups.
+/// Only supported for SQLite. PostgreSQL users should use pg_dump instead.
 ///
 /// ### Arguments
-/// - `pool`: The SQLite connection pool
+/// - `pool`: The database pool
 /// - `shutdown_token`: Token to signal graceful shutdown
 /// - `is_prod`: If true, performs final backup on shutdown (production). If false, skips final backup (development).
-pub fn make_daily_backup_task(pool: SqlitePool, shutdown_token: CancellationToken, is_prod: bool) {
+pub fn make_daily_backup_task(pool: DbPool, shutdown_token: CancellationToken, is_prod: bool) {
+    if pool.backend() == DbBackend::Postgres {
+        tracing::info!("PostgreSQL detected - built-in backup disabled (use pg_dump)");
+        return;
+    }
     if !is_daily_backup_enabled() {
         tracing::info!("Daily database backups are disabled");
         return;
     }
+    let sqlite_pool = match pool {
+        DbPool::Sqlite(p) => p,
+        DbPool::Postgres(_) => unreachable!(),
+    };
     let backup_folder = get_backup_folder();
     tracing::info!(
         "Starting daily database backup task (runs every 24 hours, backups stored in {})",
@@ -92,7 +102,7 @@ pub fn make_daily_backup_task(pool: SqlitePool, shutdown_token: CancellationToke
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    match perform_backup(&pool).await {
+                    match perform_backup(&sqlite_pool).await {
                         Ok(backup_path) => {
                             tracing::info!("Daily backup created: {}", backup_path.display());
                         }
@@ -104,7 +114,7 @@ pub fn make_daily_backup_task(pool: SqlitePool, shutdown_token: CancellationToke
                 _ = shutdown_token.cancelled() => {
                     if is_prod {
                         tracing::info!("Database backup task shutting down - performing final backup");
-                        match perform_backup(&pool).await {
+                        match perform_backup(&sqlite_pool).await {
                             Ok(backup_path) => {
                                 tracing::info!("Final shutdown backup created: {}", backup_path.display());
                             }

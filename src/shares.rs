@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
+use crate::db::DbPool;
+use crate::{
+    db_execute, db_execute_dual, db_fetch_all, db_fetch_all_dual, db_fetch_one, db_fetch_one_dual,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::{Pool, Sqlite, SqlitePool};
 use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
@@ -107,18 +110,18 @@ pub fn calculate_file_hash(content: &str) -> String {
 
 #[derive(Clone)]
 pub struct ShareRepository {
-    pool: SqlitePool,
+    pool: DbPool,
 }
 
 impl ShareRepository {
     /// Create a new share repository
     ///
     /// ### Arguments
-    /// - `pool`: The SQLite pool
+    /// - `pool`: The database pool (SQLite or PostgreSQL)
     ///
     /// ### Returns
     /// - `ShareRepository`: The share repository
-    pub fn new(pool: Pool<Sqlite>) -> Self {
+    pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
 
@@ -143,9 +146,9 @@ impl ShareRepository {
         let expires_at = now + Duration::days(SHARE_VALIDITY_DAYS);
 
         if data.deduplication_hash.is_some() {
-            // UPSERT: replace existing share with same source/destination/hash
-            let share = sqlx::query_as::<_, Share>(
-                r#"
+            let share = db_fetch_one_dual!(
+                self.pool,
+                sqlite: r#"
                 INSERT INTO shares (
                     id, user_id, source_device_id, destination_device_id,
                     file_hash, file_name, file_size, content, deduplication_hash,
@@ -161,25 +164,40 @@ impl ShareRepository {
                     expires_at = excluded.expires_at
                 RETURNING *
                 "#,
-            )
-            .bind(&id)
-            .bind(user_id)
-            .bind(&data.source_device_id)
-            .bind(&data.destination_device_id)
-            .bind(&file_hash)
-            .bind(&data.file_name)
-            .bind(file_size)
-            .bind(&data.content)
-            .bind(&data.deduplication_hash)
-            .bind(now.unix_timestamp())
-            .bind(expires_at.unix_timestamp())
-            .fetch_one(&self.pool)
-            .await?;
+                postgres: r#"
+                INSERT INTO shares (
+                    id, user_id, source_device_id, destination_device_id,
+                    file_hash, file_name, file_size, content, deduplication_hash,
+                    created_at, expires_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, to_timestamp($10), to_timestamp($11))
+                ON CONFLICT(source_device_id, destination_device_id, deduplication_hash)
+                DO UPDATE SET
+                    file_hash = excluded.file_hash,
+                    file_name = excluded.file_name,
+                    file_size = excluded.file_size,
+                    content = excluded.content,
+                    created_at = excluded.created_at,
+                    expires_at = excluded.expires_at
+                RETURNING *
+                "#,
+                Share,
+                &id,
+                user_id,
+                &data.source_device_id,
+                &data.destination_device_id,
+                &file_hash,
+                &data.file_name,
+                file_size,
+                &data.content,
+                &data.deduplication_hash,
+                now.unix_timestamp(),
+                expires_at.unix_timestamp()
+            )?;
             Ok(share)
         } else {
-            // Plain INSERT: no dedup, always creates a new share
-            let share = sqlx::query_as::<_, Share>(
-                r#"
+            let share = db_fetch_one_dual!(
+                self.pool,
+                sqlite: r#"
                 INSERT INTO shares (
                     id, user_id, source_device_id, destination_device_id,
                     file_hash, file_name, file_size, content, deduplication_hash,
@@ -187,19 +205,26 @@ impl ShareRepository {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 RETURNING *
                 "#,
-            )
-            .bind(&id)
-            .bind(user_id)
-            .bind(&data.source_device_id)
-            .bind(&data.destination_device_id)
-            .bind(&file_hash)
-            .bind(&data.file_name)
-            .bind(file_size)
-            .bind(&data.content)
-            .bind(now.unix_timestamp())
-            .bind(expires_at.unix_timestamp())
-            .fetch_one(&self.pool)
-            .await?;
+                postgres: r#"
+                INSERT INTO shares (
+                    id, user_id, source_device_id, destination_device_id,
+                    file_hash, file_name, file_size, content, deduplication_hash,
+                    created_at, expires_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, to_timestamp($9), to_timestamp($10))
+                RETURNING *
+                "#,
+                Share,
+                &id,
+                user_id,
+                &data.source_device_id,
+                &data.destination_device_id,
+                &file_hash,
+                &data.file_name,
+                file_size,
+                &data.content,
+                now.unix_timestamp(),
+                expires_at.unix_timestamp()
+            )?;
             Ok(share)
         }
     }
@@ -213,25 +238,24 @@ impl ShareRepository {
     /// - `Ok(Share)`: The share
     /// - `Err(sqlx::Error)`: The error that occurred while getting the share
     pub async fn get_by_id(&self, id: &str) -> Result<Share, sqlx::Error> {
-        sqlx::query_as::<_, Share>("SELECT * FROM shares WHERE id = ?")
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await
+        db_fetch_one!(self.pool, "SELECT * FROM shares WHERE id = ?", Share, id)
     }
 
-    /// Get all shares for a user       /
+    /// Get all shares for a user
+    ///
+    /// ### Arguments
     /// - `user_id`: The ID of the user
     ///
     /// ### Returns
     /// - `Ok(Vec<Share>)`: The shares for the user
     /// - `Err(sqlx::Error)`: The error that occurred while getting the shares for the user
     pub async fn get_all_for_user(&self, user_id: i32) -> Result<Vec<Share>, sqlx::Error> {
-        sqlx::query_as::<_, Share>(
+        db_fetch_all!(
+            self.pool,
             "SELECT * FROM shares WHERE user_id = ? ORDER BY created_at DESC",
+            Share,
+            user_id
         )
-        .bind(user_id)
-        .fetch_all(&self.pool)
-        .await
     }
 
     /// Delete a share by ID
@@ -243,26 +267,21 @@ impl ShareRepository {
     /// - `Ok(())`: The result of the operation if the share was deleted successfully
     /// - `Err(sqlx::Error)`: The error that occurred while deleting the share
     pub async fn delete(&self, id: &str) -> Result<(), sqlx::Error> {
-        sqlx::query("DELETE FROM shares WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        db_execute!(self.pool, "DELETE FROM shares WHERE id = ?", id)?;
         Ok(())
     }
 
     /// Delete all expired shares (for cleanup job)
     ///
-    /// ### Arguments
-    /// - `device_id`: The ID of the device
-    ///
     /// ### Returns
-    /// - `Ok(Vec<Share>)`: The shares for the device that were deleted
+    /// - `Ok(u64)`: The number of deleted shares
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn delete_expired(&self) -> Result<u64, sqlx::Error> {
-        let result = sqlx::query("DELETE FROM shares WHERE expires_at < unixepoch('now')")
-            .execute(&self.pool)
-            .await?;
-        Ok(result.rows_affected())
+        db_execute_dual!(
+            self.pool,
+            sqlite: "DELETE FROM shares WHERE expires_at < unixepoch('now')",
+            postgres: "DELETE FROM shares WHERE expires_at < NOW()"
+        )
     }
 
     /// Get all non-expired shares for a specific device
@@ -275,17 +294,13 @@ impl ShareRepository {
     /// - `Ok(Vec<Share>)`: The shares for the device
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn get_shares_for_device(&self, device_id: &str) -> Result<Vec<Share>, sqlx::Error> {
-        sqlx::query_as::<_, Share>(
-            r#"
-            SELECT * FROM shares
-            WHERE destination_device_id = ?
-            AND expires_at > unixepoch('now')
-            ORDER BY created_at DESC
-            "#,
+        db_fetch_all_dual!(
+            self.pool,
+            sqlite: "SELECT * FROM shares WHERE destination_device_id = ? AND expires_at > unixepoch('now') ORDER BY created_at DESC",
+            postgres: "SELECT * FROM shares WHERE destination_device_id = $1 AND expires_at > NOW() ORDER BY created_at DESC",
+            Share,
+            device_id
         )
-        .bind(device_id)
-        .fetch_all(&self.pool)
-        .await
     }
 
     /// Get all non-expired shares for a specific device and delete them
@@ -304,17 +319,13 @@ impl ShareRepository {
         &self,
         device_id: &str,
     ) -> Result<Vec<Share>, sqlx::Error> {
-        sqlx::query_as::<_, Share>(
-            r#"
-            DELETE FROM shares
-            WHERE destination_device_id = ?
-            AND expires_at > unixepoch('now')
-            RETURNING *
-            "#,
+        db_fetch_all_dual!(
+            self.pool,
+            sqlite: "DELETE FROM shares WHERE destination_device_id = ? AND expires_at > unixepoch('now') RETURNING *",
+            postgres: "DELETE FROM shares WHERE destination_device_id = $1 AND expires_at > NOW() RETURNING *",
+            Share,
+            device_id
         )
-        .bind(device_id)
-        .fetch_all(&self.pool)
-        .await
     }
 }
 
