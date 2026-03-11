@@ -125,6 +125,24 @@ th {
 	width: 100%;
 }
 
+@media (max-width: 767px) {
+	#content:has(.login-container) {
+		min-height: 100svh;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.login-container {
+		padding: 0;
+		flex: 1;
+		min-height: 0;
+	}
+
+	.login-card {
+		max-width: 100%;
+	}
+}
+
 .logout-button {
 	padding: 1rem 0;
 }
@@ -234,7 +252,9 @@ article > header {
 		width: 100%;
 		background-color: var(--pico-color);
 		border-radius: 2px;
-		transition: transform 0.25s ease, opacity 0.25s ease;
+		transition:
+			transform 0.25s ease,
+			opacity 0.25s ease;
 		transform-origin: center;
 	}
 
