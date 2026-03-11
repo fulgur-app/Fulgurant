@@ -125,6 +125,10 @@ th {
 	width: 100%;
 }
 
+.logout-button {
+	padding: 1rem 0;
+}
+
 .error-message,
 .success-message {
 	padding: 1rem;
