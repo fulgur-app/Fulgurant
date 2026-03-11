@@ -44,6 +44,10 @@ services:
       - SMTP_LOGIN=mail@example.com
       - SMTP_PASSWORD=your_password_here
 
+      # JWT Authentication (REQUIRED - generate with: openssl rand -base64 32)
+      - JWT_SECRET=change_me_use_openssl_rand_base64_32
+      - JWT_EXPIRY_SECONDS=900
+
       # Server configuration
       - IS_PROD=true
       - SHARE_VALIDITY_DAYS=3
@@ -62,6 +66,10 @@ services:
       # Logging
       - RUST_LOG=info
       - LOG_FOLDER=/data/logs
+
+      # Database backup
+      - DAILY_DATABASE_BACKUP=false
+      - BACKUP_FOLDER=/data/backups
 
       # User/Group IDs (match your host user for proper permissions)
       - PUID=1000
