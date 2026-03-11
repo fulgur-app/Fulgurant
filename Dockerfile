@@ -16,7 +16,8 @@ COPY Cargo.toml Cargo.lock ./
 
 # Create a dummy main to cache dependencies
 RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs
+    echo "fn main() {}" > src/main.rs && \
+    touch src/lib.rs
 
 # Build dependencies only (this layer will be cached)
 RUN cargo build --release && \
@@ -26,11 +27,12 @@ RUN cargo build --release && \
 COPY src ./src
 COPY templates ./templates
 COPY data/migrations ./data/migrations
+COPY data/migrations_postgres ./data/migrations_postgres
 # COPY test_tools ./test_tools
 
 # Build the application
 # Touch main.rs to force rebuild of our code (dependencies are cached)
-RUN touch src/main.rs && \
+RUN touch src/main.rs src/lib.rs && \
     cargo build --release --bin Fulgurant
 
 # Runtime stage
@@ -53,6 +55,7 @@ COPY --from=builder /build/target/release/Fulgurant /app/fulgurant
 # Copy runtime assets
 COPY --from=builder /build/templates /app/templates
 COPY --from=builder /build/data/migrations /app/data/migrations
+COPY --from=builder /build/data/migrations_postgres /app/data/migrations_postgres
 COPY assets /app/assets
 
 # Copy entrypoint script
