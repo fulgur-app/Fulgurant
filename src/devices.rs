@@ -251,15 +251,12 @@ impl DeviceRepository {
     /// - `Ok(Device)`: The renewed device
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn renew(&self, id: i32, data: RenewDevice) -> Result<Device, sqlx::Error> {
-        let now = OffsetDateTime::now_utc();
         let RenewDevice { api_key_lifetime } = data;
-        let new_expires_at = now + Duration::days(api_key_lifetime);
         db_execute_dual!(
             self.pool,
-            sqlite: "UPDATE devices SET expires_at = ?, updated_at = ? WHERE id = ?",
-            postgres: "UPDATE devices SET expires_at = to_timestamp($1), updated_at = to_timestamp($2) WHERE id = $3",
-            new_expires_at.unix_timestamp(),
-            now.unix_timestamp(),
+            sqlite: "UPDATE devices SET expires_at = expires_at + (? * 86400), updated_at = unixepoch('now') WHERE id = ?",
+            postgres: "UPDATE devices SET expires_at = expires_at + ($1 * INTERVAL '1 day'), updated_at = NOW() WHERE id = $2",
+            api_key_lifetime,
             id
         )?;
         self.get_by_id(id).await
