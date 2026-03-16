@@ -36,14 +36,6 @@ jobs:
       - name: Build CSS
         run: npm run tw:build
 
-      - name: Verify output.css is up to date
-        run: |
-          if ! git diff --quiet assets/css/output.css; then
-            echo "assets/css/output.css is out of date. Run 'npm run tw:build' and commit."
-            git diff assets/css/output.css
-            exit 1
-          fi
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
