@@ -1,27 +1,25 @@
 <tr class="device-inline-form" id="inline-renew-{{ device.id }}">
-    <td colspan="6">
+    <td colspan="6" class="bg-base-200 p-4">
         <form class="device-renew-form"
               hx-post="/device/{{ device.id }}/renew"
               hx-target="#device-{{ device.id }}"
               hx-swap="outerHTML">
-            <div class="grid">
-                <label>
-                    Extend API Key Lifetime
-                    <select name="api_key_lifetime" required>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="label">Extend API Key Lifetime</label>
+                    <select name="api_key_lifetime" required class="select select-bordered w-full">
                         <option value="30">30 days</option>
                         <option value="90">90 days</option>
                         <option value="180" selected>180 days</option>
                         <option value="365">365 days</option>
                         <option value="36500">No expiration</option>
                     </select>
-                </label>
-                <div class="submit-container">
-                    <div class="container-row gap-1">
-                        <button type="button" class="secondary" data-remove-target="inline-renew-{{ device.id }}">
-                            Cancel
-                        </button>
-                        <button type="submit" class="inline-submit-button">Renew</button>
-                    </div>
+                </div>
+                <div class="flex items-end gap-2">
+                    <button type="button" class="btn btn-ghost" data-remove-target="inline-renew-{{ device.id }}">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary flex-1">Renew</button>
                 </div>
             </div>
         </form>

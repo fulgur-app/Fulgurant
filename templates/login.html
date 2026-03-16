@@ -1,46 +1,43 @@
-{% extends "layout.html" %}
-
-{% block page_title %}Login{% endblock %}
-
-{% block head %}
-
-{% endblock %}
-
-{% block content %}
-
-
-    <div class="login-container">
-        <div class="login-card">
-            <article>
-                <header>
-                    <h2>Log in</h2>
-                    <div>Manage your devices and shares</div>
-                </header>
-                <div id="error-message" role="alert"></div>
-                <form id="login-form"
-                    hx-post="/login"
-                    hx-target="#error-message"
-                    hx-swap="innerHTML">
-                    <label for="email">
-                        Email
-                        <input type="email" id="email" name="email" required autocomplete="email" autofocus />
-                    </label>
-                    <label for="password">
-                        Password
-                        <input type="password" id="password" name="password" required autocomplete="password" />
-                    </label>
-                    <button type="submit">Login</button>
-                </form>
-                <div class="center" style="margin-top: 1rem;">
-                    <a href="/auth/forgot-password">Forgot password?</a>
-                </div>
-                {% if can_register %}
-                <div class="center">
-                        No account yet?&nbsp;<a href="/register">Register</a>.
-                    </div>
-                {% endif %}
-            </article>
-        </div>
-    </div>
-
+{% extends "layout.html" %} {% block page_title %}Login{% endblock %} {% block content %}
+<div
+	class="flex justify-center items-center min-h-[50vh] p-8 max-sm:min-h-0 max-sm:p-4 max-sm:flex-1"
+>
+	<div class="card bg-base-200 shadow-xl w-full max-w-md">
+		<div class="card-body">
+			<h2 class="card-title text-2xl">Log in</h2>
+			<p>Manage your devices and shares</p>
+			<div id="error-message" role="alert"></div>
+			<form id="login-form" hx-post="/login" hx-target="#error-message" hx-swap="innerHTML">
+				<label class="label" for="email">Email</label>
+				<input
+					type="email"
+					id="email"
+					name="email"
+					required
+					autocomplete="email"
+					autofocus
+					class="input input-bordered w-full"
+				/>
+				<label class="label mt-4" for="password">Password</label>
+				<input
+					type="password"
+					id="password"
+					name="password"
+					required
+					autocomplete="password"
+					class="input input-bordered w-full"
+				/>
+				<button type="submit" class="btn btn-primary w-full mt-6">Login</button>
+			</form>
+			<div class="text-center mt-4">
+				<a href="/auth/forgot-password" class="link">Forgot password?</a>
+			</div>
+			{% if can_register %}
+			<div class="text-center">
+				No account yet?&nbsp;<a href="/register" class="link">Register</a>.
+			</div>
+			{% endif %}
+		</div>
+	</div>
+</div>
 {% endblock %}

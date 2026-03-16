@@ -1,19 +1,19 @@
-<div class="success-message" role="alert">
+<div class="alert alert-success mb-4" role="alert">
     Name successfully updated to {{ first_name }} {{ last_name }}!
 </div>
 
 <form hx-post="/settings/update-name"
       hx-target="#name-update-container"
       hx-swap="innerHTML">
-    <div class="grid">
-        <label>
-            First Name
-            <input type="text" name="first_name" value="{{ first_name }}" required>
-        </label>
-        <label>
-            Last Name
-            <input type="text" name="last_name" value="{{ last_name }}" required>
-        </label>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <label class="label">First Name</label>
+            <input type="text" name="first_name" value="{{ first_name }}" required class="input input-bordered w-full">
+        </div>
+        <div>
+            <label class="label">Last Name</label>
+            <input type="text" name="last_name" value="{{ last_name }}" required class="input input-bordered w-full">
+        </div>
     </div>
-    <button type="submit">Save Changes</button>
+    <button type="submit" class="btn btn-primary mt-4">Save Changes</button>
 </form>

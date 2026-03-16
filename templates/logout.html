@@ -1,15 +1,13 @@
 {% extends "layout.html" %} {% block page_title %}Logged out{% endblock %} {% block content %}
-<div class="login-container">
-	<div class="login-card">
-		<article>
-			<header>
-				<h2>You've been logged out</h2>
-				<div>Your session has been closed securely</div>
-			</header>
-			<div class="center logout-button">
-				<a href="/login" role="button" class="full-width">Log back in</a>
+<div class="flex justify-center items-center min-h-[50vh] p-8 max-sm:min-h-0 max-sm:p-4 max-sm:flex-1">
+	<div class="card bg-base-100 shadow-xl w-full max-w-md">
+		<div class="card-body">
+			<h2 class="card-title text-2xl">You've been logged out</h2>
+			<p>Your session has been closed securely</p>
+			<div class="text-center py-4">
+				<a href="/login" class="btn btn-primary w-full">Log back in</a>
 			</div>
-		</article>
+		</div>
 	</div>
 </div>
 {% endblock %}

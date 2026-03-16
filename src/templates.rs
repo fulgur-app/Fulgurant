@@ -69,7 +69,6 @@ pub struct IndexTemplate {
     pub shares: Vec<DisplayShare>,
     pub user: UserContext,
     pub csrf_token: String,
-    pub csp_nonce: String,
 }
 
 /// Individual device row template (for HTMX updates)
@@ -162,7 +161,6 @@ pub struct RegisterTemplate {
     pub first_name: String,
     pub last_name: String,
     pub csrf_token: String,
-    pub csp_nonce: String,
 }
 
 /// Register step 2 template
@@ -199,7 +197,6 @@ pub struct SettingsTemplate {
     pub first_name: String,
     pub last_name: String,
     pub csrf_token: String,
-    pub csp_nonce: String,
 }
 
 /// Update name success message template
@@ -232,7 +229,6 @@ pub struct ForgotPasswordStep1Template {
     pub error_message: String,
     pub email: String,
     pub csrf_token: String,
-    pub csp_nonce: String,
 }
 
 /// Forgot password step 1 partial template (form only, for HTMX responses)
@@ -289,7 +285,6 @@ pub struct SetupTemplate {
     pub first_name: String,
     pub last_name: String,
     pub csrf_token: String,
-    pub csp_nonce: String,
 }
 
 /// Setup form partial template (for HTMX responses)
@@ -317,7 +312,6 @@ pub struct AdminTemplate {
     pub last_name: Option<String>,
     pub role: Option<String>,
     pub csrf_token: String,
-    pub csp_nonce: String,
 }
 
 /// Admin user list partial template (for search results)

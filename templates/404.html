@@ -1,18 +1,16 @@
 {% extends "layout.html" %} {% block page_title %}404{% endblock %} {% block content %}
-<div class="login-container">
-	<div class="login-card">
-		<article>
-			<header>
-				<h2>404</h2>
-				<div>Yup, nothing to see here...</div>
-			</header>
-			<div class="center" style="padding: 1rem 0">
-				<a href="/" role="button" class="full-width">Back to the dashboard</a>
-				<div style="margin-top: 1.5rem">
-					<a href="https://fulgur.app" class="secondary">fulgur.app</a>
+<div class="flex justify-center items-center min-h-[50vh] p-8 max-sm:min-h-0 max-sm:p-4 max-sm:flex-1">
+	<div class="card bg-base-100 shadow-xl w-full max-w-md">
+		<div class="card-body">
+			<h2 class="card-title text-2xl">404</h2>
+			<p>Yup, nothing to see here...</p>
+			<div class="text-center py-4">
+				<a href="/" class="btn btn-primary w-full">Back to the dashboard</a>
+				<div class="mt-6">
+					<a href="https://fulgur.app" class="link">fulgur.app</a>
 				</div>
 			</div>
-		</article>
+		</div>
 	</div>
 </div>
 {% endblock %}

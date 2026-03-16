@@ -1,33 +1,33 @@
 <tr class="user-row" id="user-{{ display_user.id }}">
-	<td class="user-cell">{{ display_user.id }}</td>
-	<td class="user-cell">
+	<td>{{ display_user.id }}</td>
+	<td>
 		{{ display_user.email }}{% if display_user.force_password_update %}
-		<span class="password-update">PWD UPD</span>{%endif %}
+		<span class="badge badge-warning badge-outline badge-xs">PWD UPD</span>{% endif %}
 	</td>
-	<td class="user-cell">{{ display_user.first_name }}</td>
-	<td class="user-cell">{{ display_user.last_name }}</td>
-	<td class="user-cell">{{ display_user.shares }}</td>
-	<td class="user-cell">{{ display_user.is_email_verified() }}</td>
-	<td class="user-cell">{{ display_user.role }}</td>
-	<td class="user-cell">
-		<span data-tooltip="{{ display_user.created_at }}"
+	<td>{{ display_user.first_name }}</td>
+	<td>{{ display_user.last_name }}</td>
+	<td>{{ display_user.shares }}</td>
+	<td>{{ display_user.is_email_verified() }}</td>
+	<td>{{ display_user.role }}</td>
+	<td>
+		<span class="tooltip" data-tip="{{ display_user.created_at }}"
 			>{{ display_user.get_short_creation_date() }}</span
 		>
 	</td>
 	{% if display_user.get_short_last_activity_date() != "Never" %}
-	<td class="user-cell">
-		<span data-tooltip="{{ display_user.last_activity }}"
+	<td>
+		<span class="tooltip" data-tip="{{ display_user.last_activity }}"
 			>{{ display_user.get_short_last_activity_date() }}</span
 		>
 	</td>
 	{% else %}
-	<td class="user-cell">Never</td>
+	<td>Never</td>
 	{% endif %}
-	<td>
+	<td class="whitespace-nowrap">
 		{% if display_user.id != user.user_id %}
-		<div class="actions" role="group">
+		<div class="flex items-center gap-1 join">
 			<button
-				class="action-button secondary"
+				class="btn btn-ghost btn-sm btn-square join-item"
 				hx-delete="/user/{{ display_user.id }}"
 				hx-target="#user-{{ display_user.id }}"
 				hx-swap="outerHTML swap:0.5s"
@@ -49,13 +49,10 @@
 				</svg>
 			</button>
 			<button
-				class="action-button secondary"
+				class="btn btn-ghost btn-sm btn-square join-item"
 				hx-post="/user/{{ display_user.id }}/change-role"
 				hx-target="#user-{{ display_user.id }}"
 				hx-swap="outerHTML"
-				hx-on::before-request="
-                    document.querySelectorAll('.user-inline-form').forEach(el => el.remove());
-                "
 				hx-confirm="Are you sure you want to change the user's role to {{ display_user.toggle_role() }}?"
 			>
 				<svg
@@ -68,7 +65,6 @@
 					stroke-width="2"
 					stroke-linecap="round"
 					stroke-linejoin="round"
-					class="lucide lucide-user-pen-icon lucide-user-pen"
 				>
 					<path d="M11.5 15H7a4 4 0 0 0-4 4v2" />
 					<path
@@ -78,7 +74,7 @@
 				</svg>
 			</button>
 			<button
-				class="action-button secondary"
+				class="btn btn-ghost btn-sm btn-square join-item"
 				hx-post="/user/{{ display_user.id }}/toggle-force-password-update"
 				hx-target="#user-{{ display_user.id }}"
 				hx-swap="outerHTML"
@@ -95,13 +91,15 @@
 					stroke-linecap="round"
 					stroke-linejoin="round"
 				>
-					<path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4" />
+					<path
+						d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"
+					/>
 				</svg>
 			</button>
 		</div>
 		{% else %}
-		<div class="actions" role="group">
-			<button class="action-button secondary" disabled>
+		<div class="flex items-center gap-1">
+			<button class="btn btn-ghost btn-sm btn-square join-item" disabled>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					width="16"
@@ -117,7 +115,7 @@
 					<path d="m6 6 12 12" />
 				</svg>
 			</button>
-			<button class="action-button secondary" disabled>
+			<button class="btn btn-ghost btn-sm btn-square join-item" disabled>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					width="16"
@@ -128,7 +126,6 @@
 					stroke-width="2"
 					stroke-linecap="round"
 					stroke-linejoin="round"
-					class="lucide lucide-user-pen-icon lucide-user-pen"
 				>
 					<path d="M11.5 15H7a4 4 0 0 0-4 4v2" />
 					<path
@@ -137,7 +134,7 @@
 					<circle cx="10" cy="7" r="4" />
 				</svg>
 			</button>
-			<button class="action-button secondary" disabled>
+			<button class="btn btn-ghost btn-sm btn-square join-item" disabled>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					width="16"
@@ -149,7 +146,9 @@
 					stroke-linecap="round"
 					stroke-linejoin="round"
 				>
-					<path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4" />
+					<path
+						d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"
+					/>
 				</svg>
 			</button>
 		</div>

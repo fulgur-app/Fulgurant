@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
     Form,
-    extract::{Extension, Query, State},
+    extract::{Query, State},
     response::Html,
 };
 use serde::Deserialize;
@@ -51,7 +51,6 @@ fn default_page_size() -> i32 {
 /// - `Err(AppError)`: Error that occurred while rendering the template
 pub async fn get_admin(
     State(state): State<AppState>,
-    Extension(csp_nonce): Extension<crate::csp::CspNonce>,
     session: Session,
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
@@ -78,7 +77,6 @@ pub async fn get_admin(
         last_name: None,
         role: None,
         csrf_token,
-        csp_nonce: csp_nonce.0,
     };
     Ok(Html(template.render()?))
 }

@@ -1,47 +1,78 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <title>Fulgurant - {% block page_title %}{% endblock %}</title>
-    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
-    {% block head %}{% endblock %}
-    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
-    {% if csrf_token is defined %}
-    <meta name="csrf-token" content="{{ csrf_token }}">
-    <script src="/assets/js/csrf.js"></script>
-    {% endif %}
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light dark">
-    <link
-        rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
-    >
-    <link rel="stylesheet" href="/assets/css/layout.css">
-    <script src="/assets/js/burger.js" defer></script>
-
-  </head>
-  <body>
-    <main id="content" class="container-fluid container-max-width">
-      <nav id="main-nav">
-        <ul>
-          <li><h1>Fulgur<span class="primary">ant</span></h1></li>
-        </ul>
-        {% if user is defined %}
-        <button class="burger-menu" id="burger-toggle" aria-label="Toggle navigation" aria-expanded="false">
-          <span></span>
-          <span></span>
-          <span></span>
-        </button>
-        <ul id="nav-links">
-          <li><a href="/" class="contrast">Dashboard</a></li>
-          {% if user.is_admin() %}
-          <li><a href="/admin" class="contrast">Admin</a></li>
-          {% endif %}
-          <li><a href="/settings" class="contrast">Settings</a></li>
-          <li><a href="/logout" class="contrast" hx-post="/logout" hx-swap="none">Logout</a></li>
-        </ul>
-        {% endif %}
-      </nav>
-      {% block content %}{% endblock %}
-    </main>
-  </body>
+<!doctype html>
+<html lang="en" data-theme="fulgurant">
+	<head>
+		<title>Fulgurant - {% block page_title %}{% endblock %}</title>
+		<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link rel="stylesheet" href="/assets/css/output.css" />
+		<script src="/assets/js/htmx.min.js"></script>
+		{% if csrf_token is defined %}
+		<meta name="csrf-token" content="{{ csrf_token }}" />
+		<script src="/assets/js/csrf.js"></script>
+		{% endif %}
+		<script src="/assets/js/nav.js"></script>
+		<script src="/assets/js/clipboard.js"></script>
+		<script defer src="/assets/js/alpine.csp.min.js"></script>
+		{% block head %}{% endblock %}
+	</head>
+	<body>
+		<main id="content" class="max-w-7xl mx-auto px-4 md:px-0">
+			<div class="navbar bg-base-100 mb-4 px-5">
+				<div class="navbar-start">
+					<h1 class="text-3xl font-bold leading-none m-0">
+						Fulgur<span class="text-primary">ant</span>
+					</h1>
+				</div>
+				{% if user is defined %}
+				<div class="navbar-end">
+					<!-- Mobile dropdown -->
+					<div class="dropdown dropdown-end md:hidden" x-data="navDropdown">
+						<button
+							class="btn btn-ghost btn-square"
+							x-on:click="toggle"
+							aria-label="Toggle navigation"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-5 w-5"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M4 6h16M4 12h16M4 18h16"
+								/>
+							</svg>
+						</button>
+						<ul
+							class="menu menu-sm dropdown-content mt-3 p-2 shadow bg-base-100 rounded-box w-52 z-10"
+							x-show="open"
+							x-on:click.outside="close"
+						>
+							<li><a href="/">Dashboard</a></li>
+							{% if user.is_admin() %}
+							<li><a href="/admin">Admin</a></li>
+							{% endif %}
+							<li><a href="/settings">Settings</a></li>
+							<li><a href="/logout" hx-post="/logout" hx-swap="none">Logout</a></li>
+						</ul>
+					</div>
+					<!-- Desktop menu -->
+					<ul class="menu menu-horizontal px-1 hidden md:flex">
+						<li><a href="/">Dashboard</a></li>
+						{% if user.is_admin() %}
+						<li><a href="/admin">Admin</a></li>
+						{% endif %}
+						<li><a href="/settings">Settings</a></li>
+						<li><a href="/logout" hx-post="/logout" hx-swap="none">Logout</a></li>
+					</ul>
+				</div>
+				{% endif %}
+			</div>
+			{% block content %}{% endblock %}
+		</main>
+	</body>
 </html>

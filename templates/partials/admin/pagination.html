@@ -1,24 +1,24 @@
 {% if total_pages > 1 %}
-<div class="pagination-container">
-    <div class="pagination" role="group">
+<div class="flex justify-center mt-4">
+    <div class="join">
         {% if page > 1 %}
         <button
-            class="secondary"
+            class="join-item btn btn-sm"
             hx-get="/admin/users/search?page={{ page - 1 }}&page_size=20{% match email %}{% when Some with (val) %}&email={{ val }}{% when None %}{% endmatch %}{% match first_name %}{% when Some with (val) %}&first_name={{ val }}{% when None %}{% endmatch %}{% match last_name %}{% when Some with (val) %}&last_name={{ val }}{% when None %}{% endmatch %}{% match role %}{% when Some with (val) %}&role={{ val }}{% when None %}{% endmatch %}"
             hx-target="#user-list-container"
             hx-swap="innerHTML">
             Previous
         </button>
         {% else %}
-        <button class="secondary" disabled>Previous</button>
+        <button class="join-item btn btn-sm" disabled>Previous</button>
         {% endif %}
 
         {% for page_num in 1..=total_pages %}
         {% if page_num == page %}
-        <button>{{ page_num }}</button>
+        <button class="join-item btn btn-sm btn-active">{{ page_num }}</button>
         {% else %}
         <button
-            class="secondary"
+            class="join-item btn btn-sm"
             hx-get="/admin/users/search?page={{ page_num }}&page_size=20{% match email %}{% when Some with (val) %}&email={{ val }}{% when None %}{% endmatch %}{% match first_name %}{% when Some with (val) %}&first_name={{ val }}{% when None %}{% endmatch %}{% match last_name %}{% when Some with (val) %}&last_name={{ val }}{% when None %}{% endmatch %}{% match role %}{% when Some with (val) %}&role={{ val }}{% when None %}{% endmatch %}"
             hx-target="#user-list-container"
             hx-swap="innerHTML">
@@ -29,14 +29,14 @@
 
         {% if page < total_pages %}
         <button
-            class="secondary"
+            class="join-item btn btn-sm"
             hx-get="/admin/users/search?page={{ page + 1 }}&page_size=20{% match email %}{% when Some with (val) %}&email={{ val }}{% when None %}{% endmatch %}{% match first_name %}{% when Some with (val) %}&first_name={{ val }}{% when None %}{% endmatch %}{% match last_name %}{% when Some with (val) %}&last_name={{ val }}{% when None %}{% endmatch %}{% match role %}{% when Some with (val) %}&role={{ val }}{% when None %}{% endmatch %}"
             hx-target="#user-list-container"
             hx-swap="innerHTML">
             Next
         </button>
         {% else %}
-        <button class="secondary" disabled>Next</button>
+        <button class="join-item btn btn-sm" disabled>Next</button>
         {% endif %}
     </div>
 </div>

@@ -2,20 +2,14 @@
 
 {% block page_title %}Error{% endblock %}
 
-{% block head %}
-
-{% endblock %}
-
 {% block content %}
-
-    <div class="error-container">
-        <h2>{{ title }}</h2>
-        <p>{{ message }}</p>
-        {% if let Some(link) = link  %}
-{% if let Some(link_text) = link_text  %}
-            <a href="{{ link }}">{{ link_text }}</a>
+    <div class="max-w-3xl mx-auto py-8">
+        <h2 class="text-2xl font-bold mb-4">{{ title }}</h2>
+        <p class="mb-4">{{ message }}</p>
+        {% if let Some(link) = link %}
+        {% if let Some(link_text) = link_text %}
+            <a href="{{ link }}" class="link">{{ link_text }}</a>
         {% endif %}
         {% endif %}
     </div>
-
-{% endblock %}  
+{% endblock %}

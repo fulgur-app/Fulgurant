@@ -2,36 +2,14 @@
 
 {% block page_title %}Register{% endblock %}
 
-{% block head %}
-    <style nonce="{{ csp_nonce }}">
-        .start-over {
-            margin-top: 1rem;
-        }
-        .email-sent-to {
-            margin-bottom: 1.5rem;
-        }
-        .email-sent-to h4 {
-            margin-bottom: 0.5rem;
-        }
-        .password-requirements {
-            font-size: 0.85rem;
-            color: var(--muted-color);
-            margin-top: 0.5rem;
-            margin-bottom: 0.75rem;
-        }
-    </style>
-{% endblock %}
 {% block content %}
-    <div class="login-container">
-        <div class="login-card">
-            <article>
-                <header>
-                    <h2>Register</h2>
-                    <div>Create a new Fulgur account</div>
-                </header>
+    <div class="flex justify-center items-center min-h-[50vh] p-8 max-sm:min-h-0 max-sm:p-4 max-sm:flex-1">
+        <div class="card bg-base-100 shadow-xl w-full max-w-md">
+            <div class="card-body">
+                <h2 class="card-title text-2xl">Register</h2>
+                <p>Create a new Fulgur account</p>
                 {% include "partials/auth/registration_step_1.html" %}
-            </article>
+            </div>
         </div>
     </div>
-
 {% endblock %}

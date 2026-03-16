@@ -1,31 +1,23 @@
 <div id="container">
     {% if error_message != "" %}
-        <div class="error-message" role="alert">{{ error_message }}</div>
+        <div class="alert alert-error mb-4" role="alert">{{ error_message }}</div>
     {% endif %}
     <form id="register-form"
         hx-post="/auth/register"
         hx-target="#container"
         hx-swap="innerHTML">
-        <label for="email">
-            Email
-            <input type="email" id="email" name="email" required autocomplete="email" placeholder="john.doe@example.com" value="{{ email }}" />
-        </label>
-        <label for="first_name">
-            First Name
-            <input type="text" id="first_name" name="first_name" required autocomplete="given-name" placeholder="John" value="{{ first_name }}" />
-        </label>
-        <label for="last_name">
-            Last Name
-            <input type="text" id="last_name" name="last_name" required autocomplete="family-name" placeholder="Doe" value="{{ last_name }}" />
-        </label>
-        <label for="password">
-            Password
-            <div class="password-requirements">Minimum 8 characters, at least one uppercase letter, one lowercase letter, one number and one special character</div>
-            <input type="password" id="password" name="password" required autocomplete="new-password" minlength="8" />
-            </label>
-        <button type="submit">Confirm email</button>
-        <div class="center">
-            Already have an account?&nbsp;<a href="/login">Login</a>.
+        <label class="label" for="email">Email</label>
+        <input type="email" id="email" name="email" required autocomplete="email" placeholder="john.doe@example.com" value="{{ email }}" class="input input-bordered w-full" />
+        <label class="label mt-4" for="first_name">First Name</label>
+        <input type="text" id="first_name" name="first_name" required autocomplete="given-name" placeholder="John" value="{{ first_name }}" class="input input-bordered w-full" />
+        <label class="label mt-4" for="last_name">Last Name</label>
+        <input type="text" id="last_name" name="last_name" required autocomplete="family-name" placeholder="Doe" value="{{ last_name }}" class="input input-bordered w-full" />
+        <label class="label mt-4" for="password">Password</label>
+        <p class="text-sm text-base-content/60 mt-1 mb-3">Minimum 8 characters, at least one uppercase letter, one lowercase letter, one number and one special character</p>
+        <input type="password" id="password" name="password" required autocomplete="new-password" minlength="8" class="input input-bordered w-full" />
+        <button type="submit" class="btn btn-primary w-full mt-6">Confirm email</button>
+        <div class="text-center mt-4">
+            Already have an account?&nbsp;<a href="/login" class="link">Login</a>.
         </div>
     </form>
 </div>
