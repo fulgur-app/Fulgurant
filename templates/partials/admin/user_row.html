@@ -25,9 +25,10 @@
 	{% endif %}
 	<td class="whitespace-nowrap">
 		{% if display_user.id != user.user_id %}
-		<div class="flex items-center gap-1 join">
+		<div class="flex items-center join">
 			<button
-				class="btn btn-ghost btn-sm btn-square join-item"
+				class="btn btn-ghost btn-sm join-item px-3"
+				data-tip="Delete user"
 				hx-delete="/user/{{ display_user.id }}"
 				hx-target="#user-{{ display_user.id }}"
 				hx-swap="outerHTML swap:0.5s"
@@ -49,7 +50,8 @@
 				</svg>
 			</button>
 			<button
-				class="btn btn-ghost btn-sm btn-square join-item"
+				class="btn btn-ghost btn-sm join-item px-3"
+				data-tip="Change user role"
 				hx-post="/user/{{ display_user.id }}/change-role"
 				hx-target="#user-{{ display_user.id }}"
 				hx-swap="outerHTML"
@@ -74,7 +76,8 @@
 				</svg>
 			</button>
 			<button
-				class="btn btn-ghost btn-sm btn-square join-item"
+				class="btn btn-ghost btn-sm join-item px-3"
+				data-tip="Change password"
 				hx-post="/user/{{ display_user.id }}/toggle-force-password-update"
 				hx-target="#user-{{ display_user.id }}"
 				hx-swap="outerHTML"
@@ -99,7 +102,7 @@
 		</div>
 		{% else %}
 		<div class="flex items-center gap-1">
-			<button class="btn btn-ghost btn-sm btn-square join-item" disabled>
+			<button class="btn btn-ghost btn-sm join-item px-3" disabled>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					width="16"
@@ -115,7 +118,7 @@
 					<path d="m6 6 12 12" />
 				</svg>
 			</button>
-			<button class="btn btn-ghost btn-sm btn-square join-item" disabled>
+			<button class="btn btn-ghost btn-sm join-item px-3" disabled>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					width="16"
@@ -134,7 +137,7 @@
 					<circle cx="10" cy="7" r="4" />
 				</svg>
 			</button>
-			<button class="btn btn-ghost btn-sm btn-square join-item" disabled>
+			<button class="btn btn-ghost btn-sm join-item px-3" disabled>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					width="16"

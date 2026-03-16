@@ -28,6 +28,7 @@
 /* Inputs inherit their container's background so they blend with any card color */
 .input, .select, .textarea { background-color: inherit; outline: none; }
 .input:focus, .select:focus, .textarea:focus { border-color: var(--color-primary); }
+.table .btn-ghost { background-color: var(--color-base-300); }
 .btn-ghost:hover { background-color: var(--color-primary); color: var(--color-primary-content); }
 .join-item.btn:not(.btn-active):not(:disabled):hover { background-color: var(--color-primary); color: var(--color-primary-content); border-color: var(--color-primary); }
 .menu :where(li > a):hover, .menu :where(li > button):hover { background-color: var(--color-primary) !important; color: var(--color-primary-content) !important; }
