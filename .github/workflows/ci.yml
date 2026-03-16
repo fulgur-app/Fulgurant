@@ -24,6 +24,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build CSS
+        run: npm run tw:build
+
+      - name: Verify output.css is up to date
+        run: |
+          if ! git diff --quiet assets/css/output.css; then
+            echo "assets/css/output.css is out of date. Run 'npm run tw:build' and commit."
+            git diff assets/css/output.css
+            exit 1
+          fi
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
