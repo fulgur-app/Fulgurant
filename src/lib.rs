@@ -253,7 +253,7 @@ fn make_web_routes(
             header::STRICT_TRANSPORT_SECURITY,
             HeaderValue::from_static("max-age=31536000; includeSubDomains"),
         ))
-        .layer(axum::middleware::from_fn(csp::add_csp_nonce_and_header))
+        .layer(axum::middleware::from_fn(csp::add_csp_header))
 }
 
 /// Make the protected routes

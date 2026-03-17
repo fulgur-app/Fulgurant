@@ -1,13 +1,14 @@
 <tr class="device-row" id="device-{{ device.id }}">
-	<td class="device-cell">{{ device.name }}</td>
-	<td class="device-cell">{{ device.device_type }}</td>
-	<td class="device-cell">{{ device.get_created_at_formatted() }}</td>
-	<td class="device-cell">{{ device.get_updated_at_formatted() }}</td>
+	<td>{{ device.name }}</td>
+	<td>{{ device.device_type }}</td>
+	<td>{{ device.get_created_at_formatted() }}</td>
+	<td>{{ device.get_updated_at_formatted() }}</td>
 	<td>{{ device.get_expires_at_formatted() }}</td>
-	<td>
-		<div class="actions" role="group">
+	<td class="whitespace-nowrap">
+		<div class="flex items-center join">
 			<button
-				class="action-button secondary"
+				class="btn btn-ghost btn-sm join-item px-3"
+				data-tip="Delete device"
 				hx-delete="/device/{{ device.id }}"
 				hx-target="#device-{{ device.id }}"
 				hx-swap="outerHTML swap:0.5s"
@@ -29,7 +30,8 @@
 				</svg>
 			</button>
 			<button
-				class="action-button secondary device-edit-btn"
+				class="btn btn-ghost btn-sm device-edit-btn join-item px-3"
+				data-tip="Edit device"
 				hx-get="/device/{{ device.id }}/edit"
 				hx-target="#device-{{ device.id }}"
 				hx-swap="afterend"
@@ -53,7 +55,8 @@
 				</svg>
 			</button>
 			<button
-				class="action-button device-renew-btn"
+				class="btn btn-ghost btn-sm device-renew-btn join-item px-3"
+				data-tip="Renew device"
 				hx-get="/device/{{ device.id }}/renew"
 				hx-target="#device-{{ device.id }}"
 				hx-swap="afterend"

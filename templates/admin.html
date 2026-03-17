@@ -1,198 +1,116 @@
 {% extends "layout.html" %} {% block page_title %}Admin{% endblock %} {% block head %}
-<style nonce="{{ csp_nonce }}">
-	.pagination-container {
-		display: flex;
-		justify-content: center;
-		margin-top: 1rem;
-		padding: 0.5rem 0;
-		max-width: 50%;
-		margin: 0 auto;
-	}
-
-	.pagination {
-		align-items: center;
-	}
-
-	.pagination-button {
-		min-width: 2.5rem;
-		padding: 0.5rem 0.75rem;
-		margin: 0;
-	}
-
-	.pagination-button.active {
-		background-color: var(--primary);
-		color: var(--primary-inverse);
-		border-color: var(--primary);
-	}
-
-	.pagination-button:disabled {
-		cursor: not-allowed;
-	}
-
-	@media (max-width: 767px) {
-		.pagination-container {
-			max-width: 100%;
-		}
-
-		.pagination {
-			flex-wrap: wrap;
-			justify-content: center;
-		}
-	}
-
-	.api-key-display {
-		display: flex;
-		flex-direction: row;
-		gap: 0.25rem;
-		align-items: center;
-	}
-
-	.copy-feedback {
-		display: none;
-		margin-left: 8px;
-		color: #e7ffec;
-		font-weight: 500;
-	}
-
-	.password-update {
-		display: inline-block;
-		padding: 0rem 0.25rem;
-		color: #ff9500;
-		border-radius: 4px;
-		font-size: 0.6rem;
-		font-weight: 500;
-	}
-</style>
+<script src="/assets/js/admin.js"></script>
 {% endblock %} {% block content %}
-<!-- Add Device Form -->
-<article id="add-user-form">
-	<header><strong>Add New User</strong></header>
-	<div id="user-error-message"></div>
-	<form
-		id="add-user-form-element"
-		hx-post="/user/create"
-		hx-target="#user-list"
-		hx-swap="afterbegin"
-	>
-		<div class="grid">
-			<label>
-				First Name
-				<input type="text" name="first_name" placeholder="John" required />
-			</label>
-			<label>
-				Last Name
-				<input type="text" name="last_name" placeholder="Doe" required />
-			</label>
-			<label>
-				Email
-				<input type="email" name="email" placeholder="john.doe@example.com" required />
-			</label>
-			<div class="submit-container">
-				<button type="submit">Add User</button>
+<!-- Add User Form -->
+<div class="card bg-base-200 shadow-xl mb-6">
+	<div class="card-body">
+		<h3 class="card-title">Add New User</h3>
+		<div id="user-error-message"></div>
+		<form
+			id="add-user-form-element"
+			hx-post="/user/create"
+			hx-target="#user-list"
+			hx-swap="afterbegin"
+		>
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+				<div>
+					<label class="label">First Name</label>
+					<input
+						type="text"
+						name="first_name"
+						placeholder="John"
+						required
+						class="input input-bordered w-full"
+					/>
+				</div>
+				<div>
+					<label class="label">Last Name</label>
+					<input
+						type="text"
+						name="last_name"
+						placeholder="Doe"
+						required
+						class="input input-bordered w-full"
+					/>
+				</div>
+				<div>
+					<label class="label">Email</label>
+					<input
+						type="email"
+						name="email"
+						placeholder="john.doe@example.com"
+						required
+						class="input input-bordered w-full"
+					/>
+				</div>
+				<div class="flex items-end">
+					<button type="submit" class="btn btn-primary w-full">Add User</button>
+				</div>
 			</div>
-		</div>
-	</form>
-</article>
-<article>
-	<header>
-		<div class="container-between">
-			<strong>Users</strong>
-			<div class="info">{{ total_users }} user{{ total_users | pluralize("s") }}</div>
-		</div>
-	</header>
-
-	<form
-		id="user-search-form"
-		hx-get="/admin/users/search"
-		hx-target="#user-list-container"
-		hx-trigger="submit, input delay:500ms from:find input"
-		hx-indicator="#search-indicator"
-	>
-		<div class="grid">
-			<label>
-				E-mail
-				<input type="text" name="email" placeholder="john.doe@example.com" />
-			</label>
-			<label>
-				First Name
-				<input type="text" name="first_name" placeholder="John" />
-			</label>
-			<label>
-				Last Name
-				<input type="text" name="last_name" placeholder="Doe" />
-			</label>
-			<label>
-				Role
-				<select name="role">
-					<option value="All" selected>All</option>
-					<option value="User">User</option>
-					<option value="Admin">Admin</option>
-				</select>
-			</label>
-			<div class="submit-container">
-				<button type="submit">Search</button>
-			</div>
-		</div>
-	</form>
-
-	<div id="user-list-container">
-		{% include "partials/admin/user_list.html" %}
+		</form>
 	</div>
-</article>
+</div>
 
-<script nonce="{{ csp_nonce }}">
-	// Copy password to clipboard
-	function copyPassword(button) {
-		const passwordElement = button.parentElement.querySelector('.api-key-value');
-		if (!passwordElement) return;
-		const passwordText = passwordElement.textContent.trim();
-		let success = false;
-		if (navigator.clipboard && navigator.clipboard.writeText) {
-			navigator.clipboard
-				.writeText(passwordText)
-				.then(() => {
-					success = true;
-					showCopyFeedback(button);
-				})
-				.catch((err) => {
-					console.error('Clipboard API failed:', err);
-					success = fallbackCopy(passwordText);
-					if (success) showCopyFeedback(button);
-				});
-		} else {
-			success = fallbackCopy(passwordText);
-			if (success) showCopyFeedback(button);
-		}
-	}
+<!-- Users List -->
+<div class="card bg-base-200 shadow-xl mb-6">
+	<div class="card-body">
+		<div class="flex justify-between items-center">
+			<h3 class="card-title">Users</h3>
+			<span class="text-sm text-base-content/60"
+				>{{ total_users }} user{{ total_users | pluralize("s") }}</span
+			>
+		</div>
 
-	// Fallback copy to clipboard for older browsers
-	function fallbackCopy(text) {
-		const textarea = document.createElement('textarea');
-		textarea.value = text;
-		textarea.style.position = 'fixed';
-		textarea.style.opacity = '0';
-		document.body.appendChild(textarea);
-		textarea.select();
-		try {
-			const success = document.execCommand('copy');
-			document.body.removeChild(textarea);
-			return success;
-		} catch (err) {
-			console.error('Failed to copy:', err);
-			document.body.removeChild(textarea);
-			return false;
-		}
-	}
+		<form
+			id="user-search-form"
+			hx-get="/admin/users/search"
+			hx-target="#user-list-container"
+			hx-trigger="submit, input delay:500ms from:find input"
+			hx-indicator="#search-indicator"
+		>
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+				<div>
+					<label class="label">E-mail</label>
+					<input
+						type="text"
+						name="email"
+						placeholder="john.doe@example.com"
+						class="input input-bordered w-full"
+					/>
+				</div>
+				<div>
+					<label class="label">First Name</label>
+					<input
+						type="text"
+						name="first_name"
+						placeholder="John"
+						class="input input-bordered w-full"
+					/>
+				</div>
+				<div>
+					<label class="label">Last Name</label>
+					<input
+						type="text"
+						name="last_name"
+						placeholder="Doe"
+						class="input input-bordered w-full"
+					/>
+				</div>
+				<div>
+					<label class="label">Role</label>
+					<select name="role" class="select select-bordered w-full">
+						<option value="All" selected>All</option>
+						<option value="User">User</option>
+						<option value="Admin">Admin</option>
+					</select>
+				</div>
+				<div class="flex items-end">
+					<button type="submit" class="btn btn-primary w-full">Search</button>
+				</div>
+			</div>
+		</form>
 
-	// Show "Copied!" feedback
-	function showCopyFeedback(button) {
-		const feedback = button.nextElementSibling;
-		if (feedback && feedback.classList.contains('copy-feedback')) {
-			feedback.style.display = 'inline';
-			setTimeout(() => {
-				feedback.style.display = 'none';
-			}, 3000);
-		}
-	}
-</script>
+		<div id="user-list-container">{% include "partials/admin/user_list.html" %}</div>
+	</div>
+</div>
 {% endblock %}

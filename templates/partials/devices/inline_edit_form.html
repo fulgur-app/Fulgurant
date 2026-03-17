@@ -1,31 +1,32 @@
 <tr class="device-inline-form" id="inline-edit-{{ device.id }}">
-    <td colspan="6">
+    <td colspan="6" class="bg-base-200 p-4">
         <form class="device-edit-form"
               hx-put="/device/{{ device.id }}"
               hx-target="#device-{{ device.id }}"
               hx-swap="outerHTML">
-            <div class="grid">
-                <label>
-                    Name
-                    <input type="text" name="name" value="{{ device.name }}" required>
-                </label>
-                <label>
-                    Device Type
-                    <select name="device_type" required>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label class="label">Name</label>
+                    <input type="text" name="name" value="{{ device.name }}" required class="input input-bordered w-full">
+                </div>
+                <div>
+                    <label class="label">Device Type</label>
+                    <select name="device_type" required class="select select-bordered w-full">
                         <option value="Laptop" {% if device.device_type == "Laptop" %}selected{% endif %}>Laptop</option>
                         <option value="Desktop" {% if device.device_type == "Desktop" %}selected{% endif %}>Desktop</option>
                         <option value="AllInOne" {% if device.device_type == "AllInOne" %}selected{% endif %}>All-In-One</option>
                         <option value="Tower" {% if device.device_type == "Tower" %}selected{% endif %}>Tower</option>
                         <option value="Server" {% if device.device_type == "Server" %}selected{% endif %}>Server</option>
                     </select>
-                </label>
-                <div class="submit-container">
-                    <div class="container-row gap-1">
-                        <button type="button" class="secondary" data-remove-target="inline-edit-{{ device.id }}">
-                            Cancel
-                        </button>
-                        <button type="submit" class="inline-submit-button">Save</button>
-                    </div>
+                </div>
+                <div class="flex items-end gap-2">
+                    <button type="button" class="btn btn-ghost"
+                        hx-get="/device/{{ device.id }}/cancel"
+                        hx-target="#inline-edit-{{ device.id }}"
+                        hx-swap="delete">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary flex-1">Save</button>
                 </div>
             </div>
         </form>

@@ -39,5 +39,8 @@ docker-compose.yml
 Dockerfile
 .dockerignore
 
+# Node
+node_modules/
+
 # Test data
 test_data/

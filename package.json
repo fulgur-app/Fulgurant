@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "scripts": {
+    "tw:watch": "tailwindcss -i assets/css/input.css -o assets/css/output.css --watch",
+    "tw:build": "tailwindcss -i assets/css/input.css -o assets/css/output.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4",
+    "@tailwindcss/cli": "^4",
+    "daisyui": "^5"
+  }
+}

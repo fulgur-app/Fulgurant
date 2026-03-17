@@ -1,4 +1,13 @@
-# Build stage
+# CSS build stage
+FROM node:22-alpine AS css-builder
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY assets/css/input.css assets/css/input.css
+COPY templates ./templates
+RUN npm run tw:build
+
+# Rust build stage
 FROM rust:1.93-alpine AS builder
 
 # Install build dependencies
@@ -57,6 +66,7 @@ COPY --from=builder /build/templates /app/templates
 COPY --from=builder /build/data/migrations /app/data/migrations
 COPY --from=builder /build/data/migrations_postgres /app/data/migrations_postgres
 COPY assets /app/assets
+COPY --from=css-builder /build/assets/css/output.css /app/assets/css/output.css
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /app/

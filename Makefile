@@ -1,4 +1,4 @@
-.PHONY: help build start stop restart logs clean backup
+.PHONY: help build start stop restart logs clean backup tailwind-watch tailwind-build
 
 help: ## Show this help message
 	@echo "Fulgurant Docker Commands:"
@@ -58,3 +58,9 @@ health: ## Check container health
 
 size: ## Show Docker image size
 	@docker images fulgurant --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+
+tailwind-watch: ## Watch and rebuild Tailwind CSS on changes
+	npm run tw:watch
+
+tailwind-build: ## Build minified Tailwind CSS for production
+	npm run tw:build

@@ -1,279 +1,127 @@
 {% extends "layout.html" %} {% block page_title %}Dashboard{% endblock %} {% block head %}
-<style nonce="{{ csp_nonce }}">
-	.api-key-display {
-		display: flex;
-		flex-direction: row;
-		gap: 0.25rem;
-		align-items: center;
-	}
-	.device-api-key code {
-		background-color: #042c1b;
-	}
-	.device-row {
-		transition: all 0.3s ease;
-	}
-	.device-inline-form td {
-		padding: 2rem 0rem;
-		background-color: #181c25;
-	}
-	.inline-submit-button {
-		width: 100%;
-	}
-	.copy-feedback {
-		display: none;
-		margin-left: 8px;
-		color: #e7ffec;
-		font-weight: 500;
-	}
-	.action-button {
-		padding: 0.1rem 0.5rem;
-	}
-</style>
-
+<script src="/assets/js/dashboard.js"></script>
 {% endblock %} {% block content %}
-<div>
-	<hgroup>
-		<h2>Welcome, {{ user.first_name }}!</h2>
-		<p>You have created {{ user.shares }} share{{ user.shares | pluralize("s") }} so far.</p>
-	</hgroup>
+<div class="mb-6 mx-5">
+	<h2 class="text-2xl font-bold">Welcome, {{ user.first_name }}!</h2>
+	<p class="text-base-content/60">
+		You have created {{ user.shares }} share{{ user.shares | pluralize("s") }} so far.
+	</p>
 </div>
+
 <!-- Add Device Form -->
-<article id="add-device-form">
-	<header><strong>Add New Device</strong></header>
-	<div id="device-error-message"></div>
-	<form
-		id="add-device-form-element"
-		hx-post="/device/{{ user.user_id }}/create"
-		hx-target="#device-list"
-		hx-swap="afterbegin"
-	>
-		<div class="grid">
-			<label>
-				Name
-				<input type="text" name="name" placeholder="e.g., My Laptop" required />
-			</label>
-			<label>
-				Device Type
-				<select name="device_type" required>
-					<option value="Laptop">Laptop</option>
-					<option value="Desktop">Desktop</option>
-					<option value="AllInOne">All-In-One</option>
-					<option value="Tower">Tower</option>
-					<option value="Server">Server</option>
-				</select>
-			</label>
-			<label>
-				API Key Lifetime
-				<select name="api_key_lifetime" required>
-					<option value="30">30 days</option>
-					<option value="90">90 days</option>
-					<option value="180" selected>180 days</option>
-					<option value="365">365 days</option>
-					<option value="36500">No expiration</option>
-				</select>
-			</label>
-			<div class="submit-container">
-				<button type="submit">Add Device</button>
+<div class="card bg-base-200 shadow-xl mb-6">
+	<div class="card-body">
+		<h3 class="card-title">Add New Device</h3>
+		<div id="device-error-message"></div>
+		<form
+			id="add-device-form-element"
+			hx-post="/device/{{ user.user_id }}/create"
+			hx-target="#device-list"
+			hx-swap="afterbegin"
+		>
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+				<div>
+					<label class="label">Name</label>
+					<input
+						type="text"
+						name="name"
+						placeholder="e.g., My Laptop"
+						required
+						class="input input-bordered w-full"
+					/>
+				</div>
+				<div>
+					<label class="label">Type</label>
+					<select name="device_type" required class="select select-bordered w-full">
+						<option value="Laptop">Laptop</option>
+						<option value="Desktop">Desktop</option>
+						<option value="AllInOne">All-In-One</option>
+						<option value="Tower">Tower</option>
+						<option value="Server">Server</option>
+					</select>
+				</div>
+				<div>
+					<label class="label">Key Lifetime</label>
+					<select name="api_key_lifetime" required class="select select-bordered w-full">
+						<option value="30">30 days</option>
+						<option value="90">90 days</option>
+						<option value="180" selected>180 days</option>
+						<option value="365">365 days</option>
+						<option value="36500">No expiration</option>
+					</select>
+				</div>
+				<div class="flex items-end">
+					<button type="submit" class="btn btn-primary w-full">Add Device</button>
+				</div>
 			</div>
-		</div>
-	</form>
-</article>
+		</form>
+	</div>
+</div>
 
 <!-- Devices List -->
-<article>
-	<header>
-		<div class="container-between">
-			<strong>Devices inventory</strong>
+<div class="card bg-base-200 shadow-xl mb-6">
+	<div class="card-body">
+		<div class="flex justify-between items-center">
+			<h3 class="card-title">Devices inventory</h3>
 			{% if let Some(max_devices_per_user) = max_devices_per_user %}
-			<div class="info">
-				You can add up to {{ max_devices_per_user }} device{{ max_devices_per_user |
-				pluralize("s") }}.
-			</div>
+			<span class="text-sm text-base-content/60">
+				Up to {{ max_devices_per_user }} device{{ max_devices_per_user | pluralize("s") }}
+			</span>
 			{% endif %}
 		</div>
-	</header>
 
-	<div class="overflow-auto">
-		<table role="grid">
-			<thead>
-				<tr>
-					<th>Name</th>
-					<th>Type</th>
-					<th>Created</th>
-					<th>Last access</th>
-					<th>Expires</th>
-					<th>Actions</th>
-				</tr>
-			</thead>
-			<tbody id="device-list">
-				{% if devices.is_empty() %}
-				<tr id="device-empty-state">
-					<td colspan="6">{% include "partials/devices/empty_state.html" %}</td>
-				</tr>
-				{% else %} {% for device in devices %} {% include "partials/devices/device_row.html"
-				%} {% endfor %} {% endif %}
-			</tbody>
-		</table>
+		<div class="overflow-x-auto">
+			<table class="table">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Type</th>
+						<th>Created</th>
+						<th>Last access</th>
+						<th>Expires</th>
+						<th class="w-0 whitespace-nowrap">Actions</th>
+					</tr>
+				</thead>
+				<tbody id="device-list">
+					{% if devices.is_empty() %}
+					<tr id="device-empty-state">
+						<td colspan="6">{% include "partials/devices/empty_state.html" %}</td>
+					</tr>
+					{% else %} {% for device in devices %} {% include
+					"partials/devices/device_row.html" %} {% endfor %} {% endif %}
+				</tbody>
+			</table>
+		</div>
 	</div>
-</article>
+</div>
 
 <!-- Shares List -->
-<article>
-	<header><strong>Ongoing Shares</strong></header>
+<div class="card bg-base-200 shadow-xl mb-6">
+	<div class="card-body">
+		<h3 class="card-title">Ongoing Shares</h3>
 
-	<div class="overflow-auto">
-		<table role="grid">
-			<thead>
-				<tr>
-					<th>File Name</th>
-					<th>From</th>
-					<th>To</th>
-					<th>Created</th>
-					<th>Expires</th>
-					<th>Actions</th>
-				</tr>
-			</thead>
-			<tbody id="share-list">
-				{% if shares.is_empty() %}
-				<tr id="share-empty-state">
-					<td colspan="6">{% include "partials/shares/empty_state.html" %}</td>
-				</tr>
-				{% else %} {% for share in shares %} {% include "partials/shares/share_row.html" %}
-				{% endfor %} {% endif %}
-			</tbody>
-		</table>
+		<div class="overflow-x-auto">
+			<table class="table">
+				<thead>
+					<tr>
+						<th>File Name</th>
+						<th>From</th>
+						<th>To</th>
+						<th>Created</th>
+						<th>Expires</th>
+						<th class="w-0 whitespace-nowrap">Actions</th>
+					</tr>
+				</thead>
+				<tbody id="share-list">
+					{% if shares.is_empty() %}
+					<tr id="share-empty-state">
+						<td colspan="6">{% include "partials/shares/empty_state.html" %}</td>
+					</tr>
+					{% else %} {% for share in shares %} {% include "partials/shares/share_row.html"
+					%} {% endfor %} {% endif %}
+				</tbody>
+			</table>
+		</div>
 	</div>
-</article>
-
-<script nonce="{{ csp_nonce }}">
-	// Handle device creation error messages
-	document.addEventListener('DOMContentLoaded', function () {
-		const form = document.getElementById('add-device-form-element');
-		if (form) {
-			form.addEventListener('htmx:afterRequest', function (event) {
-				if (event.detail.successful) {
-					document.getElementById('device-error-message').innerHTML = '';
-					form.reset();
-				} else {
-					document.getElementById('device-error-message').innerHTML =
-						event.detail.xhr.responseText;
-				}
-			});
-		}
-	});
-
-	// Copy API key to clipboard, falls back to execCommand for older browsers/HTTTP only
-	function copyApiKey(button) {
-		const apiKeyElement = button.parentElement.querySelector('.api-key-value');
-		if (!apiKeyElement) return;
-		const apiKeyText = apiKeyElement.textContent.trim();
-		let success = false;
-		if (navigator.clipboard && navigator.clipboard.writeText) {
-			navigator.clipboard
-				.writeText(apiKeyText)
-				.then(() => {
-					success = true;
-					showCopyFeedback(button);
-				})
-				.catch((err) => {
-					console.error('Clipboard API failed:', err);
-					success = fallbackCopy(apiKeyText);
-					if (success) showCopyFeedback(button);
-				});
-		} else {
-			success = fallbackCopy(apiKeyText);
-			if (success) showCopyFeedback(button);
-		}
-	}
-
-	// Fallback copy to clipboard for older browsers/HTTTP only
-	function fallbackCopy(text) {
-		const textarea = document.createElement('textarea');
-		textarea.value = text;
-		textarea.style.position = 'fixed';
-		textarea.style.opacity = '0';
-		document.body.appendChild(textarea);
-		textarea.select();
-		try {
-			const success = document.execCommand('copy');
-			document.body.removeChild(textarea);
-			return success;
-		} catch (err) {
-			console.error('Failed to copy:', err);
-			document.body.removeChild(textarea);
-			return false;
-		}
-	}
-
-	// Show "Copied!" feedback
-	function showCopyFeedback(button) {
-		const feedback = button.nextElementSibling;
-		if (feedback && feedback.classList.contains('copy-feedback')) {
-			feedback.style.display = 'inline';
-			setTimeout(() => {
-				feedback.style.display = 'none';
-			}, 3000);
-		}
-		const container = document.getElementById('device-api-key-container');
-		if (container) {
-			container.scrollIntoView({ behavior: 'smooth', block: 'start' });
-		}
-	}
-
-	// Dismiss API key container
-	function dismissApiKey() {
-		const container = document.getElementById('device-api-key-container');
-		if (container) {
-			container.textContent = '';
-		}
-	}
-
-	// Event delegation for dynamically-inserted HTMX content (onclick attributes are blocked by CSP)
-	document.body.addEventListener('click', function (event) {
-		const actionBtn = event.target.closest('[data-action]');
-		if (actionBtn) {
-			if (actionBtn.dataset.action === 'copy-api-key') {
-				copyApiKey(actionBtn);
-			}
-			return;
-		}
-		const removeBtn = event.target.closest('[data-remove-target]');
-		if (removeBtn) {
-			const el = document.getElementById(removeBtn.dataset.removeTarget);
-			if (el) el.remove();
-		}
-	});
-
-	// Prevent opening multiple device forms at once
-	document.body.addEventListener('htmx:beforeRequest', function (event) {
-		const target = event.target;
-		if (
-			target.classList.contains('device-edit-btn') ||
-			target.classList.contains('device-renew-btn')
-		) {
-			const existingForm = document.querySelector('.device-inline-form');
-			if (existingForm) {
-				event.preventDefault();
-			}
-		}
-	});
-
-	// Remove inline forms after successful device update/renew
-	document.body.addEventListener('htmx:afterSwap', function (event) {
-		const target = event.target;
-		const requestConfig = event.detail.requestConfig;
-
-		// Only remove form if it was a PUT/POST (save/renew), not a GET (open)
-		if (
-			target.classList.contains('device-row') &&
-			(requestConfig.verb === 'put' || requestConfig.verb === 'post')
-		) {
-			const nextRow = target.nextElementSibling;
-			if (nextRow && nextRow.classList.contains('device-inline-form')) {
-				nextRow.remove();
-			}
-		}
-	});
-</script>
-
+</div>
 {% endblock %}

@@ -1,88 +1,87 @@
-{% extends "layout.html" %}
+{% extends "layout.html" %} {% block page_title %}Settings{% endblock %} {% block content %}
+<div class="max-w-3xl mx-auto">
+	<div class="card bg-base-200 shadow-xl">
+		<div class="card-body">
+			<h2 class="card-title text-2xl">Account Settings</h2>
 
-{% block page_title %}Settings{% endblock %}
+			<div class="mb-8">
+				<h3 class="text-lg font-semibold mb-4">Personal Information</h3>
+				<div id="name-update-container">
+					<form
+						hx-post="/settings/update-name"
+						hx-target="#name-update-container"
+						hx-swap="innerHTML"
+					>
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+							<div>
+								<label class="label">First Name</label>
+								<input
+									type="text"
+									name="first_name"
+									value="{{ first_name }}"
+									required
+									class="input input-bordered w-full"
+								/>
+							</div>
+							<div>
+								<label class="label">Last Name</label>
+								<input
+									type="text"
+									name="last_name"
+									value="{{ last_name }}"
+									required
+									class="input input-bordered w-full"
+								/>
+							</div>
+						</div>
+						<button type="submit" class="btn btn-primary mt-4">Save Changes</button>
+					</form>
+				</div>
+			</div>
 
-{% block head %}
-    <style nonce="{{ csp_nonce }}">
-        .settings-container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        .settings-section {
-            margin-bottom: 2rem;
-        }
-        .success-message {
-            padding: 1rem;
-            margin: 1rem 0;
-            color: #006D46;
-            border: 1px solid #006D46;
-            border-radius: 5px;
-            background-color: rgba(0, 109, 70, 0.1);
-        }
-        .password-note {
-            font-size: 0.9rem;
-            color: var(--muted-color);
-            margin-top: 0.5rem;
-        }
-    </style>
-{% endblock %}
+			<div class="divider"></div>
 
-{% block content %}
-    <div class="settings-container">
-        <article>
-            <header>
-                <h2>Account Settings</h2>
-            </header>
-            <div class="settings-section">
-                <h3>Personal Information</h3>
-                <div id="name-update-container">
-                    <form hx-post="/settings/update-name"
-                          hx-target="#name-update-container"
-                          hx-swap="innerHTML">
-                        <div class="grid">
-                            <label>
-                                First Name
-                                <input type="text" name="first_name" value="{{ first_name }}" required>
-                            </label>
-                            <label>
-                                Last Name
-                                <input type="text" name="last_name" value="{{ last_name }}" required>
-                            </label>
-                        </div>
-                        <button type="submit">Save Changes</button>
-                    </form>
-                </div>
-            </div>
-            <div class="settings-section">
-                <h3>Email Address</h3>
-                <div id="email-update-container">
-                    <form hx-post="/settings/update-email"
-                          hx-target="#email-update-container"
-                          hx-swap="innerHTML">
-                        <label>
-                            Email
-                            <input type="email" name="email" value="{{ email }}" required>
-                        </label>
-                        <button type="submit">Update Email</button>
-                        <p class="password-note">
-                            Changing your email will require verification. A 6-digit code will be sent to your new email address.
-                        </p>
-                    </form>
-                </div>
-            </div>
-            <div class="settings-section">
-                <h3>Password</h3>
-                <p class="password-note">
-                    To change your password, please log out and use the "Forgot password?" link on the login page.
-                    This ensures your account remains secure by verifying your email address.
-                </p>
-                <div>
-                    <form hx-post="/logout" hx-swap="none">
-                        <button type="submit" class="secondary">Log Out</button>
-                    </form>
-                </div>
-            </div>
+			<div class="mb-8">
+				<h3 class="text-lg font-semibold mb-4">Email Address</h3>
+				<div id="email-update-container">
+					<form
+						hx-post="/settings/update-email"
+						hx-target="#email-update-container"
+						hx-swap="innerHTML"
+					>
+						<label class="label">Email</label>
+						<input
+							type="email"
+							name="email"
+							value="{{ email }}"
+							required
+							class="input input-bordered w-full"
+						/>
+						<button type="submit" class="btn btn-primary mt-4">Update Email</button>
+						<p class="text-sm text-base-content/60 mt-2">
+							Changing your email will require verification. A 6-digit code will be
+							sent to your new email address.
+						</p>
+					</form>
+				</div>
+			</div>
 
-        </article>
-    </div>
+			<div class="divider"></div>
+
+			<div class="mb-4">
+				<h3 class="text-lg font-semibold mb-4">Password</h3>
+				<p class="text-sm text-base-content/60 mb-4">
+					To change your password, please log out and use the "Forgot password?" link on
+					the login page. This ensures your account remains secure by verifying your email
+					address.
+				</p>
+				<div>
+					<form hx-post="/logout" hx-swap="none">
+						<button type="submit" class="btn btn-ghost">Log Out</button>
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
 {% endblock %}

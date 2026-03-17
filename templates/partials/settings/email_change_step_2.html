@@ -1,34 +1,32 @@
-<div class="center" style="margin-bottom: 2rem;">
-    <h4>Check your email!</h4>
+<div class="text-center mb-6">
+    <h4 class="text-lg font-bold">Check your email!</h4>
     <div>We've sent a 6-digit verification code to:</div>
     <div><strong>{{ new_email }}</strong></div>
 </div>
 
 {% if error_message != "" %}
-    <div class="error-message" role="alert">{{ error_message }}</div>
+    <div class="alert alert-error mb-4" role="alert">{{ error_message }}</div>
 {% endif %}
 
 <form hx-post="/settings/verify-email-change"
       hx-target="#email-update-container"
       hx-swap="innerHTML">
     <input type="hidden" name="email" value="{{ new_email }}">
-    <label>
-        Verification Code
-        <input type="text"
-               name="code"
-               placeholder="000000"
-               class="verification-code-input"
-               minlength="6"
-               maxlength="6"
-               pattern="[0-9]{6}"
-               required
-               autofocus>
-    </label>
-    <button type="submit">Verify & Update Email</button>
+    <label class="label">Verification Code</label>
+    <input type="text"
+           name="code"
+           placeholder="000000"
+           minlength="6"
+           maxlength="6"
+           pattern="[0-9]{6}"
+           required
+           autofocus
+           class="input input-bordered w-full">
+    <button type="submit" class="btn btn-primary w-full mt-6">Verify & Update Email</button>
 </form>
 
-<div class="center" style="margin-top: 1rem;">
-    <button class="secondary outline full-width"
+<div class="text-center mt-4">
+    <button class="btn btn-outline w-full"
             hx-get="/settings"
             hx-target="main#content"
             hx-swap="innerHTML">
