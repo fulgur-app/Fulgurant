@@ -35,3 +35,6 @@ node_modules/
 *.key
 *.p12
 *.pfx
+
+# Generated files
+assets/css/output.css
