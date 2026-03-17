@@ -263,7 +263,7 @@ pub async fn update_device(
     request.name = name;
     request.device_type = device_type;
     let device = state.device_repository.update(id, request).await?;
-    let template = templates::DeviceRowTemplate { device };
+    let template = templates::DeviceRowEditResponseTemplate { device };
     Ok(Html(template.render()?))
 }
 
@@ -362,7 +362,7 @@ pub async fn renew_device(
         return Err(AppError::Forbidden);
     }
     let device = state.device_repository.renew(id, request).await?;
-    let template = templates::DeviceRowTemplate { device };
+    let template = templates::DeviceRowRenewResponseTemplate { device };
     Ok(Html(template.render()?))
 }
 

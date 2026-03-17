@@ -20,7 +20,10 @@
                     </select>
                 </div>
                 <div class="flex items-end gap-2">
-                    <button type="button" class="btn btn-ghost" data-remove-target="inline-edit-{{ device.id }}">
+                    <button type="button" class="btn btn-ghost"
+                        hx-get="/device/{{ device.id }}/cancel"
+                        hx-target="#inline-edit-{{ device.id }}"
+                        hx-swap="delete">
                         Cancel
                     </button>
                     <button type="submit" class="btn btn-primary flex-1">Save</button>

@@ -109,6 +109,20 @@ pub struct InlineRenewFormTemplate {
     pub device: Device,
 }
 
+/// Device row edit response template (device row + OOB delete of inline edit form)
+#[derive(Template)]
+#[template(path = "partials/devices/device_row_edit_response.html")]
+pub struct DeviceRowEditResponseTemplate {
+    pub device: Device,
+}
+
+/// Device row renew response template (device row + OOB delete of inline renew form)
+#[derive(Template)]
+#[template(path = "partials/devices/device_row_renew_response.html")]
+pub struct DeviceRowRenewResponseTemplate {
+    pub device: Device,
+}
+
 /// Empty state template
 #[derive(Template)]
 #[template(path = "partials/devices/empty_state.html")]
