@@ -22,7 +22,6 @@ The Admin dashboard (for Admin users only): allows to manage the users (edit the
 - Web interface for profile, shares and device management
 - Web interface for Admin users for user management
 - SQLite and PostgreSQL database support
-- HTTPS support
 - REST API for desktop app integration
 - SSE support for notifying a Fulgur instance of available shares
 
@@ -81,8 +80,6 @@ Fulgurant uses:
 | `SSE_HEARTBEAT_SECONDS` | No | `30` | SSE heartbeat interval in seconds (5-300) |
 | `BIND_HOST` | No | `127.0.0.1` | Bind address (`0.0.0.0` for external access) |
 | `BIND_PORT` | No | `3000` | Bind port |
-| `TLS_CERT_PATH` | No | unset | TLS cert path (must be set together with `TLS_KEY_PATH`) |
-| `TLS_KEY_PATH` | No | unset | TLS key path (must be set together with `TLS_CERT_PATH`) |
 | `RUST_LOG` | No | `debug` (dev), `info` (prod) | Log filter |
 | `LOG_FOLDER` | No | `logs` | Log directory |
 | `DAILY_DATABASE_BACKUP` | No | `false` | Enable daily SQLite backup task |
@@ -212,7 +209,7 @@ The server runs the following background tasks:
 **Production mode** (`IS_PROD=true`):
 
 - Emails sent via SMTP (requires email settings)
-- HTTPS-only session cookies
+- Secure session cookies (expects HTTPS via reverse proxy)
 
 ## License
 

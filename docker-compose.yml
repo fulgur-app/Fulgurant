@@ -59,10 +59,6 @@ services:
       - BIND_HOST=0.0.0.0
       - BIND_PORT=3000
 
-      # TLS/HTTPS (optional - uncomment to enable)
-      # - TLS_CERT_PATH=/data/certs/cert.pem
-      # - TLS_KEY_PATH=/data/certs/key.pem
-
       # Logging
       - RUST_LOG=info
       - LOG_FOLDER=/data/logs
@@ -78,8 +74,6 @@ services:
     # Persistent data volume
     volumes:
       - ./data:/data
-      # Optional: mount TLS certificates
-      # - ./certs:/data/certs:ro
 
     # Health check
     healthcheck:

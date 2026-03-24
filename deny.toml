@@ -21,7 +21,7 @@ allow = [
     "0BSD",
     "NCSA",
     "CDLA-Permissive-2.0",
-    "OpenSSL",  # Required by aws-lc-sys (rustls crypto backend)
+    "OpenSSL",  # Required by aws-lc-sys (jsonwebtoken crypto backend)
 ]
 
 # Confidence threshold for license detection (0.0 to 1.0)

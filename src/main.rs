@@ -47,8 +47,6 @@ struct RuntimeConfig {
     can_register: bool,
     share_validity_days: i64,
     max_devices_per_user: i32,
-    tls_cert_path: Option<String>,
-    tls_key_path: Option<String>,
     bind_host: String,
     bind_port: u16,
 }
@@ -231,13 +229,6 @@ fn load_runtime_config() -> anyhow::Result<RuntimeConfig> {
         return Err(anyhow::anyhow!("BIND_HOST cannot be empty"));
     }
     let bind_port = parse_env_i64_bounded("BIND_PORT", DEFAULT_BIND_PORT as i64, 1, 65_535)? as u16;
-    let tls_cert_path = std::env::var("TLS_CERT_PATH").ok();
-    let tls_key_path = std::env::var("TLS_KEY_PATH").ok();
-    if tls_cert_path.is_some() ^ tls_key_path.is_some() {
-        return Err(anyhow::anyhow!(
-            "TLS_CERT_PATH and TLS_KEY_PATH must be set together"
-        ));
-    }
     Ok(RuntimeConfig {
         is_prod,
         database_url,
@@ -247,8 +238,6 @@ fn load_runtime_config() -> anyhow::Result<RuntimeConfig> {
         can_register,
         share_validity_days,
         max_devices_per_user,
-        tls_cert_path,
-        tls_key_path,
         bind_host,
         bind_port,
     })
@@ -342,17 +331,16 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     tracing::info!("API rate limiter: 100 requests per minute per IP");
     tracing::info!("Auth rate limiter: 10 requests per minute per IP");
-    let tls_cert_path = config.tls_cert_path.clone();
-    let tls_key_path = config.tls_key_path.clone();
-    let tls_enabled = tls_cert_path.is_some() && tls_key_path.is_some();
     let session_store = MemoryStore::default();
     let session_layer = SessionManagerLayer::new(session_store)
-        .with_secure(tls_enabled)
+        .with_secure(is_prod)
         .with_expiry(Expiry::OnInactivity(CookieDuration::hours(1)));
-    if tls_enabled {
-        tracing::info!("Session cookies configured with secure flag (HTTPS only)");
+    if is_prod {
+        tracing::info!(
+            "Session cookies configured with secure flag (expects HTTPS via reverse proxy)"
+        );
     } else {
-        tracing::warn!("Session cookies configured without secure flag (HTTP mode)");
+        tracing::info!("Session cookies configured without secure flag (development mode)");
     }
     let app = fulgurant::build_app(&app_state, session_layer);
     let assets_service = ServeDir::new("assets");
@@ -383,38 +371,19 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("Graceful shutdown complete");
     });
 
-    match (tls_cert_path, tls_key_path) {
-        (Some(cert_path), Some(key_path)) => {
-            tracing::info!("TLS enabled - loading certificate and key");
-            tracing::info!("Certificate: {}", cert_path);
-            tracing::info!("Private key: {}", key_path);
-            let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-            let tls_config =
-                axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path)
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to load TLS certificate and key: {}", e)
-                    })?;
-            tracing::info!("Server starting on https://{}", addr);
-            axum_server::bind_rustls(addr, tls_config)
-                .serve(app.into_make_service_with_connect_info::<SocketAddr>())
-                .await?;
-        }
-        _ => {
-            tracing::info!("TLS disabled - running HTTP only");
-            tracing::warn!(
-                "For production, configure TLS_CERT_PATH and TLS_KEY_PATH environment variables"
-            );
-            tracing::info!("Server starting on http://{}", addr);
-            let listener = tokio::net::TcpListener::bind(addr).await?;
-            axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .with_graceful_shutdown(shutdown_signal())
-            .await?;
-        }
+    tracing::info!("Server starting on http://{}", addr);
+    if is_prod {
+        tracing::info!(
+            "Production mode: use a reverse proxy (nginx/Caddy/Traefik) for HTTPS termination"
+        );
     }
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
     Ok(())
 }
 
