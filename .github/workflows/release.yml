@@ -60,14 +60,14 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
-        # Note: only the versioned tag is pushed, not `latest`
-        # Promote to `latest` manually after validation (DockerHub has no native draft concept)
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/fulgurant:${{ needs.validate.outputs.version }}
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/fulgurant:${{ needs.validate.outputs.version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/fulgurant:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -79,8 +79,7 @@ jobs:
           MESSAGE="📦 *Fulgurant Release v${VERSION} - Published*
 
           Docker image pushed to DockerHub (amd64 + arm64)
-          Image: \`${IMAGE}:${VERSION}\`
-          Promote to \`latest\` manually when ready
+          Tags: \`${IMAGE}:${VERSION}\` + \`${IMAGE}:latest\`
 
           *Tag:* \`v${VERSION}\`
           *Commit:* \`${COMMIT_SHA:0:7}\` — ${COMMIT_MSG}
