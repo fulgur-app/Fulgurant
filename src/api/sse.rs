@@ -17,17 +17,10 @@ pub enum ChannelTag {
     DeviceId(String),
 }
 
+/// Lightweight SSE notification: only carries the share id for the client to call `GET /api/shares`
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ShareNotification {
     pub share_id: String,
-    pub source_device_id: String,
-    pub destination_device_id: String,
-    pub file_name: String,
-    pub file_size: i64,
-    pub file_hash: String,
-    pub content: String,
-    pub created_at: String,
-    pub expires_at: String,
 }
 
 /// Type alias for SSE channel manager
@@ -77,7 +70,6 @@ pub async fn handle_sse_connection(
                     tracing::info!(
                         share_id = ?notification.share_id,
                         device_id = ?device_id,
-                        file_name = ?notification.file_name,
                         "Sending share notification via SSE"
                     );
                     match serde_json::to_string(&notification) {
