@@ -208,20 +208,6 @@ pub async fn share_file(
     };
     let notification = ShareNotification {
         share_id: share.id.clone(),
-        source_device_id: share.source_device_id.clone(),
-        destination_device_id: share.destination_device_id.clone(),
-        file_name: share.file_name.clone(),
-        file_size: share.file_size as i64,
-        file_hash: share.file_hash.clone(),
-        content: share.content.clone(),
-        created_at: share
-            .created_at
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_default(),
-        expires_at: share
-            .expires_at
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_default(),
     };
     let tag = ChannelTag::DeviceId(share.destination_device_id.clone());
     state.sse_manager.send_by_tag(&tag, notification).await;
