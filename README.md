@@ -12,6 +12,10 @@ The Admin dashboard (for Admin users only): allows to manage the users (edit the
 
 ![Fulgurant Admin](assets/fulgurant_admin.png)
 
+## Warning
+
+Version 0.5.0 introduces a breaking change in the communication with Fulgur. Make sure you update Fulgur to version 0.6.0+.
+
 ## Features
 
 - User authentication with email verification
@@ -28,11 +32,11 @@ The Admin dashboard (for Admin users only): allows to manage the users (edit the
 ## In the backlog
 
 * More polished Admin interface (accounts creation/edition,...)
-* Docker image
+* ~~Docker image~~ DONE in v0.4.0 [Dockerhub](https://hub.docker.com/r/fulgurapp/fulgurant/tags)
 
 ## Requirements
 
-- Rust 1.90 or later
+- Rust 1.94 or later
 
 ## Build and Run
 
