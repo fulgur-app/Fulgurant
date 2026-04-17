@@ -211,6 +211,7 @@ pub struct SettingsTemplate {
     pub first_name: String,
     pub last_name: String,
     pub csrf_token: String,
+    pub max_file_size_kb: Option<u64>,
 }
 
 /// Update name success message template
@@ -372,4 +373,11 @@ pub struct UserCreationResponseTemplate {
 pub struct UserRowTemplate {
     pub display_user: crate::users::DisplayUser,
     pub user: UserContext,
+}
+
+/// Max file size update success partial template (for HTMX updates).
+#[derive(Template)]
+#[template(path = "partials/admin/max_file_size_success.html")]
+pub struct MaxFileSizeUpdateSuccessTemplate {
+    pub max_file_size_kb: Option<u64>,
 }

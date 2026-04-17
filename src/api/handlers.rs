@@ -3,11 +3,11 @@ use crate::{
     api::sse::{ChannelTag, ShareNotification},
     devices::Device,
     handlers::AppState,
-    shares::{CreateShare, MAX_FILE_SIZE, Share},
+    shares::{CreateShare, Share},
 };
 use axum::{Extension, Json, extract::State, http::StatusCode};
 use fulgur_common::api::{
-    devices::DeviceResponse,
+    devices::{DeviceResponse, DevicesResponse},
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
     sync::{
         AccessTokenResponse, BeginResponse, ErrorResponse, InitialSynchronizationPayload,
@@ -55,12 +55,12 @@ impl From<Device> for DeviceResponse {
 /// - `auth_user`: The authenticated user
 ///
 /// ### Returns
-/// - `Ok(Json(Vec<DeviceResponse>))`: The response containing the devices
+/// - `Ok(Json(DevicesResponse))`: The response wrapping the devices list and the server maximum share file size
 /// - `Err((StatusCode, Json(ErrorResponse)))`: The error response if the devices retrieval fails
 pub async fn get_devices(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthenticatedUser>,
-) -> Result<Json<Vec<DeviceResponse>>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<DevicesResponse>, (StatusCode, Json<ErrorResponse>)> {
     let devices: Vec<Device> = match state
         .device_repository
         .get_all_for_user(auth_user.user.id)
@@ -82,8 +82,11 @@ pub async fn get_devices(
     };
     let device_responses: Vec<DeviceResponse> =
         devices.into_iter().map(DeviceResponse::from).collect();
-
-    Ok(Json(device_responses))
+    let max_file_size_bytes = *state.max_file_size_bytes.read().await;
+    Ok(Json(DevicesResponse {
+        devices: device_responses,
+        max_file_size_bytes,
+    }))
 }
 
 /// POST /api/share - Create a new share for a destination device
@@ -102,13 +105,15 @@ pub async fn share_file(
     Json(payload): Json<ShareFilePayload>,
 ) -> Result<Json<ShareFileResponse>, (StatusCode, Json<ErrorResponse>)> {
     let file_size = payload.content.len();
-    if file_size > MAX_FILE_SIZE {
+    if let Some(max_size) = *state.max_file_size_bytes.read().await
+        && file_size > max_size as usize
+    {
         return Err((
-            StatusCode::BAD_REQUEST,
+            StatusCode::PAYLOAD_TOO_LARGE,
             Json(ErrorResponse {
                 error: format!(
-                    "File size ({} bytes) exceeds maximum of {} bytes (1 MB)",
-                    file_size, MAX_FILE_SIZE
+                    "File size ({} bytes) exceeds maximum of {} bytes",
+                    file_size, max_size
                 ),
             }),
         ));
@@ -371,10 +376,11 @@ pub async fn begin(
         auth_user.device_id,
         shares.len()
     );
-
+    let max_file_size_bytes = *state.max_file_size_bytes.read().await;
     Ok(Json(BeginResponse {
         device_name: auth_user.device_name,
         shares,
+        max_file_size_bytes,
     }))
 }
 

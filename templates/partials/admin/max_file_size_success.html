@@ -1,0 +1,44 @@
+<div role="alert" class="alert alert-success mb-4">
+	<span>
+		Maximum share file size updated to
+		{% match max_file_size_kb %}
+		{% when Some with (kb) %}
+		{{ kb }} KB
+		{% when None %}
+		no limit
+		{% endmatch %}.
+	</span>
+</div>
+<form
+	hx-post="/admin/settings/max-file-size"
+	hx-target="#max-file-size-container"
+	hx-swap="innerHTML"
+	x-data="{ noLimit: {{ max_file_size_kb.is_none() }} }"
+>
+	<label class="label mb-1">Maximum share file size (KB)</label>
+	<div class="flex items-center gap-4">
+		<input
+			type="number"
+			name="max_file_size_kb"
+			value="{% match max_file_size_kb %}{% when Some with (kb) %}{{ kb }}{% when None %}1024{% endmatch %}"
+			min="1"
+			class="input input-bordered flex-1"
+			:disabled="noLimit"
+		/>
+		<label class="label cursor-pointer gap-2 ml-auto">
+			<span class="label-text">No limit</span>
+			<input
+				type="checkbox"
+				name="no_limit"
+				value="on"
+				class="checkbox"
+				x-model="noLimit"
+				{% match max_file_size_kb %}{% when None %}checked{% when Some with (_) %}{% endmatch %}
+			/>
+		</label>
+	</div>
+	<p class="text-sm text-base-content/60 mt-2">Minimum: 1 KB</p>
+	<div class="flex justify-end w-full">
+		<button type="submit" class="btn btn-primary mt-4">Save</button>
+	</div>
+</form>

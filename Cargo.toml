@@ -33,7 +33,7 @@ argon2 = "0.5.3"
 sha2 = "0.10.9"
 
 # Types
-fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.3.0" }
+fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.4.0" }
 
 # Database
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "postgres", "migrate", "time", "macros"] }

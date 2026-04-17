@@ -1,6 +1,6 @@
 use dotenvy::dotenv;
 use fulgurant::{
-    api, database_backup, db, devices, handlers, logging, mail, shares, users,
+    api, database_backup, db, devices, handlers, logging, mail, settings, shares, users,
     users::UserRepository, verification_code,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -36,7 +36,6 @@ const MAX_SHARE_VALIDITY_DAYS: i64 = 30;
 const DEFAULT_MAX_DEVICES_PER_USER: i32 = 99;
 const MIN_MAX_DEVICES_PER_USER: i32 = 0;
 const MAX_MAX_DEVICES_PER_USER: i32 = 10_000;
-
 /// Runtime configuration loaded from environment variables with validation.
 struct RuntimeConfig {
     is_prod: bool,
@@ -292,6 +291,7 @@ async fn main() -> anyhow::Result<()> {
     let verification_code_repository =
         verification_code::VerificationCodeRepository::new(pool.clone());
     let share_repository = shares::ShareRepository::new(pool.clone());
+    let settings_repository = settings::SettingsRepository::new(pool.clone());
     let has_admin = user_repository.has_admin().await?;
     let setup_needed = !has_admin;
     if setup_needed {
@@ -312,11 +312,19 @@ async fn main() -> anyhow::Result<()> {
         jwt_expiry_seconds,
         jwt_expiry_seconds / 60
     );
+    let max_file_size_bytes = settings_repository.get_max_file_size_bytes().await?;
+    tracing::info!(
+        "Max file size for sharing: {}",
+        max_file_size_bytes
+            .map(|b| format!("{} bytes", b))
+            .unwrap_or_else(|| "no limit".to_string())
+    );
     let app_state = handlers::AppState {
         device_repository,
         user_repository,
         verification_code_repository,
         share_repository,
+        settings_repository,
         mailer: Arc::new(mail::Mailer::new(is_prod)?),
         is_prod,
         can_register: config.can_register,
@@ -327,6 +335,7 @@ async fn main() -> anyhow::Result<()> {
         sse_heartbeat_seconds,
         jwt_secret,
         jwt_expiry_seconds,
+        max_file_size_bytes: Arc::new(tokio::sync::RwLock::new(max_file_size_bytes)),
     };
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     tracing::info!("API rate limiter: 100 requests per minute per IP");
