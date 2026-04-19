@@ -26,6 +26,7 @@ pub mod handlers;
 pub mod logging;
 pub mod mail;
 pub mod session;
+pub mod settings;
 pub mod shares;
 pub mod templates;
 pub mod users;
@@ -163,6 +164,10 @@ fn make_admin_routes(app_state: &handlers::AppState) -> Router<handlers::AppStat
     Router::new()
         .route("/admin", get(admin::handlers::get_admin))
         .route("/admin/users/search", get(admin::handlers::search_users))
+        .route(
+            "/admin/settings/max-file-size",
+            post(admin::handlers::update_max_file_size),
+        )
         .route(
             "/user/{id}/change-role",
             post(admin::handlers::change_user_role),

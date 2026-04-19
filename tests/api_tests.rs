@@ -8,7 +8,7 @@ use common::{
     test_app::TestApp,
 };
 use fulgur_common::api::{
-    devices::DeviceResponse,
+    devices::DevicesResponse,
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
     sync::{AccessTokenResponse, BeginResponse, ErrorResponse, PingResponse},
 };
@@ -318,12 +318,14 @@ async fn test_get_devices_excludes_current() {
         .add_header(AUTHORIZATION, bearer(&jwt))
         .await;
 
-    let devices: Vec<DeviceResponse> = response.json();
+    let body: DevicesResponse = response.json();
+    let devices = body.devices;
     assert_eq!(devices.len(), 1);
     assert_eq!(devices[0].id, other_device_id);
     assert_eq!(devices[0].name, "Other Device");
     // Verify the auth device is excluded
     assert!(devices.iter().all(|d| d.id != auth_device_id));
+    assert_eq!(body.max_file_size_bytes, Some(1_048_576));
 }
 
 #[tokio::test]
@@ -337,8 +339,9 @@ async fn test_get_devices_empty_when_single_device() {
         .add_header(AUTHORIZATION, bearer(&jwt))
         .await;
 
-    let devices: Vec<DeviceResponse> = response.json();
-    assert!(devices.is_empty());
+    let body: DevicesResponse = response.json();
+    assert!(body.devices.is_empty());
+    assert_eq!(body.max_file_size_bytes, Some(1_048_576));
 }
 
 #[tokio::test]
@@ -366,7 +369,7 @@ async fn test_get_devices_returns_deterministic_newest_first_order() {
         .add_header(AUTHORIZATION, bearer(&jwt))
         .await;
 
-    let devices: Vec<DeviceResponse> = response.json();
+    let devices = response.json::<DevicesResponse>().devices;
     assert_eq!(devices.len(), 2);
     assert_eq!(devices[0].name, "Newer Device");
     assert_eq!(devices[1].name, "Older Device");
@@ -447,7 +450,7 @@ async fn test_share_file_exceeds_max_size() {
         .expect_failure()
         .await;
 
-    response.assert_status_bad_request();
+    response.assert_status(StatusCode::PAYLOAD_TOO_LARGE);
     let body: ErrorResponse = response.json();
     assert!(body.error.contains("exceeds maximum"));
 }

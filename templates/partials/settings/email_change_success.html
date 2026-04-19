@@ -10,8 +10,10 @@
       hx-swap="innerHTML">
     <label class="label">Email</label>
     <input type="email" name="email" value="{{ email }}" required class="input input-bordered w-full">
-    <button type="submit" class="btn btn-primary mt-4">Update Email</button>
     <p class="text-sm text-base-content/60 mt-2">
         Changing your email will require verification. A 6-digit code will be sent to your new email address.
     </p>
+    <div class="flex justify-end w-full">
+        <button type="submit" class="btn btn-primary mt-4">Update Email</button>
+    </div>
 </form>

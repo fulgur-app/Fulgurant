@@ -14,9 +14,6 @@ use crate::utils::format_datetime_utc;
 // Default validity period for shares (3 days)
 pub const SHARE_VALIDITY_DAYS: i64 = 3;
 
-// Max file size: 1 MB
-pub const MAX_FILE_SIZE: usize = 1_048_576; // 1 MB in bytes
-
 pub fn get_share_validity_days() -> i64 {
     std::env::var("SHARE_VALIDITY_DAYS")
         .unwrap_or(SHARE_VALIDITY_DAYS.to_string())
@@ -345,8 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn test_file_size_constants() {
-        assert_eq!(MAX_FILE_SIZE, 1_048_576);
+    fn test_share_validity_days_constant() {
         assert_eq!(SHARE_VALIDITY_DAYS, 3);
     }
 }

@@ -16,6 +16,8 @@ use crate::{
     utils::{generate_valid_password, is_valid_email},
 };
 
+const MIN_MAX_FILE_SIZE_BYTES: u64 = 1_024; // 1 KB
+
 #[derive(Deserialize)]
 pub struct UserSearchParams {
     #[serde(default)]
@@ -356,5 +358,53 @@ pub async fn create_user_from_admin(
         display_user: new_user.into(),
         user: templates::UserContext::from(&user),
     };
+    Ok(Html(template.render()?))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateMaxFileSizeRequest {
+    no_limit: Option<String>,
+    max_file_size_kb: Option<u64>,
+}
+
+/// POST /admin/settings/max-file-size - Update the maximum share file size
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+/// - `request`: The form data (`no_limit` checkbox and `max_file_size_kb` number)
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The updated settings partial as formatted HTML
+/// - `Err(AppError)`: Error that occurred while updating the setting
+pub async fn update_max_file_size(
+    State(state): State<AppState>,
+    session: Session,
+    Form(request): Form<UpdateMaxFileSizeRequest>,
+) -> Result<Html<String>, AppError> {
+    let _user_id = session::get_session_user_id(&session).await?;
+    let new_value: Option<u64> = if request.no_limit.as_deref() == Some("on") {
+        None
+    } else {
+        let kb = request.max_file_size_kb.unwrap_or(1024);
+        let kb = kb.max(MIN_MAX_FILE_SIZE_BYTES / 1024);
+        Some(kb * 1024)
+    };
+    state
+        .settings_repository
+        .update_max_file_size_bytes(new_value)
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to update max file size: {}", e))
+        })?;
+    *state.max_file_size_bytes.write().await = new_value;
+    tracing::info!(
+        "Admin updated max file size to {:?}",
+        new_value
+            .map(|b| format!("{} bytes", b))
+            .unwrap_or_else(|| "no limit".to_string())
+    );
+    let max_file_size_kb = new_value.map(|b| b / 1024);
+    let template = templates::MaxFileSizeUpdateSuccessTemplate { max_file_size_kb };
     Ok(Html(template.render()?))
 }

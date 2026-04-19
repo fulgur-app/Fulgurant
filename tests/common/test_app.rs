@@ -1,7 +1,7 @@
 use axum_test::TestServer;
 use fulgurant::{
     api::sse::SseChannelManager, db::DbPool, devices::DeviceRepository, handlers::AppState,
-    mail::Mailer, shares::ShareRepository, users::UserRepository,
+    mail::Mailer, settings::SettingsRepository, shares::ShareRepository, users::UserRepository,
     verification_code::VerificationCodeRepository,
 };
 use sqlx::SqlitePool;
@@ -88,6 +88,7 @@ impl TestApp {
             user_repository: UserRepository::new(db_pool.clone()),
             verification_code_repository: VerificationCodeRepository::new(db_pool.clone()),
             share_repository: ShareRepository::new(db_pool.clone()),
+            settings_repository: SettingsRepository::new(db_pool.clone()),
             mailer: Arc::new(Mailer::new(false).unwrap()),
             is_prod: false,
             can_register: opts.can_register,
@@ -98,6 +99,7 @@ impl TestApp {
             sse_heartbeat_seconds: 30,
             jwt_secret: jwt_secret.clone(),
             jwt_expiry_seconds: 900,
+            max_file_size_bytes: Arc::new(tokio::sync::RwLock::new(Some(1_048_576))),
         };
 
         let session_store = MemoryStore::default();

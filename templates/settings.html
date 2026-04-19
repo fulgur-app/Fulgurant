@@ -34,15 +34,19 @@
 								/>
 							</div>
 						</div>
-						<button type="submit" class="btn btn-primary mt-4">Save Changes</button>
+						<div class="flex justify-end w-full">
+							<button type="submit" class="btn btn-primary mt-4">Update Name</button>
+						</div>
 					</form>
 				</div>
 			</div>
 
-			<div class="divider"></div>
-
 			<div class="mb-8">
 				<h3 class="text-lg font-semibold mb-4">Email Address</h3>
+				<p class="text-sm text-base-content/60 mb-4">
+					Changing your email will require verification. A 6-digit code will be sent to
+					your new email address.
+				</p>
 				<div id="email-update-container">
 					<form
 						hx-post="/settings/update-email"
@@ -57,16 +61,12 @@
 							required
 							class="input input-bordered w-full"
 						/>
-						<button type="submit" class="btn btn-primary mt-4">Update Email</button>
-						<p class="text-sm text-base-content/60 mt-2">
-							Changing your email will require verification. A 6-digit code will be
-							sent to your new email address.
-						</p>
+						<div class="flex justify-end w-full">
+							<button type="submit" class="btn btn-primary mt-4">Update Email</button>
+						</div>
 					</form>
 				</div>
 			</div>
-
-			<div class="divider"></div>
 
 			<div class="mb-4">
 				<h3 class="text-lg font-semibold mb-4">Password</h3>
@@ -75,12 +75,75 @@
 					the login page. This ensures your account remains secure by verifying your email
 					address.
 				</p>
-				<div>
+				<div class="flex justify-end w-full">
 					<form hx-post="/logout" hx-swap="none">
-						<button type="submit" class="btn btn-ghost">Log Out</button>
+						<button type="submit" class="btn btn-primary">Log Out</button>
 					</form>
 				</div>
 			</div>
+		</div>
+
+		{% if user.is_admin() %}
+		<div class="divider mb-4"></div>
+		<div class="card-body">
+			<h2 class="card-title text-2xl">Server Settings</h2>
+
+			<div class="mb-4">
+				<p class="text-sm text-base-content/60 mb-6">
+					Admin-only settings that apply to all users.
+				</p>
+
+				<h4 class="text-lg font-semibold mb-4">File Sharing</h4>
+				<div id="max-file-size-container">
+					<form
+						hx-post="/admin/settings/max-file-size"
+						hx-target="#max-file-size-container"
+						hx-swap="innerHTML"
+						x-data="{ noLimit: {{ max_file_size_kb.is_none() }} }"
+					>
+						<label class="label mb-1">Maximum share file size (KB)</label>
+						<div class="flex items-center gap-4">
+							<input
+								type="number"
+								name="max_file_size_kb"
+								value="{% match max_file_size_kb %}{% when Some with (kb) %}{{ kb }}{% when None %}1024{% endmatch %}"
+								min="1"
+								class="input input-bordered flex-1"
+								:disabled="noLimit"
+							/>
+							<label class="label cursor-pointer gap-2 ml-auto">
+								<span class="label-text">No limit</span>
+								<input
+									type="checkbox"
+									name="no_limit"
+									value="on"
+									class="checkbox"
+									x-model="noLimit"
+									{%
+									match
+									max_file_size_kb
+									%}{%
+									when
+									None
+									%}checked{%
+									when
+									Some
+									with
+									(_)
+									%}{%
+									endmatch
+									%}
+								/>
+							</label>
+						</div>
+						<p class="text-sm text-base-content/60 mt-2">Minimum: 1 KB</p>
+						<div class="flex justify-end w-full">
+							<button type="submit" class="btn btn-primary mt-4">Save</button>
+						</div>
+					</form>
+				</div>
+			</div>
+			{% endif %}
 		</div>
 	</div>
 </div>

@@ -7,6 +7,7 @@ use axum::{
 };
 use std::collections::HashMap;
 use std::sync::{Arc, atomic::AtomicBool};
+use tokio::sync::RwLock;
 use tower_sessions::Session;
 
 use crate::{
@@ -20,6 +21,7 @@ use crate::{
     logging::sanitize_for_log,
     mail,
     session::{self},
+    settings::SettingsRepository,
     shares::{DisplayShare, ShareRepository},
     templates::{self},
     users::{MAX_NAME_LEN, UserRepository},
@@ -32,6 +34,7 @@ pub struct AppState {
     pub user_repository: UserRepository,
     pub verification_code_repository: VerificationCodeRepository,
     pub share_repository: ShareRepository,
+    pub settings_repository: SettingsRepository,
     pub mailer: Arc<mail::Mailer>,
     pub is_prod: bool,
     pub can_register: bool,
@@ -42,6 +45,9 @@ pub struct AppState {
     pub sse_heartbeat_seconds: u64,
     pub jwt_secret: String,
     pub jwt_expiry_seconds: i64,
+    /// Maximum share file size in bytes. `None` means no limit.
+    /// Wrapped in Arc<RwLock<>> to allow live updates from the admin settings page.
+    pub max_file_size_bytes: Arc<RwLock<Option<u64>>>,
 }
 
 /// Fallback handler for 404 Not Found
@@ -443,12 +449,15 @@ pub async fn get_settings(
         .map_err(|e| {
             AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
         })?;
+    let max_file_size_bytes = *state.max_file_size_bytes.read().await;
+    let max_file_size_kb = max_file_size_bytes.map(|b| b / 1024);
     let template = templates::SettingsTemplate {
         user: templates::UserContext::from(&user),
         email: user.email,
         first_name: user.first_name,
         last_name: user.last_name,
         csrf_token,
+        max_file_size_kb,
     };
     Ok(Html(template.render()?))
 }
