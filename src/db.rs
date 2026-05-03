@@ -1,7 +1,7 @@
 use sqlx::{Pool, Postgres, Sqlite};
 
-/// Database connection pool supporting SQLite and PostgreSQL backends.
-/// Auto-detected from DATABASE_URL scheme at startup.
+/// Database connection pool supporting `SQLite` and `PostgreSQL` backends.
+/// Auto-detected from `DATABASE_URL` scheme at startup.
 #[derive(Clone)]
 pub enum DbPool {
     Sqlite(Pool<Sqlite>),
@@ -25,7 +25,7 @@ impl DbPool {
     }
 }
 
-/// Convert `?` placeholders to `$1, $2, ...` for PostgreSQL.
+/// Convert `?` placeholders to `$1, $2, ...` for `PostgreSQL`.
 /// Only operates on `?` characters outside of quoted strings.
 pub fn pg_params(sql: &str) -> String {
     let mut result = String::with_capacity(sql.len() + 16);
@@ -54,7 +54,7 @@ pub fn pg_params(sql: &str) -> String {
 // Dual-SQL variants: use different SQL per backend (for timestamps, RETURNING, etc.)
 // ============================================================================
 
-/// Execute a query, returning `Result<u64, sqlx::Error>` (rows_affected)
+/// Execute a query, returning `Result<u64, sqlx::Error>` (`rows_affected`)
 #[macro_export]
 macro_rules! db_execute {
     ($pool:expr, $sql:expr $(, $bind:expr)*) => {{

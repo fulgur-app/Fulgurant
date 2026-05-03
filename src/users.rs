@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 
 pub const MAX_NAME_LEN: usize = 50;
 
-/// Escapes SQLite LIKE wildcards (`%`, `_`, `\`) in a search term.
+/// Escapes `SQLite` LIKE wildcards (`%`, `_`, `\`) in a search term.
 /// Must be used together with `LIKE ? ESCAPE '\'` in the SQL clause.
 fn escape_like(s: &str) -> String {
     s.replace('\\', "\\\\")
@@ -33,7 +33,7 @@ pub struct User {
     pub updated_at: OffsetDateTime,
 }
 
-/// Public-facing User struct that excludes sensitive information (password_hash, encryption_key)
+/// Public-facing User struct that excludes sensitive information (`password_hash`, `encryption_key`)
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct DisplayUser {
     pub id: i32,
@@ -86,10 +86,10 @@ impl DisplayUser {
         }
     }
 
-    /// Get the pretty value of the email_verified field. Used in the templates.
+    /// Get the pretty value of the `email_verified` field. Used in the templates.
     ///
     /// ### Returns
-    /// - `String`: The pretty value of the email_verified field
+    /// - `String`: The pretty value of the `email_verified` field
     pub fn is_email_verified(&self) -> String {
         if self.email_verified {
             "Yes".to_string()
@@ -98,10 +98,10 @@ impl DisplayUser {
         }
     }
 
-    /// Get the pretty value of the force_password_update field. Used in the templates.
+    /// Get the pretty value of the `force_password_update` field. Used in the templates.
     ///
     /// ### Returns
-    /// - `String`: "Yes" if force_password_update is true, "No" otherwise
+    /// - `String`: "Yes" if `force_password_update` is true, "No" otherwise
     pub fn is_force_password_update(&self) -> String {
         if self.force_password_update {
             "Yes".to_string()
@@ -111,13 +111,13 @@ impl DisplayUser {
     }
 }
 impl From<User> for DisplayUser {
-    /// Convert a User to a DisplayUser
+    /// Convert a User to a `DisplayUser`
     ///
     /// ### Arguments
     /// - `user`: The User to convert
     ///
     /// ### Returns
-    /// - `DisplayUser`: The DisplayUser
+    /// - `DisplayUser`: The `DisplayUser`
     fn from(user: User) -> Self {
         Self {
             id: user.id,
@@ -164,7 +164,7 @@ impl UserRepository {
     /// Create a new user repository
     ///
     /// ### Arguments
-    /// - `pool`: The database pool (SQLite or PostgreSQL)
+    /// - `pool`: The database pool (`SQLite` or `PostgreSQL`)
     ///
     /// ### Returns
     /// - `UserRepository`: The user repository
@@ -280,14 +280,14 @@ impl UserRepository {
         Ok(())
     }
 
-    /// Update the password and clear the force_password_update flag in a single operation
+    /// Update the password and clear the `force_password_update` flag in a single operation
     ///
     /// ### Arguments
     /// - `id`: The ID of the user
     /// - `password_hash`: The new password hash
     ///
     /// ### Returns
-    /// - `Ok(())`: The password was updated and force_password_update was cleared
+    /// - `Ok(())`: The password was updated and `force_password_update` was cleared
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn update_password_and_clear_force_update(
         &self,
@@ -303,7 +303,7 @@ impl UserRepository {
         Ok(())
     }
 
-    /// Toggle the force_password_update flag for a user
+    /// Toggle the `force_password_update` flag for a user
     ///
     /// ### Arguments
     /// - `id`: The ID of the user
@@ -652,13 +652,13 @@ impl UserRepository {
         Ok(user.into())
     }
 
-    /// Update user's last_activity to current timestamp
+    /// Update user's `last_activity` to current timestamp
     ///
     /// ### Arguments
     /// - `id`: The ID of the user
     ///
     /// ### Returns
-    /// - `Ok(())`: The result of the operation if the last_activity was updated successfully
+    /// - `Ok(())`: The result of the operation if the `last_activity` was updated successfully
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn update_last_activity(&self, id: i32) -> Result<(), sqlx::Error> {
         db_execute_dual!(
@@ -691,7 +691,7 @@ impl UserRepository {
         )
     }
 
-    /// Increment user's shares count and update last_activity
+    /// Increment user's shares count and update `last_activity`
     ///
     /// ### Arguments
     /// - `id`: The ID of the user

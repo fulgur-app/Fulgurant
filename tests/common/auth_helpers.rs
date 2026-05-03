@@ -15,7 +15,7 @@ struct LoginFormData<'a> {
 /// Create a verified user directly in the database
 ///
 /// ### Arguments
-/// - `pool`: The SQLite connection pool
+/// - `pool`: The `SQLite` connection pool
 /// - `email`: The user's email address
 /// - `password`: The user's plaintext password (will be hashed)
 ///
@@ -44,10 +44,10 @@ pub async fn create_verified_user(pool: &SqlitePool, email: &str, password: &str
 /// insert an admin user into the test database.
 ///
 /// ### Arguments
-/// - `pool`: The SQLite connection pool
+/// - `pool`: The `SQLite` connection pool
 ///
 /// ### Returns
-/// - `(user_id, email, password)` — the created admin's ID and fixed credentials
+/// - `(user_id, email, password)` - the created admin's ID and fixed credentials
 #[allow(dead_code)]
 pub async fn create_admin_user(pool: &SqlitePool) -> (i32, String, String) {
     let email = "admin2@test.com".to_string();
@@ -70,7 +70,7 @@ pub async fn create_admin_user(pool: &SqlitePool) -> (i32, String, String) {
 /// Create a verified user with `force_password_update = true` directly in the database
 ///
 /// ### Arguments
-/// - `pool`: The SQLite connection pool
+/// - `pool`: The `SQLite` connection pool
 /// - `email`: The user's email address
 /// - `password`: The user's plaintext password (will be hashed)
 ///
@@ -119,10 +119,10 @@ pub async fn login(server: &TestServer, email: &str, password: &str) {
 ///
 /// ### Arguments
 /// - `server`: The test server instance (must have `save_cookies` enabled)
-/// - `pool`: The SQLite connection pool
+/// - `pool`: The `SQLite` connection pool
 ///
 /// ### Returns
-/// - `(user_id, email, password)` — the admin's ID and fixed credentials
+/// - `(user_id, email, password)` - the admin's ID and fixed credentials
 #[allow(dead_code)]
 pub async fn login_as_admin(server: &TestServer, pool: &SqlitePool) -> (i32, String, String) {
     let (id, email, password) = create_admin_user(pool).await;

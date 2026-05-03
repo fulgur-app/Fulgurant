@@ -87,7 +87,7 @@ pub fn generate_valid_password() -> String {
 /// Format timestamp as YYYY-MM-DD HH:MM:SS UTC
 ///
 /// ### Arguments
-/// - `dt`: The OffsetDateTime to format
+/// - `dt`: The `OffsetDateTime` to format
 ///
 /// ### Returns
 /// - Formatted string in the format "YYYY-MM-DD HH:MM:SS"
@@ -107,7 +107,7 @@ pub fn format_datetime_utc(dt: &OffsetDateTime) -> String {
 /// Format timestamp as YYYY-MM-DD UTC
 ///
 /// ### Arguments
-/// - `dt`: The OffsetDateTime to format
+/// - `dt`: The `OffsetDateTime` to format
 ///
 /// ### Returns
 /// - Formatted string in the format "YYYY-MM-DD"

@@ -12,7 +12,7 @@ use crate::session;
 
 /// Middleware that requires authentication
 ///
-/// Checks for a valid session with a user_id. If the user has the force_password_update
+/// Checks for a valid session with a `user_id`. If the user has the `force_password_update`
 /// flag set in their session, they are redirected to /force-password-update for all
 /// paths except /force-password-update, /logout, and static assets.
 ///

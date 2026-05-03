@@ -14,7 +14,7 @@ use sqlx::SqlitePool;
 /// Create a device for a user directly in the database
 ///
 /// ### Arguments
-/// - `pool`: The SQLite connection pool
+/// - `pool`: The `SQLite` connection pool
 /// - `user_id`: The ID of the user who owns the device
 /// - `name`: Human-readable device name
 ///
@@ -78,7 +78,7 @@ pub async fn get_jwt_token(server: &TestServer, email: &str, api_key: &str) -> S
 /// Full API user setup: create user + device + generate JWT directly
 ///
 /// ### Arguments
-/// - `pool`: The SQLite connection pool
+/// - `pool`: The `SQLite` connection pool
 /// - `jwt_secret`: The JWT signing secret used to generate the access token
 ///
 /// ### Returns

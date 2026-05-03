@@ -173,7 +173,7 @@ pub struct ForcePasswordUpdateRequest {
     password: String,
 }
 
-/// POST /force-password-update - Updates the password and clears the force_password_update flag
+/// POST /force-password-update - Updates the password and clears the `force_password_update` flag
 ///
 /// ### Arguments
 /// - `state`: The state of the application

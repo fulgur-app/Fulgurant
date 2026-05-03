@@ -88,7 +88,7 @@ pub async fn get_admin(
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `session`: The session
-/// - `params`: The search parameters (email, first_name, last_name, role, page, page_size)
+/// - `params`: The search parameters (email, `first_name`, `last_name`, role, page, `page_size`)
 ///
 /// ### Returns
 /// - `Ok(Html<String>)`: The user list partial as formatted HTML
@@ -158,7 +158,7 @@ pub async fn change_user_role(
     Ok(Html(template.render()?))
 }
 
-/// POST /user/{id}/toggle-force-password-update - Toggle the force_password_update flag for a user
+/// POST /user/{id}/toggle-force-password-update - Toggle the `force_password_update` flag for a user
 ///
 /// ### Arguments
 /// - `state`: The state of the application

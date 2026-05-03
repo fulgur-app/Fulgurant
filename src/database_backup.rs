@@ -23,7 +23,7 @@ pub fn is_daily_backup_enabled() -> bool {
 
 /// Validate that a path contains only safe characters for SQL interpolation
 ///
-/// Since SQLite's VACUUM INTO doesn't support parameterized queries, we must
+/// Since `SQLite`'s VACUUM INTO doesn't support parameterized queries, we must
 /// sanitize the path manually to prevent SQL injection.
 ///
 /// ### Arguments
@@ -41,10 +41,10 @@ fn validate_backup_path(path: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Perform a database backup using SQLite's VACUUM INTO command
+/// Perform a database backup using `SQLite`'s VACUUM INTO command
 ///
 /// ### Arguments
-/// - `pool`: The SQLite connection pool
+/// - `pool`: The `SQLite` connection pool
 ///
 /// ### Returns
 /// - `Ok(PathBuf)`: Path to the created backup file
@@ -73,7 +73,7 @@ pub async fn perform_backup(pool: &SqlitePool) -> anyhow::Result<PathBuf> {
 }
 
 /// Create a background task that performs daily database backups.
-/// Only supported for SQLite. PostgreSQL users should use pg_dump instead.
+/// Only supported for `SQLite`. `PostgreSQL` users should use `pg_dump` instead.
 ///
 /// ### Arguments
 /// - `pool`: The database pool

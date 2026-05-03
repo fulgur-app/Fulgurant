@@ -107,7 +107,7 @@ impl DeviceRepository {
     /// Create a new device repository
     ///
     /// ### Arguments
-    /// - `pool`: The database pool (SQLite or PostgreSQL)
+    /// - `pool`: The database pool (`SQLite` or `PostgreSQL`)
     ///
     /// ### Returns
     /// - `DeviceRepository`: The device repository

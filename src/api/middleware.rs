@@ -62,12 +62,12 @@ fn redact_headers_for_log(headers: &HeaderMap) -> Vec<(String, String)> {
 /// ### Description
 /// This middleware validates JWT access tokens in the Authorization header:
 /// 1. Extracts JWT from Authorization header
-/// 2. Validates JWT signature and expiry using JWT_SECRET
-/// 3. Extracts claims (user_id, device_id, device_name)
-/// 4. Loads User record from database by user_id
-/// 5. Loads Device record from database by device_id
+/// 2. Validates JWT signature and expiry using `JWT_SECRET`
+/// 3. Extracts claims (`user_id`, `device_id`, `device_name`)
+/// 4. Loads User record from database by `user_id`
+/// 5. Loads Device record from database by `device_id`
 /// 6. Verifies the device belongs to the user and is not expired
-/// 7. Injects AuthenticatedUser into request extensions
+/// 7. Injects `AuthenticatedUser` into request extensions
 ///
 /// ### Arguments
 /// - `state`: The state of the application

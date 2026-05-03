@@ -89,7 +89,7 @@ impl VerificationCodeRepository {
     /// Create a new verification code repository
     ///
     /// ### Arguments
-    /// - `pool`: The database pool (SQLite or PostgreSQL)
+    /// - `pool`: The database pool (`SQLite` or `PostgreSQL`)
     ///
     /// ### Returns
     /// - `VerificationCodeRepository`: The verification code repository

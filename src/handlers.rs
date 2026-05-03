@@ -46,7 +46,7 @@ pub struct AppState {
     pub jwt_secret: String,
     pub jwt_expiry_seconds: i64,
     /// Maximum share file size in bytes. `None` means no limit.
-    /// Wrapped in Arc<RwLock<>> to allow live updates from the admin settings page.
+    /// Wrapped in Arc<`RwLock`<>> to allow live updates from the admin settings page.
     pub max_file_size_bytes: Arc<RwLock<Option<u64>>>,
 }
 
@@ -122,7 +122,7 @@ pub async fn index(
     Ok(Html(template.render()?))
 }
 
-/// POST /device/{user_id}/create - Creates a new device
+/// POST /`device/{user_id}/create` - Creates a new device
 ///
 /// ### Arguments
 /// - `state`: The state of the application

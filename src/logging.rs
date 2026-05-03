@@ -34,7 +34,7 @@ pub fn sanitize_for_log(input: &str) -> String {
 /// - Appends to existing file if restarting on the same day
 /// - In development mode: logs to both file and stdout with pretty formatting
 /// - In production mode: logs to file only with compact formatting
-/// - Respects RUST_LOG environment variable for filtering
+/// - Respects `RUST_LOG` environment variable for filtering
 ///
 /// ### Arguments
 /// * `log_folder`: Path to the folder where log files will be stored

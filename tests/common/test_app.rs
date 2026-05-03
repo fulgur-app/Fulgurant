@@ -42,7 +42,7 @@ impl TestApp {
     /// Create a test app with default options (registration enabled, setup done)
     ///
     /// ### Returns
-    /// - `TestApp` with an in-memory SQLite database and all migrations applied
+    /// - `TestApp` with an in-memory `SQLite` database and all migrations applied
     pub async fn new() -> Self {
         Self::with_options(TestAppOptions::default()).await
     }
@@ -66,7 +66,7 @@ impl TestApp {
     /// - `opts`: Configuration options controlling registration, setup state, and device limits
     ///
     /// ### Returns
-    /// - `TestApp` with an in-memory SQLite database, all migrations applied, and the given options
+    /// - `TestApp` with an in-memory `SQLite` database, all migrations applied, and the given options
     pub async fn with_options(opts: TestAppOptions) -> Self {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)

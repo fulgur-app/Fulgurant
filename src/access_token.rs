@@ -5,7 +5,7 @@ use time::{Duration, OffsetDateTime};
 /// JWT claims structure for access tokens
 ///
 /// ### Fields
-/// - `sub`: Subject (user_id as string)
+/// - `sub`: Subject (`user_id` as string)
 /// - `device_id`: UUID of the authenticated device
 /// - `device_name`: Human-readable device name
 /// - `exp`: Expiration timestamp (Unix epoch)

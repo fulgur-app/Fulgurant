@@ -7,7 +7,7 @@ pub struct SettingsRepository {
 }
 
 impl SettingsRepository {
-    /// Create a new SettingsRepository
+    /// Create a new `SettingsRepository`
     ///
     /// ### Arguments
     /// - `pool`: The database connection pool

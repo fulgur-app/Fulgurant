@@ -15,7 +15,7 @@ pub struct UserContext {
 }
 
 impl UserContext {
-    /// Create a new UserContext
+    /// Create a new `UserContext`
     ///
     /// ### Arguments
     /// - `user_id`: The ID of the user
@@ -23,7 +23,7 @@ impl UserContext {
     /// - `role`: The role of the user
     ///
     /// ### Returns
-    /// - `UserContext`: The UserContext
+    /// - `UserContext`: The `UserContext`
     pub fn new(user_id: i32, first_name: String, role: String, shares: i32) -> Self {
         Self {
             user_id,
@@ -43,13 +43,13 @@ impl UserContext {
 }
 
 impl From<&User> for UserContext {
-    /// Convert a User reference into a UserContext
+    /// Convert a User reference into a `UserContext`
     ///
     /// ### Arguments
     /// - `user`: The User to convert
     ///
     /// ### Returns
-    /// - `UserContext`: The UserContext
+    /// - `UserContext`: The `UserContext`
     fn from(user: &User) -> Self {
         Self::new(
             user.id,
