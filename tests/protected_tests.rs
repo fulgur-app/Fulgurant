@@ -93,7 +93,7 @@ async fn test_create_device_success() {
 
     let response = app
         .server
-        .post(&format!("/device/{}/create", user_id))
+        .post(&format!("/device/{user_id}/create"))
         .add_header(name, value)
         .form(&CreateDeviceFormData {
             name: "My Laptop",
@@ -117,7 +117,7 @@ async fn test_create_device_empty_name() {
 
     let response = app
         .server
-        .post(&format!("/device/{}/create", user_id))
+        .post(&format!("/device/{user_id}/create"))
         .add_header(name, value)
         .form(&CreateDeviceFormData {
             name: "",
@@ -146,7 +146,7 @@ async fn test_create_device_max_reached() {
 
     let response = app
         .server
-        .post(&format!("/device/{}/create", user_id))
+        .post(&format!("/device/{user_id}/create"))
         .add_header(name, value)
         .form(&CreateDeviceFormData {
             name: "My Laptop",
@@ -172,7 +172,7 @@ async fn test_create_device_for_another_user_forbidden() {
 
     let response = app
         .server
-        .post(&format!("/device/{}/create", victim_id))
+        .post(&format!("/device/{victim_id}/create"))
         .add_header(name, value)
         .form(&CreateDeviceFormData {
             name: "Stolen Device",

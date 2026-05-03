@@ -56,14 +56,14 @@ pub async fn perform_backup(pool: &SqlitePool) -> anyhow::Result<PathBuf> {
     let timestamp = now.format(&time::format_description::parse(
         "[year]-[month]-[day]_[hour]-[minute]-[second]",
     )?)?;
-    let backup_filename = format!("fulgurant_backup_{}.db", timestamp);
+    let backup_filename = format!("fulgurant_backup_{timestamp}.db");
     let backup_path = backup_folder.join(&backup_filename);
     tracing::info!("Starting database backup to {}", backup_path.display());
     let backup_path_str = backup_path
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid backup path"))?;
     validate_backup_path(backup_path_str)?;
-    let query = format!("VACUUM INTO '{}'", backup_path_str);
+    let query = format!("VACUUM INTO '{backup_path_str}'");
     sqlx::query(&query).execute(pool).await?;
     tracing::info!(
         "Database backup completed successfully: {}",
@@ -163,8 +163,7 @@ mod tests {
             let result = validate_backup_path(path);
             assert!(
                 result.is_ok(),
-                "Path '{}' should be valid but was rejected",
-                path
+                "Path '{path}' should be valid but was rejected"
             );
         }
     }
@@ -181,8 +180,7 @@ mod tests {
             let result = validate_backup_path(path);
             assert!(
                 result.is_err(),
-                "Injection attempt '{}' should be rejected",
-                path
+                "Injection attempt '{path}' should be rejected"
             );
         }
     }

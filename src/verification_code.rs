@@ -33,7 +33,7 @@ pub fn hash_code(code: &str) -> anyhow::Result<String> {
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()
         .hash_password(code.as_bytes(), &salt)
-        .map_err(|e| anyhow::anyhow!("Failed to hash verification code: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Failed to hash verification code: {e}"))?
         .to_string();
     Ok(hash)
 }

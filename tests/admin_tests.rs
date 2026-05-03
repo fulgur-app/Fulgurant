@@ -106,7 +106,7 @@ async fn test_toggle_role() {
 
     let response = app
         .server
-        .post(&format!("/user/{}/change-role", user_id))
+        .post(&format!("/user/{user_id}/change-role"))
         .add_header(name, value)
         .await;
 
@@ -129,7 +129,7 @@ async fn test_delete_user_success() {
 
     let response = app
         .server
-        .delete(&format!("/user/{}", user_id))
+        .delete(&format!("/user/{user_id}"))
         .add_header(name, value)
         .await;
 

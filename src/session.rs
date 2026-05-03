@@ -19,7 +19,7 @@ pub const SESSION_FORCE_PASSWORD_UPDATE: &str = "force_password_update";
 /// - `Err(AppError::InternalError)`: If session access fails
 pub async fn get_session_user_id(session: &Session) -> Result<i32, AppError> {
     let user_id: Option<i32> = session.get(SESSION_USER_ID).await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {}", e))
+        AppError::InternalError(anyhow::anyhow!("Failed to get user id from session: {e}"))
     })?;
 
     user_id.ok_or(AppError::Unauthorized)

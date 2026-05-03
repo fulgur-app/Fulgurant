@@ -19,7 +19,7 @@ use sqlx::SqlitePool;
 /// - `name`: Human-readable device name
 ///
 /// ### Returns
-/// - `(device_id, raw_api_key)` — the device's public UUID and the unhashed API key
+/// - `(device_id, raw_api_key)`: the device's public UUID and the unhashed API key
 pub async fn create_device_for_user(
     pool: &SqlitePool,
     user_id: i32,
@@ -67,7 +67,7 @@ pub async fn get_jwt_token(server: &TestServer, email: &str, api_key: &str) -> S
         )
         .add_header(
             AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", api_key)).unwrap(),
+            HeaderValue::from_str(&format!("Bearer {api_key}")).unwrap(),
         )
         .await;
 
@@ -82,7 +82,7 @@ pub async fn get_jwt_token(server: &TestServer, email: &str, api_key: &str) -> S
 /// - `jwt_secret`: The JWT signing secret used to generate the access token
 ///
 /// ### Returns
-/// - `(user_id, device_id, jwt_token)` — the user's ID, device UUID, and signed JWT
+/// - `(user_id, device_id, jwt_token)`: the user's ID, device UUID, and signed JWT
 pub async fn setup_api_user(pool: &SqlitePool, jwt_secret: &str) -> (i32, String, String) {
     let email = "api_user@test.com";
     let password = "TestPassword1!";

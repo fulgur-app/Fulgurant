@@ -111,10 +111,7 @@ pub async fn share_file(
         return Err((
             StatusCode::PAYLOAD_TOO_LARGE,
             Json(ErrorResponse {
-                error: format!(
-                    "File size ({} bytes) exceeds maximum of {} bytes",
-                    file_size, max_size
-                ),
+                error: format!("File size ({file_size} bytes) exceeds maximum of {max_size} bytes"),
             }),
         ));
     }

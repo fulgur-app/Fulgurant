@@ -64,7 +64,7 @@ pub async fn get_admin(
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
         })?;
     let total_users = state.user_repository.count_all().await?;
     let paginated_users = state.user_repository.get_all(1, 20).await?;
@@ -255,8 +255,7 @@ pub async fn create_user_from_admin(
     }
     if first_name.len() > MAX_NAME_LEN {
         return Err(AppError::ValidationError(format!(
-            "First name cannot exceed {} characters",
-            MAX_NAME_LEN
+            "First name cannot exceed {MAX_NAME_LEN} characters"
         )));
     }
     if last_name.is_empty() {
@@ -266,8 +265,7 @@ pub async fn create_user_from_admin(
     }
     if last_name.len() > MAX_NAME_LEN {
         return Err(AppError::ValidationError(format!(
-            "Last name cannot exceed {} characters",
-            MAX_NAME_LEN
+            "Last name cannot exceed {MAX_NAME_LEN} characters"
         )));
     }
     if !is_valid_email(email) {
@@ -287,7 +285,7 @@ pub async fn create_user_from_admin(
     }
     let password = generate_valid_password();
     let password_hash = hash_password(&password)
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {}", e)))?;
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     let new_user_id = state
         .user_repository
         .create(
@@ -309,8 +307,7 @@ pub async fn create_user_from_admin(
     if state.is_prod {
         let subject = "Your Fulgurant Account".to_string();
         let text_body = format!(
-            "Hello {} {},\n\nYour Fulgurant account has been created by an administrator.\n\nYour login credentials are:\nEmail: {}\nPassword: {}\n\nYou will be required to set a new password when you first log in.",
-            first_name, last_name, email, password
+            "Hello {first_name} {last_name},\n\nYour Fulgurant account has been created by an administrator.\n\nYour login credentials are:\nEmail: {email}\nPassword: {password}\n\nYou will be required to set a new password when you first log in."
         );
         let html_body = format!(
             r#"<!DOCTYPE html>
@@ -322,18 +319,17 @@ pub async fn create_user_from_admin(
             </head>
             <body>
                 <div style="display: flex; flex-direction: column; align-items: center; font-family: Arial, Helvetica, sans-serif;">
-                    <h2>Hello {} {},</h2>
+                    <h2>Hello {first_name} {last_name},</h2>
                     <p>Your Fulgurant account has been created by an administrator.</p>
                     <div style="margin: 20px 0;">
                         <p><strong>Your login credentials are:</strong></p>
-                        <p>Email: <code>{}</code></p>
-                        <p>Password: <code style="background-color: #f0f0f0; padding: 5px 10px; border-radius: 4px;">{}</code></p>
+                        <p>Email: <code>{email}</code></p>
+                        <p>Password: <code style="background-color: #f0f0f0; padding: 5px 10px; border-radius: 4px;">{password}</code></p>
                     </div>
                     <p style="color: #666;">You will be required to set a new password when you first log in.</p>
                 </div>
             </body>
-            </html>"#,
-            first_name, last_name, email, password
+            </html>"#
         );
         state
             .mailer
@@ -341,7 +337,7 @@ pub async fn create_user_from_admin(
             .await
             .map_err(|e| {
                 tracing::error!("Failed to send account creation email: {}", e);
-                AppError::InternalError(anyhow::anyhow!("Failed to send email: {}", e))
+                AppError::InternalError(anyhow::anyhow!("Failed to send email: {e}"))
             })?;
         tracing::info!(
             "Account creation email sent to {}",
@@ -395,13 +391,13 @@ pub async fn update_max_file_size(
         .update_max_file_size_bytes(new_value)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to update max file size: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to update max file size: {e}"))
         })?;
     *state.max_file_size_bytes.write().await = new_value;
     tracing::info!(
         "Admin updated max file size to {:?}",
         new_value
-            .map(|b| format!("{} bytes", b))
+            .map(|b| format!("{b} bytes"))
             .unwrap_or_else(|| "no limit".to_string())
     );
     let max_file_size_kb = new_value.map(|b| b / 1024);

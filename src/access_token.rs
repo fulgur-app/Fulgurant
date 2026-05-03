@@ -55,7 +55,7 @@ pub fn generate_access_token(
         &claims,
         &EncodingKey::from_secret(jwt_secret.as_bytes()),
     )
-    .map_err(|e| anyhow::anyhow!("Failed to generate JWT: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("Failed to generate JWT: {e}"))?;
     Ok(token)
 }
 
@@ -76,7 +76,7 @@ pub fn validate_access_token(token: &str, jwt_secret: &str) -> anyhow::Result<Ac
         &DecodingKey::from_secret(jwt_secret.as_bytes()),
         &validation,
     )
-    .map_err(|e| anyhow::anyhow!("JWT validation failed: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("JWT validation failed: {e}"))?;
     Ok(token_data.claims)
 }
 

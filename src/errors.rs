@@ -30,16 +30,16 @@ impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AppError::NotFound => write!(f, "Entity not found"),
-            AppError::DatabaseError(e) => write!(f, "Database error: {}", e),
-            AppError::TemplateError(e) => write!(f, "Template error: {}", e),
-            AppError::ApiKeyError(e) => write!(f, "API key error: {}", e),
-            AppError::InternalError(e) => write!(f, "Internal error: {}", e),
+            AppError::DatabaseError(e) => write!(f, "Database error: {e}"),
+            AppError::TemplateError(e) => write!(f, "Template error: {e}"),
+            AppError::ApiKeyError(e) => write!(f, "API key error: {e}"),
+            AppError::InternalError(e) => write!(f, "Internal error: {e}"),
             AppError::Unauthorized => write!(f, "Unauthorized"),
             AppError::Forbidden => write!(f, "Forbidden"),
             AppError::MaxDevicesPerUserReached(max) => {
-                write!(f, "Max number of devices per user reached: {}", max)
+                write!(f, "Max number of devices per user reached: {max}")
             }
-            AppError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
+            AppError::ValidationError(msg) => write!(f, "Validation error: {msg}"),
         }
     }
 }

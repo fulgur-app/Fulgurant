@@ -33,9 +33,10 @@ pub async fn get_setup_page(
     State(state): State<AppState>,
     session: Session,
 ) -> Result<Response, AppError> {
-    let has_admin = state.user_repository.has_admin().await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to check for admin: {}", e))
-    })?;
+    let has_admin =
+        state.user_repository.has_admin().await.map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to check for admin: {e}"))
+        })?;
     if has_admin {
         tracing::warn!(
             "Attempted access to /setup but admin already exists - redirecting to /login"
@@ -45,7 +46,7 @@ pub async fn get_setup_page(
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
         })?;
     let template = templates::SetupTemplate {
         error_message: String::new(),
@@ -75,12 +76,13 @@ pub async fn create_admin(
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
         })?;
 
-    let has_admin = state.user_repository.has_admin().await.map_err(|e| {
-        AppError::InternalError(anyhow::anyhow!("Failed to check for admin: {}", e))
-    })?;
+    let has_admin =
+        state.user_repository.has_admin().await.map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to check for admin: {e}"))
+        })?;
     if has_admin {
         tracing::warn!(
             "Attempted to create admin via /setup but admin already exists - rejecting request"
@@ -132,7 +134,7 @@ pub async fn create_admin(
         return Ok(Html(template.render()?).into_response());
     }
     let password_hash = hash_password(password)
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {}", e)))?;
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     let user_id = state
         .user_repository
         .create_admin(
@@ -148,7 +150,7 @@ pub async fn create_admin(
                 AppError::InternalError(anyhow::anyhow!("Admin user already exists"))
             } else {
                 tracing::error!("Failed to create admin user: {}", e);
-                AppError::InternalError(anyhow::anyhow!("Failed to create admin user: {}", e))
+                AppError::InternalError(anyhow::anyhow!("Failed to create admin user: {e}"))
             }
         })?;
     tracing::info!("Initial admin user created with ID: {}", user_id);
@@ -156,7 +158,7 @@ pub async fn create_admin(
         .insert(session::SESSION_USER_ID, user_id)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to set user id in session: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to set user id in session: {e}"))
         })?;
     state
         .setup_needed

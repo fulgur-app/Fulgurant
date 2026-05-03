@@ -560,10 +560,9 @@ impl UserRepository {
         } else {
             format!("WHERE {}", where_clauses.join(" AND "))
         };
-        let count_sql = format!("SELECT COUNT(*) FROM users {}", where_clause);
+        let count_sql = format!("SELECT COUNT(*) FROM users {where_clause}");
         let data_sql = format!(
-            "SELECT id, email, first_name, last_name, email_verified, role, last_activity, shares, force_password_update, created_at, updated_at FROM users {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            where_clause
+            "SELECT id, email, first_name, last_name, email_verified, role, last_activity, shares, force_password_update, created_at, updated_at FROM users {where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?"
         );
 
         // Build and execute with the correct pool type
