@@ -94,7 +94,7 @@ pub async fn login(
             )));
         }
     };
-    let password_verified = verify_password(password, user.password_hash.clone());
+    let password_verified = verify_password(password, user.password_hash.as_str());
     if !password_verified {
         tracing::warn!(
             "Login attempt with invalid password for user: {}",
@@ -213,7 +213,7 @@ pub async fn force_password_update(
         .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Database error: {e}")))?
         .ok_or(AppError::Unauthorized)?;
-    if verify_password(&request.password, user.password_hash) {
+    if verify_password(&request.password, user.password_hash.as_str()) {
         let template = templates::ForcePasswordUpdateFormTemplate {
             error_message: "New password must be different from your current password.".to_string(),
         };
@@ -894,8 +894,8 @@ pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Er
 ///
 /// ### Returns
 /// - `true` if the password is valid, `false` otherwise (including on malformed hash)
-fn verify_password(password: &str, password_hash: String) -> bool {
-    let password_hash = match PasswordHash::new(&password_hash) {
+fn verify_password(password: &str, password_hash: &str) -> bool {
+    let password_hash = match PasswordHash::new(password_hash) {
         Ok(hash) => hash,
         Err(_) => {
             tracing::warn!("Failed to parse password hash - treating as invalid");
