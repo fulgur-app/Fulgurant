@@ -87,7 +87,7 @@ impl Mailer {
         let text_body =
             format!("Hello from Fulgur!\n\nYour verification code is: {verification_code}");
         let subject = "Your Fulgur Verification Code".to_string();
-        self.send_email(to, subject, text_body.to_string(), html_body.to_string())
+        self.send_email(to, subject, text_body.clone(), html_body.clone())
             .await
     }
 
