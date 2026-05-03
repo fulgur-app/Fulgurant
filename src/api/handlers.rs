@@ -527,10 +527,9 @@ pub async fn obtain_access_token(
                         }
                         break;
                     }
-                    Ok(false) => continue,
+                    Ok(false) => (),
                     Err(e) => {
                         tracing::error!("Error verifying device key: {:?}", e);
-                        continue;
                     }
                 }
             }
