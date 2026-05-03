@@ -122,18 +122,17 @@ pub async fn require_api_auth(
                     }),
                 )
                     .into_response());
-            } else {
-                let safe_headers = redact_headers_for_log(&headers);
-                tracing::warn!("Request headers (redacted): {:?}", safe_headers);
-                tracing::warn!("Invalid access token: {:?}", e);
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    Json(ErrorResponse {
-                        error: "Invalid access token".to_string(),
-                    }),
-                )
-                    .into_response());
             }
+            let safe_headers = redact_headers_for_log(&headers);
+            tracing::warn!("Request headers (redacted): {:?}", safe_headers);
+            tracing::warn!("Invalid access token: {:?}", e);
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "Invalid access token".to_string(),
+                }),
+            )
+                .into_response());
         }
     };
     let user_id: i32 = claims.sub.parse().map_err(|e| {
