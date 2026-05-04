@@ -57,12 +57,9 @@ pub async fn require_admin(
             )
                 .into_response()
         })?;
-    let user = match user {
-        Some(user) => user,
-        None => {
-            tracing::warn!("User {} not found in database", user_id);
-            return Err((StatusCode::UNAUTHORIZED, "Unauthorized").into_response());
-        }
+    let Some(user) = user else {
+        tracing::warn!("User {} not found in database", user_id);
+        return Err((StatusCode::UNAUTHORIZED, "Unauthorized").into_response());
     };
     if user.role != "Admin" {
         tracing::warn!(

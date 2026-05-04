@@ -192,9 +192,8 @@ pub async fn force_password_update(
         .get(session::SESSION_USER_ID)
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
+    let Some(user_id) = user_id else {
+        return Err(AppError::Unauthorized);
     };
     if !is_password_valid(&request.password) {
         let template = templates::ForcePasswordUpdateFormTemplate {
@@ -895,12 +894,9 @@ pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Er
 /// ### Returns
 /// - `true` if the password is valid, `false` otherwise (including on malformed hash)
 fn verify_password(password: &str, password_hash: &str) -> bool {
-    let password_hash = match PasswordHash::new(password_hash) {
-        Ok(hash) => hash,
-        Err(_) => {
-            tracing::warn!("Failed to parse password hash - treating as invalid");
-            return false;
-        }
+    let Ok(password_hash) = PasswordHash::new(password_hash) else {
+        tracing::warn!("Failed to parse password hash - treating as invalid");
+        return false;
     };
     let argon2 = Argon2::default();
     argon2

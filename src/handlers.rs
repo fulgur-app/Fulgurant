@@ -77,9 +77,8 @@ pub async fn index(
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
-    let user = match user {
-        Some(user) => user,
-        None => return Err(AppError::Unauthorized),
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized);
     };
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
@@ -436,9 +435,8 @@ pub async fn get_settings(
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
-    let user = match user {
-        Some(user) => user,
-        None => return Err(AppError::Unauthorized),
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized);
     };
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await

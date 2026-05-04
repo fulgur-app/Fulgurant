@@ -57,9 +57,8 @@ pub async fn get_admin(
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
-    let user = match user {
-        Some(user) => user,
-        None => return Err(AppError::Unauthorized),
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized);
     };
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
@@ -100,9 +99,8 @@ pub async fn search_users(
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
-    let user = match user {
-        Some(user) => user,
-        None => return Err(AppError::Unauthorized),
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized);
     };
     let paginated_users = state
         .user_repository
@@ -145,9 +143,8 @@ pub async fn change_user_role(
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
-    let user = match user {
-        Some(user) => user,
-        None => return Err(AppError::Unauthorized),
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized);
     };
     let updated_user = state.user_repository.toggle_role(id).await?;
 
@@ -175,9 +172,8 @@ pub async fn toggle_force_password_update(
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
-    let user = match user {
-        Some(user) => user,
-        None => return Err(AppError::Unauthorized),
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized);
     };
     let updated_user = state
         .user_repository
@@ -241,9 +237,8 @@ pub async fn create_user_from_admin(
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
-    let user = match user {
-        Some(user) => user,
-        None => return Err(AppError::Unauthorized),
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized);
     };
     let first_name = request.first_name.trim();
     let last_name = request.last_name.trim();
