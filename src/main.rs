@@ -199,7 +199,8 @@ fn load_runtime_config() -> anyhow::Result<RuntimeConfig> {
     if bind_host.trim().is_empty() {
         return Err(anyhow::anyhow!("BIND_HOST cannot be empty"));
     }
-    let bind_port = parse_env_i64_bounded("BIND_PORT", DEFAULT_BIND_PORT as i64, 1, 65_535)? as u16;
+    let bind_port =
+        parse_env_i64_bounded("BIND_PORT", i64::from(DEFAULT_BIND_PORT), 1, 65_535)? as u16;
     Ok(RuntimeConfig {
         is_prod,
         database_url,

@@ -279,10 +279,10 @@ pub async fn get_register_page(
             AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
         })?;
     let template = templates::RegisterTemplate {
-        error_message: "".to_string(),
-        email: "".to_string(),
-        first_name: "".to_string(),
-        last_name: "".to_string(),
+        error_message: String::new(),
+        email: String::new(),
+        first_name: String::new(),
+        last_name: String::new(),
         csrf_token,
     };
     Ok(Html(template.render()?))
@@ -450,7 +450,7 @@ pub async fn register_step_1(
         })?;
     let template = templates::RegisterStep2Template {
         email: email.clone(),
-        error_message: "".to_string(),
+        error_message: String::new(),
     };
     Ok(Html(template.render()?))
 }

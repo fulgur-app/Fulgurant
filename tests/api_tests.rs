@@ -462,7 +462,7 @@ async fn test_share_file_empty_file_name() {
 
     let payload = ShareFilePayload {
         content: "some content".to_string(),
-        file_name: "".to_string(),
+        file_name: String::new(),
         device_id: "some-device-id".to_string(),
         deduplication_hash: None,
     };
@@ -488,7 +488,7 @@ async fn test_share_file_empty_device_id() {
     let payload = ShareFilePayload {
         content: "some content".to_string(),
         file_name: "test.txt".to_string(),
-        device_id: "".to_string(),
+        device_id: String::new(),
         deduplication_hash: None,
     };
 

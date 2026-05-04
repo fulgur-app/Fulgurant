@@ -89,7 +89,7 @@ pub async fn create_admin(
         );
         let mut response = Response::builder()
             .status(StatusCode::OK)
-            .body("".to_string())
+            .body(String::new())
             .map_err(|e| {
                 tracing::error!("Failed to build response: {}", e);
                 AppError::InternalError(anyhow::anyhow!("Failed to build response"))
@@ -165,7 +165,7 @@ pub async fn create_admin(
         .store(false, std::sync::atomic::Ordering::Relaxed);
     let mut response = Response::builder()
         .status(StatusCode::OK)
-        .body("".to_string())
+        .body(String::new())
         .map_err(|e| {
             tracing::error!("Failed to build response: {}", e);
             AppError::InternalError(anyhow::anyhow!("Failed to build response"))
