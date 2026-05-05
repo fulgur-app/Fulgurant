@@ -68,7 +68,7 @@ pub fn generate_valid_password() -> String {
             .nth(rng.random_range(0..SPECIAL.len()))
             .unwrap(),
     ];
-    let all_chars = format!("{}{}{}{}", UPPERCASE, LOWERCASE, DIGITS, SPECIAL);
+    let all_chars = format!("{UPPERCASE}{LOWERCASE}{DIGITS}{SPECIAL}");
     for _ in 0..8 {
         password.push(
             all_chars
@@ -87,7 +87,7 @@ pub fn generate_valid_password() -> String {
 /// Format timestamp as YYYY-MM-DD HH:MM:SS UTC
 ///
 /// ### Arguments
-/// - `dt`: The OffsetDateTime to format
+/// - `dt`: The `OffsetDateTime` to format
 ///
 /// ### Returns
 /// - Formatted string in the format "YYYY-MM-DD HH:MM:SS"
@@ -107,7 +107,7 @@ pub fn format_datetime_utc(dt: &OffsetDateTime) -> String {
 /// Format timestamp as YYYY-MM-DD UTC
 ///
 /// ### Arguments
-/// - `dt`: The OffsetDateTime to format
+/// - `dt`: The `OffsetDateTime` to format
 ///
 /// ### Returns
 /// - Formatted string in the format "YYYY-MM-DD"
@@ -262,8 +262,7 @@ mod tests {
             let password = generate_valid_password();
             assert!(
                 is_password_valid(&password),
-                "Generated password '{}' does not meet validation requirements",
-                password
+                "Generated password '{password}' does not meet validation requirements"
             );
         }
     }
@@ -288,8 +287,7 @@ mod tests {
             .len();
         assert!(
             unique_count > 5,
-            "Generated passwords should have high uniqueness (got {} unique out of 10)",
-            unique_count
+            "Generated passwords should have high uniqueness (got {unique_count} unique out of 10)"
         );
     }
 }

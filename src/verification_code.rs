@@ -33,7 +33,7 @@ pub fn hash_code(code: &str) -> anyhow::Result<String> {
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()
         .hash_password(code.as_bytes(), &salt)
-        .map_err(|e| anyhow::anyhow!("Failed to hash verification code: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Failed to hash verification code: {e}"))?
         .to_string();
     Ok(hash)
 }
@@ -47,12 +47,9 @@ pub fn hash_code(code: &str) -> anyhow::Result<String> {
 /// ### Returns
 /// - `true` if the code is valid, `false` otherwise (including on malformed hash)
 pub fn verify_code(code: &str, hash: &str) -> bool {
-    let parsed = match PasswordHash::new(hash) {
-        Ok(hash) => hash,
-        Err(_) => {
-            tracing::warn!("Failed to parse verification code hash - treating as invalid");
-            return false;
-        }
+    let Ok(parsed) = PasswordHash::new(hash) else {
+        tracing::warn!("Failed to parse verification code hash - treating as invalid");
+        return false;
     };
     Argon2::default()
         .verify_password(code.as_bytes(), &parsed)
@@ -89,7 +86,7 @@ impl VerificationCodeRepository {
     /// Create a new verification code repository
     ///
     /// ### Arguments
-    /// - `pool`: The database pool (SQLite or PostgreSQL)
+    /// - `pool`: The database pool (`SQLite` or `PostgreSQL`)
     ///
     /// ### Returns
     /// - `VerificationCodeRepository`: The verification code repository
@@ -128,9 +125,8 @@ impl VerificationCodeRepository {
             purpose.clone()
         )?;
         let verification_code = self.get_for(email, purpose).await?;
-        let verification_code = match verification_code {
-            Some(code) => code,
-            None => return Err(anyhow::anyhow!("Failed to create verification code")),
+        let Some(verification_code) = verification_code else {
+            return Err(anyhow::anyhow!("Failed to create verification code"));
         };
         Ok(verification_code)
     }
@@ -232,9 +228,8 @@ impl VerificationCodeRepository {
         purpose: String,
     ) -> anyhow::Result<VerificationResult> {
         let verification_code = self.get_for(email, purpose).await?;
-        let verification_code = match verification_code {
-            Some(code) => code,
-            None => return Ok(VerificationResult::NotFound),
+        let Some(verification_code) = verification_code else {
+            return Ok(VerificationResult::NotFound);
         };
 
         if OffsetDateTime::now_utc() > verification_code.expires_at {

@@ -16,7 +16,7 @@ use fulgurant::access_token;
 
 /// Helper to create a Bearer auth header value
 fn bearer(jwt: &str) -> HeaderValue {
-    HeaderValue::from_str(&format!("Bearer {}", jwt)).unwrap()
+    HeaderValue::from_str(&format!("Bearer {jwt}")).unwrap()
 }
 
 fn x_user_email(email: &str) -> (HeaderName, HeaderValue) {
@@ -165,7 +165,7 @@ async fn test_token_response_format() {
         .add_header(header_name, header_value)
         .add_header(
             AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", api_key)).unwrap(),
+            HeaderValue::from_str(&format!("Bearer {api_key}")).unwrap(),
         )
         .await;
 
@@ -280,7 +280,7 @@ async fn test_token_unverified_email() {
         .add_header(header_name, header_value)
         .add_header(
             AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", api_key)).unwrap(),
+            HeaderValue::from_str(&format!("Bearer {api_key}")).unwrap(),
         )
         .expect_failure()
         .await;
@@ -462,7 +462,7 @@ async fn test_share_file_empty_file_name() {
 
     let payload = ShareFilePayload {
         content: "some content".to_string(),
-        file_name: "".to_string(),
+        file_name: String::new(),
         device_id: "some-device-id".to_string(),
         deduplication_hash: None,
     };
@@ -488,7 +488,7 @@ async fn test_share_file_empty_device_id() {
     let payload = ShareFilePayload {
         content: "some content".to_string(),
         file_name: "test.txt".to_string(),
-        device_id: "".to_string(),
+        device_id: String::new(),
         deduplication_hash: None,
     };
 

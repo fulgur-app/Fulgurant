@@ -68,8 +68,7 @@ fn parse_env_bool(name: &str, default: bool) -> anyhow::Result<bool> {
         "1" | "true" | "yes" | "on" => Ok(true),
         "0" | "false" | "no" | "off" => Ok(false),
         _ => Err(anyhow::anyhow!(
-            "{} must be a boolean value (true/false, 1/0, yes/no, on/off)",
-            name
+            "{name} must be a boolean value (true/false, 1/0, yes/no, on/off)"
         )),
     }
 }
@@ -88,22 +87,13 @@ fn parse_env_bool(name: &str, default: bool) -> anyhow::Result<bool> {
 fn parse_env_i64_bounded(name: &str, default: i64, min: i64, max: i64) -> anyhow::Result<i64> {
     let value = match std::env::var(name) {
         Ok(raw) => raw.parse::<i64>().map_err(|_| {
-            anyhow::anyhow!(
-                "{} must be a valid integer between {} and {}",
-                name,
-                min,
-                max
-            )
+            anyhow::anyhow!("{name} must be a valid integer between {min} and {max}")
         })?,
         Err(_) => default,
     };
     if value < min || value > max {
         return Err(anyhow::anyhow!(
-            "{} must be between {} and {} (got {})",
-            name,
-            min,
-            max,
-            value
+            "{name} must be between {min} and {max} (got {value})"
         ));
     }
     Ok(value)
@@ -123,22 +113,13 @@ fn parse_env_i64_bounded(name: &str, default: i64, min: i64, max: i64) -> anyhow
 fn parse_env_i32_bounded(name: &str, default: i32, min: i32, max: i32) -> anyhow::Result<i32> {
     let value = match std::env::var(name) {
         Ok(raw) => raw.parse::<i32>().map_err(|_| {
-            anyhow::anyhow!(
-                "{} must be a valid integer between {} and {}",
-                name,
-                min,
-                max
-            )
+            anyhow::anyhow!("{name} must be a valid integer between {min} and {max}")
         })?,
         Err(_) => default,
     };
     if value < min || value > max {
         return Err(anyhow::anyhow!(
-            "{} must be between {} and {} (got {})",
-            name,
-            min,
-            max,
-            value
+            "{name} must be between {min} and {max} (got {value})"
         ));
     }
     Ok(value)
@@ -158,22 +139,13 @@ fn parse_env_i32_bounded(name: &str, default: i32, min: i32, max: i32) -> anyhow
 fn parse_env_u64_bounded(name: &str, default: u64, min: u64, max: u64) -> anyhow::Result<u64> {
     let value = match std::env::var(name) {
         Ok(raw) => raw.parse::<u64>().map_err(|_| {
-            anyhow::anyhow!(
-                "{} must be a valid integer between {} and {}",
-                name,
-                min,
-                max
-            )
+            anyhow::anyhow!("{name} must be a valid integer between {min} and {max}")
         })?,
         Err(_) => default,
     };
     if value < min || value > max {
         return Err(anyhow::anyhow!(
-            "{} must be between {} and {} (got {})",
-            name,
-            min,
-            max,
-            value
+            "{name} must be between {min} and {max} (got {value})"
         ));
     }
     Ok(value)
@@ -227,7 +199,8 @@ fn load_runtime_config() -> anyhow::Result<RuntimeConfig> {
     if bind_host.trim().is_empty() {
         return Err(anyhow::anyhow!("BIND_HOST cannot be empty"));
     }
-    let bind_port = parse_env_i64_bounded("BIND_PORT", DEFAULT_BIND_PORT as i64, 1, 65_535)? as u16;
+    let bind_port =
+        parse_env_i64_bounded("BIND_PORT", i64::from(DEFAULT_BIND_PORT), 1, 65_535)? as u16;
     Ok(RuntimeConfig {
         is_prod,
         database_url,
@@ -284,7 +257,7 @@ async fn main() -> anyhow::Result<()> {
     match &pool {
         db::DbPool::Sqlite(p) => SQLITE_MIGRATOR.run(p).await?,
         db::DbPool::Postgres(p) => POSTGRES_MIGRATOR.run(p).await?,
-    };
+    }
     tracing::info!("Migrations completed successfully");
     let device_repository = devices::DeviceRepository::new(pool.clone());
     let user_repository = users::UserRepository::new(pool.clone());
@@ -316,7 +289,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(
         "Max file size for sharing: {}",
         max_file_size_bytes
-            .map(|b| format!("{} bytes", b))
+            .map(|b| format!("{b} bytes"))
             .unwrap_or_else(|| "no limit".to_string())
     );
     let app_state = handlers::AppState {
@@ -364,7 +337,7 @@ async fn main() -> anyhow::Result<()> {
     database_backup::make_daily_backup_task(pool.clone(), shutdown_token.clone(), is_prod);
     let bind_host = config.bind_host.clone();
     let bind_port = config.bind_port;
-    let addr = format!("{}:{}", bind_host, bind_port).parse::<SocketAddr>()?;
+    let addr = format!("{bind_host}:{bind_port}").parse::<SocketAddr>()?;
     if bind_host == "0.0.0.0" {
         tracing::warn!("Server is listening on all interfaces (0.0.0.0)");
     } else if bind_host == "127.0.0.1" {

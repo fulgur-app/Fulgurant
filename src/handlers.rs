@@ -46,7 +46,7 @@ pub struct AppState {
     pub jwt_secret: String,
     pub jwt_expiry_seconds: i64,
     /// Maximum share file size in bytes. `None` means no limit.
-    /// Wrapped in Arc<RwLock<>> to allow live updates from the admin settings page.
+    /// Wrapped in Arc<`RwLock`<>> to allow live updates from the admin settings page.
     pub max_file_size_bytes: Arc<RwLock<Option<u64>>>,
 }
 
@@ -77,14 +77,13 @@ pub async fn index(
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
-    let user = match user {
-        Some(user) => user,
-        None => return Err(AppError::Unauthorized),
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized);
     };
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
         })?;
     let devices = match state.device_repository.get_all_for_user(user_id).await {
         Ok(devices) => devices,
@@ -122,7 +121,7 @@ pub async fn index(
     Ok(Html(template.render()?))
 }
 
-/// POST /device/{user_id}/create - Creates a new device
+/// POST /`device/{user_id}/create` - Creates a new device
 ///
 /// ### Arguments
 /// - `state`: The state of the application
@@ -152,8 +151,7 @@ pub async fn create_device(
     }
     if name.len() > MAX_DEVICE_NAME_LEN {
         return Err(AppError::ValidationError(format!(
-            "Device name cannot exceed {} characters",
-            MAX_DEVICE_NAME_LEN
+            "Device name cannot exceed {MAX_DEVICE_NAME_LEN} characters"
         )));
     }
     if device_type.is_empty() {
@@ -163,8 +161,7 @@ pub async fn create_device(
     }
     if device_type.len() > MAX_DEVICE_TYPE_LEN {
         return Err(AppError::ValidationError(format!(
-            "Device type cannot exceed {} characters",
-            MAX_DEVICE_TYPE_LEN
+            "Device type cannot exceed {MAX_DEVICE_TYPE_LEN} characters"
         )));
     }
     request.name = name;
@@ -181,7 +178,7 @@ pub async fn create_device(
     }
     let api_key = api_key::generate_api_key();
     let hash = api_key::hash_api_key(&api_key)
-        .map_err(|e| AppError::ApiKeyError(anyhow::anyhow!("Failed to hash API key: {}", e)))?;
+        .map_err(|e| AppError::ApiKeyError(anyhow::anyhow!("Failed to hash API key: {e}")))?;
     let device = state
         .device_repository
         .create(user_id, hash, request.clone())
@@ -251,8 +248,7 @@ pub async fn update_device(
     }
     if name.len() > MAX_DEVICE_NAME_LEN {
         return Err(AppError::ValidationError(format!(
-            "Device name cannot exceed {} characters",
-            MAX_DEVICE_NAME_LEN
+            "Device name cannot exceed {MAX_DEVICE_NAME_LEN} characters"
         )));
     }
     if device_type.is_empty() {
@@ -262,8 +258,7 @@ pub async fn update_device(
     }
     if device_type.len() > MAX_DEVICE_TYPE_LEN {
         return Err(AppError::ValidationError(format!(
-            "Device type cannot exceed {} characters",
-            MAX_DEVICE_TYPE_LEN
+            "Device type cannot exceed {MAX_DEVICE_TYPE_LEN} characters"
         )));
     }
     request.name = name;
@@ -440,14 +435,13 @@ pub async fn get_settings(
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
     let user = state.user_repository.get_by_id(user_id).await?;
-    let user = match user {
-        Some(user) => user,
-        None => return Err(AppError::Unauthorized),
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized);
     };
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
         })?;
     let max_file_size_bytes = *state.max_file_size_bytes.read().await;
     let max_file_size_kb = max_file_size_bytes.map(|b| b / 1024);
@@ -493,8 +487,7 @@ pub async fn update_name(
     }
     if first_name.len() > MAX_NAME_LEN {
         return Err(AppError::ValidationError(format!(
-            "First name cannot exceed {} characters",
-            MAX_NAME_LEN
+            "First name cannot exceed {MAX_NAME_LEN} characters"
         )));
     }
     if last_name.is_empty() {
@@ -504,8 +497,7 @@ pub async fn update_name(
     }
     if last_name.len() > MAX_NAME_LEN {
         return Err(AppError::ValidationError(format!(
-            "Last name cannot exceed {} characters",
-            MAX_NAME_LEN
+            "Last name cannot exceed {MAX_NAME_LEN} characters"
         )));
     }
     state
@@ -570,14 +562,14 @@ pub async fn update_email_step_1(
         )
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to create verification code: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to create verification code: {e}"))
         })?;
     if state.is_prod {
         state
             .mailer
             .send_verification_email(request.email.clone(), code.clone())
             .await
-            .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to send email: {}", e)))?;
+            .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to send email: {e}")))?;
         tracing::info!(
             "Verification email sent to {}",
             sanitize_for_log(&request.email.clone())
@@ -625,7 +617,7 @@ pub async fn update_email_step_2(
             "email_change".to_string(),
         )
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to verify code: {}", e)))?;
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to verify code: {e}")))?;
     match result {
         verification_code::VerificationResult::Verified => {
             state
@@ -644,10 +636,7 @@ pub async fn update_email_step_2(
         }
         verification_code::VerificationResult::Invalid { attempts_remaining } => {
             let error_msg = if attempts_remaining > 0 {
-                format!(
-                    "Invalid verification code. {} attempts remaining.",
-                    attempts_remaining
-                )
+                format!("Invalid verification code. {attempts_remaining} attempts remaining.")
             } else {
                 "Too many failed attempts. Please request a new code.".to_string()
             };

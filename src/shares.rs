@@ -114,7 +114,7 @@ impl ShareRepository {
     /// Create a new share repository
     ///
     /// ### Arguments
-    /// - `pool`: The database pool (SQLite or PostgreSQL)
+    /// - `pool`: The database pool (`SQLite` or `PostgreSQL`)
     ///
     /// ### Returns
     /// - `ShareRepository`: The share repository
@@ -122,11 +122,11 @@ impl ShareRepository {
         Self { pool }
     }
 
-    /// Create a new share, or replace an existing one if deduplication_hash matches
+    /// Create a new share, or replace an existing one if `deduplication_hash` matches
     ///
     /// When `deduplication_hash` is `Some`, uses UPSERT to replace any existing share
-    /// with the same (source_device_id, destination_device_id, deduplication_hash).
-    /// When `None`, always inserts a new share (SQLite treats NULLs as distinct).
+    /// with the same (`source_device_id`, `destination_device_id`, `deduplication_hash`).
+    /// When `None`, always inserts a new share (`SQLite` treats NULLs as distinct).
     ///
     /// ### Arguments
     /// - `user_id`: The ID of the user
@@ -282,7 +282,7 @@ impl ShareRepository {
     }
 
     /// Get all non-expired shares for a specific device
-    /// Returns shares where the device_id matches the destination_device_id
+    /// Returns shares where the `device_id` matches the `destination_device_id`
     ///
     /// ### Arguments
     /// - `device_id`: The ID of the device
@@ -304,7 +304,7 @@ impl ShareRepository {
     ///
     /// ### Description
     /// This function gets all non-expired shares for a specific device and deletes them in a single atomic operation.
-    /// Returns shares where the device_id matches the destination_device_id
+    /// Returns shares where the `device_id` matches the `destination_device_id`
     ///
     /// ### Arguments
     /// - `device_id`: The ID of the device

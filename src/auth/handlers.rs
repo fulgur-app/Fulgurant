@@ -52,7 +52,7 @@ pub async fn get_login_page(
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
         })?;
     let template = LoginTemplate {
         can_register: state.can_register,
@@ -94,7 +94,7 @@ pub async fn login(
             )));
         }
     };
-    let password_verified = verify_password(password, user.password_hash.clone());
+    let password_verified = verify_password(password, user.password_hash.as_str());
     if !password_verified {
         tracing::warn!(
             "Login attempt with invalid password for user: {}",
@@ -143,7 +143,7 @@ fn invalid_credentials_response() -> Result<Response, AppError> {
     };
     let rendered = template
         .render()
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?;
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {e}")))?;
     Ok(Html(rendered).into_response())
 }
 
@@ -159,7 +159,7 @@ pub async fn get_force_password_update_page(session: Session) -> Result<Html<Str
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
         })?;
     let template = templates::ForcePasswordUpdateTemplate {
         csrf_token,
@@ -173,7 +173,7 @@ pub struct ForcePasswordUpdateRequest {
     password: String,
 }
 
-/// POST /force-password-update - Updates the password and clears the force_password_update flag
+/// POST /force-password-update - Updates the password and clears the `force_password_update` flag
 ///
 /// ### Arguments
 /// - `state`: The state of the application
@@ -192,9 +192,8 @@ pub async fn force_password_update(
         .get(session::SESSION_USER_ID)
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
-    let user_id = match user_id {
-        Some(id) => id,
-        None => return Err(AppError::Unauthorized),
+    let Some(user_id) = user_id else {
+        return Err(AppError::Unauthorized);
     };
     if !is_password_valid(&request.password) {
         let template = templates::ForcePasswordUpdateFormTemplate {
@@ -203,7 +202,7 @@ pub async fn force_password_update(
         return Ok(Html(
             template
                 .render()
-                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?,
+                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {e}")))?,
         )
         .into_response());
     }
@@ -211,21 +210,21 @@ pub async fn force_password_update(
         .user_repository
         .get_by_id(user_id)
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Database error: {}", e)))?
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Database error: {e}")))?
         .ok_or(AppError::Unauthorized)?;
-    if verify_password(&request.password, user.password_hash) {
+    if verify_password(&request.password, user.password_hash.as_str()) {
         let template = templates::ForcePasswordUpdateFormTemplate {
             error_message: "New password must be different from your current password.".to_string(),
         };
         return Ok(Html(
             template
                 .render()
-                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {}", e)))?,
+                .map_err(|e| AppError::InternalError(anyhow::anyhow!("Template error: {e}")))?,
         )
         .into_response());
     }
     let password_hash = hash_password(&request.password)
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {}", e)))?;
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     state
         .user_repository
         .update_password_and_clear_force_update(user_id, password_hash)
@@ -270,19 +269,19 @@ pub async fn get_register_page(
             link_text: Some("Login".to_string()),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
         })?));
     }
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
         })?;
     let template = templates::RegisterTemplate {
-        error_message: "".to_string(),
-        email: "".to_string(),
-        first_name: "".to_string(),
-        last_name: "".to_string(),
+        error_message: String::new(),
+        email: String::new(),
+        first_name: String::new(),
+        last_name: String::new(),
         csrf_token,
     };
     Ok(Html(template.render()?))
@@ -365,7 +364,7 @@ pub async fn register_step_1(
         } else if last_name.is_empty() {
             "Last name cannot be empty".to_string()
         } else {
-            format!("Names cannot exceed {} characters", MAX_NAME_LEN)
+            format!("Names cannot exceed {MAX_NAME_LEN} characters")
         };
         let template = templates::RegisterStep1Template {
             error_message,
@@ -374,7 +373,7 @@ pub async fn register_step_1(
             last_name: last_name.to_string(),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
         })?));
     }
     if !is_valid_email(&email) {
@@ -385,7 +384,7 @@ pub async fn register_step_1(
             last_name: last_name.to_string(),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
         })?));
     }
     match state.user_repository.get_by_email(email.clone()).await {
@@ -397,7 +396,7 @@ pub async fn register_step_1(
                 last_name: last_name.to_string(),
             };
             return Ok(Html(template.render().map_err(|e| {
-                AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+                AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
             })?));
         }
         Ok(None) => (),
@@ -407,7 +406,7 @@ pub async fn register_step_1(
                 e.to_string()
             )));
         }
-    };
+    }
     if !is_password_valid(password) {
         let template = templates::RegisterStep1Template {
             error_message: "Invalid password".to_string(),
@@ -416,7 +415,7 @@ pub async fn register_step_1(
             last_name: last_name.to_string(),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
         })?));
     }
     if let Err(e) = check_verification_code_rate_limit(&state, &email, "registration").await {
@@ -427,12 +426,12 @@ pub async fn register_step_1(
             last_name: last_name.to_string(),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
         })?));
     }
     let _code = create_and_send_verification_code(&state, &email, "registration").await?;
     let password_hash = hash_password(password)
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {}", e)))?;
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     let _user_id = state
         .user_repository
         .create(
@@ -446,11 +445,11 @@ pub async fn register_step_1(
         .await
         .map_err(|e| {
             tracing::error!("Failed to create user: {}", e);
-            AppError::InternalError(anyhow::anyhow!("Failed to create user: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to create user: {e}"))
         })?;
     let template = templates::RegisterStep2Template {
         email: email.clone(),
-        error_message: "".to_string(),
+        error_message: String::new(),
     };
     Ok(Html(template.render()?))
 }
@@ -491,35 +490,31 @@ pub async fn register_step_2(
         Err(e) => {
             tracing::error!("Failed to verify verification code: {}", e);
             return Err(AppError::InternalError(anyhow::anyhow!(
-                "Failed to verify verification code: {}",
-                e
+                "Failed to verify verification code: {e}"
             )));
         }
     };
-    match verification_result {
-        VerificationResult::Verified => {
-            state
-                .user_repository
-                .mark_as_verified(user.id)
-                .await
-                .map_err(|e| {
-                    AppError::InternalError(anyhow::anyhow!(
-                        "Failed to mark user as verified: {:?}",
-                        e.to_string()
-                    ))
-                })?;
-            let template = templates::RegisterStep3Template {
-                first_name: user.first_name,
-            };
-            Ok(Html(template.render()?))
-        }
-        _ => {
-            let template = templates::RegisterStep2Template {
-                email,
-                error_message: format_verification_error(&verification_result),
-            };
-            Ok(Html(template.render()?))
-        }
+    if let VerificationResult::Verified = verification_result {
+        state
+            .user_repository
+            .mark_as_verified(user.id)
+            .await
+            .map_err(|e| {
+                AppError::InternalError(anyhow::anyhow!(
+                    "Failed to mark user as verified: {:?}",
+                    e.to_string()
+                ))
+            })?;
+        let template = templates::RegisterStep3Template {
+            first_name: user.first_name,
+        };
+        Ok(Html(template.render()?))
+    } else {
+        let template = templates::RegisterStep2Template {
+            email,
+            error_message: format_verification_error(&verification_result),
+        };
+        Ok(Html(template.render()?))
     }
 }
 
@@ -535,7 +530,7 @@ pub async fn get_forgot_password_page(session: Session) -> Result<Html<String>, 
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
         })?;
     let template = templates::ForgotPasswordStep1Template {
         error_message: String::new(),
@@ -576,7 +571,7 @@ pub async fn forgot_password_step_1(
                 success_message: String::new(),
             };
             return Ok(Html(template.render().map_err(|e| {
-                AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+                AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
             })?));
         }
         Err(e) => {
@@ -591,7 +586,7 @@ pub async fn forgot_password_step_1(
             error_message: e.to_string(),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
         })?));
     }
     let _code = create_and_send_verification_code(&state, &user.email, "password_reset").await?;
@@ -630,31 +625,28 @@ pub async fn forgot_password_step_2(
             "password_reset".to_string(),
         )
         .await
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to verify code: {}", e)))?;
-    match result {
-        VerificationResult::Verified => {
-            let _ = state
-                .verification_code_repository
-                .delete_for(request.email.clone(), "password_reset".to_string())
-                .await;
-            let template = templates::ForgotPasswordStep3Template {
-                email: request.email,
-                error_message: String::new(),
-            };
-            Ok(Html(template.render().map_err(|e| {
-                AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
-            })?))
-        }
-        _ => {
-            let template = templates::ForgotPasswordStep2Template {
-                email: request.email,
-                error_message: format_verification_error(&result),
-                success_message: String::new(),
-            };
-            Ok(Html(template.render().map_err(|e| {
-                AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
-            })?))
-        }
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to verify code: {e}")))?;
+    if let VerificationResult::Verified = result {
+        let _ = state
+            .verification_code_repository
+            .delete_for(request.email.clone(), "password_reset".to_string())
+            .await;
+        let template = templates::ForgotPasswordStep3Template {
+            email: request.email,
+            error_message: String::new(),
+        };
+        Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
+        })?))
+    } else {
+        let template = templates::ForgotPasswordStep2Template {
+            email: request.email,
+            error_message: format_verification_error(&result),
+            success_message: String::new(),
+        };
+        Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
+        })?))
     }
 }
 
@@ -683,7 +675,7 @@ pub async fn forgot_password_step_3(
             error_message: "Password must be 8-64 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.".to_string(),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
         })?));
     }
     let user = match state
@@ -701,7 +693,7 @@ pub async fn forgot_password_step_3(
         }
     };
     let password_hash = hash_password(&request.password)
-        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {}", e)))?;
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     match state
         .user_repository
         .update_password(user.id, password_hash)
@@ -747,7 +739,7 @@ pub async fn resend_forgot_password_code(
             success_message: String::new(),
         };
         return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
         })?));
     }
     let user_exists = match state.user_repository.get_by_email(email.clone()).await {
@@ -789,7 +781,7 @@ async fn check_verification_code_rate_limit(
         .count_active_codes(email.to_string(), purpose.to_string())
         .await
         .map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Failed to count verification codes: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to count verification codes: {e}"))
         })?;
     if active_count >= verification_code::VERIFICATION_CODE_MAX_ATTEMPTS {
         return Err(AppError::InternalError(anyhow::anyhow!(
@@ -821,7 +813,7 @@ async fn create_and_send_verification_code(
         .await
         .map_err(|e| {
             tracing::error!("Failed to create verification code: {}", e);
-            AppError::InternalError(anyhow::anyhow!("Failed to create verification code: {}", e))
+            AppError::InternalError(anyhow::anyhow!("Failed to create verification code: {e}"))
         })?;
     if state.is_prod {
         state
@@ -830,7 +822,7 @@ async fn create_and_send_verification_code(
             .await
             .map_err(|e| {
                 tracing::error!("Failed to send email: {}", e);
-                AppError::InternalError(anyhow::anyhow!("Failed to send email: {}", e))
+                AppError::InternalError(anyhow::anyhow!("Failed to send email: {e}"))
             })?;
         tracing::info!("Verification email sent to {}", sanitize_for_log(email));
     } else {
@@ -854,10 +846,7 @@ fn format_verification_error(result: &VerificationResult) -> String {
     match result {
         VerificationResult::Invalid { attempts_remaining } => {
             if *attempts_remaining > 0 {
-                format!(
-                    "Invalid verification code. {} attempt(s) remaining.",
-                    attempts_remaining
-                )
+                format!("Invalid verification code. {attempts_remaining} attempt(s) remaining.")
             } else {
                 "Too many failed attempts. Please request a new code.".to_string()
             }
@@ -898,13 +887,10 @@ pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Er
 ///
 /// ### Returns
 /// - `true` if the password is valid, `false` otherwise (including on malformed hash)
-fn verify_password(password: &str, password_hash: String) -> bool {
-    let password_hash = match PasswordHash::new(&password_hash) {
-        Ok(hash) => hash,
-        Err(_) => {
-            tracing::warn!("Failed to parse password hash - treating as invalid");
-            return false;
-        }
+fn verify_password(password: &str, password_hash: &str) -> bool {
+    let Ok(password_hash) = PasswordHash::new(password_hash) else {
+        tracing::warn!("Failed to parse password hash - treating as invalid");
+        return false;
     };
     let argon2 = Argon2::default();
     argon2

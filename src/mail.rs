@@ -34,7 +34,7 @@ impl Mailer {
                 return Err(anyhow::anyhow!("SMTP_PORT must be in range 1-65535"));
             }
             let transport = SmtpTransport::starttls_relay(&smtp_host)
-                .map_err(|e| anyhow::anyhow!("Failed to create SMTP transport: {}", e))?
+                .map_err(|e| anyhow::anyhow!("Failed to create SMTP transport: {e}"))?
                 .port(smtp_port)
                 .credentials(Credentials::new(smtp_user.clone(), smtp_password))
                 .build();
@@ -79,18 +79,15 @@ impl Mailer {
             <body>
                 <div style="display: flex; flex-direction: column; align-items: center;">
                     <h2 style="font-family: Arial, Helvetica, sans-serif;">Your Fulgur verification code is:</h2>
-                    <h4 style="font-family: Arial, Helvetica, sans-serif;">{}</h4>
+                    <h4 style="font-family: Arial, Helvetica, sans-serif;">{verification_code}</h4>
                 </div>
             </body>
-            </html>"#,
-            verification_code
+            </html>"#
         );
-        let text_body = format!(
-            "Hello from Fulgur!\n\nYour verification code is: {}",
-            verification_code
-        );
+        let text_body =
+            format!("Hello from Fulgur!\n\nYour verification code is: {verification_code}");
         let subject = "Your Fulgur Verification Code".to_string();
-        self.send_email(to, subject, text_body.to_string(), html_body.to_string())
+        self.send_email(to, subject, text_body.clone(), html_body.clone())
             .await
     }
 
@@ -140,7 +137,7 @@ impl Mailer {
 
         transport.send(&email).map_err(|e| {
             tracing::error!("Failed to send email: {}", e);
-            anyhow::anyhow!("Failed to send email: {}", e)
+            anyhow::anyhow!("Failed to send email: {e}")
         })?;
         Ok(())
     }

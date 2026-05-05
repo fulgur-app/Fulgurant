@@ -27,13 +27,13 @@ pub async fn ping() -> Json<PingResponse> {
 }
 
 impl From<Device> for DeviceResponse {
-    /// Convert a Device to a DeviceResponse
+    /// Convert a Device to a `DeviceResponse`
     ///
     /// ### Arguments
     /// - `device`: The Device to convert
     ///
     /// ### Returns
-    /// - `DeviceResponse`: The DeviceResponse
+    /// - `DeviceResponse`: The `DeviceResponse`
     fn from(device: Device) -> Self {
         let created_at = device.get_created_at_formatted();
         let expires_at = device.get_expires_at_formatted();
@@ -111,10 +111,7 @@ pub async fn share_file(
         return Err((
             StatusCode::PAYLOAD_TOO_LARGE,
             Json(ErrorResponse {
-                error: format!(
-                    "File size ({} bytes) exceeds maximum of {} bytes",
-                    file_size, max_size
-                ),
+                error: format!("File size ({file_size} bytes) exceeds maximum of {max_size} bytes"),
             }),
         ));
     }
@@ -236,13 +233,13 @@ pub async fn share_file(
 }
 
 impl From<Share> for SharedFileResponse {
-    /// Converts a Share to a SharedFileResponse
+    /// Converts a Share to a `SharedFileResponse`
     ///
     /// ### Arguments
     /// `share`: The Share to convert
     ///
     /// ### Returns
-    /// - `SharedFileResponse`: The SharedFileResponse
+    /// - `SharedFileResponse`: The `SharedFileResponse`
     fn from(share: Share) -> Self {
         Self {
             id: share.id,
@@ -530,10 +527,9 @@ pub async fn obtain_access_token(
                         }
                         break;
                     }
-                    Ok(false) => continue,
+                    Ok(false) => (),
                     Err(e) => {
                         tracing::error!("Error verifying device key: {:?}", e);
-                        continue;
                     }
                 }
             }

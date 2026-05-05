@@ -13,7 +13,7 @@ pub fn generate_api_key() -> String {
     let mut key_bytes = [0u8; 32];
     rng.fill(&mut key_bytes);
     let encoded = general_purpose::URL_SAFE_NO_PAD.encode(key_bytes);
-    format!("fulgur_{}", encoded)
+    format!("fulgur_{encoded}")
 }
 
 /// Hash an API key
@@ -30,10 +30,10 @@ pub fn hash_api_key(api_key: &str) -> anyhow::Result<String> {
     rng.fill(&mut salt_bytes);
 
     let salt = SaltString::encode_b64(&salt_bytes)
-        .map_err(|e| anyhow::anyhow!("Failed to encode salt: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to encode salt: {e}"))?;
     let hash = match Argon2::default().hash_password(api_key.as_bytes(), &salt) {
         Ok(hash) => hash,
-        Err(e) => return Err(anyhow::anyhow!("Failed to hash API key: {}", e)),
+        Err(e) => return Err(anyhow::anyhow!("Failed to hash API key: {e}")),
     };
     Ok(hash.to_string())
 }
@@ -50,7 +50,7 @@ pub fn hash_api_key(api_key: &str) -> anyhow::Result<String> {
 pub fn verify_api_key(api_key: &str, hash: &str) -> anyhow::Result<bool> {
     let hash = match PasswordHash::new(hash) {
         Ok(hash) => hash,
-        Err(e) => return Err(anyhow::anyhow!("Invalid hash: {}", e)),
+        Err(e) => return Err(anyhow::anyhow!("Invalid hash: {e}")),
     };
     Ok(Argon2::default()
         .verify_password(api_key.as_bytes(), &hash)

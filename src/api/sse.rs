@@ -33,7 +33,7 @@ pub type SseChannelManager = TaggedChannels<ShareNotification, ChannelTag>;
 /// - `auth_user`: Authenticated user and device information from middleware
 ///
 /// ### Returns:
-/// SSE stream that yields heartbeat and share_available events
+/// SSE stream that yields heartbeat and `share_available` events
 pub async fn handle_sse_connection(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthenticatedUser>,

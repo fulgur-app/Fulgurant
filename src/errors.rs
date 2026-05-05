@@ -20,7 +20,7 @@ pub enum AppError {
 }
 
 impl std::fmt::Display for AppError {
-    /// Format an AppError as a string
+    /// Format an `AppError` as a string
     ///
     /// ### Arguments
     /// - `f`: The formatter to use
@@ -30,22 +30,22 @@ impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AppError::NotFound => write!(f, "Entity not found"),
-            AppError::DatabaseError(e) => write!(f, "Database error: {}", e),
-            AppError::TemplateError(e) => write!(f, "Template error: {}", e),
-            AppError::ApiKeyError(e) => write!(f, "API key error: {}", e),
-            AppError::InternalError(e) => write!(f, "Internal error: {}", e),
+            AppError::DatabaseError(e) => write!(f, "Database error: {e}"),
+            AppError::TemplateError(e) => write!(f, "Template error: {e}"),
+            AppError::ApiKeyError(e) => write!(f, "API key error: {e}"),
+            AppError::InternalError(e) => write!(f, "Internal error: {e}"),
             AppError::Unauthorized => write!(f, "Unauthorized"),
             AppError::Forbidden => write!(f, "Forbidden"),
             AppError::MaxDevicesPerUserReached(max) => {
-                write!(f, "Max number of devices per user reached: {}", max)
+                write!(f, "Max number of devices per user reached: {max}")
             }
-            AppError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
+            AppError::ValidationError(msg) => write!(f, "Validation error: {msg}"),
         }
     }
 }
 
 impl IntoResponse for AppError {
-    /// Convert an AppError to a Response
+    /// Convert an `AppError` to a Response
     ///
     /// ### Returns
     /// - `Response`: The converted Response
@@ -100,13 +100,13 @@ impl IntoResponse for AppError {
 }
 
 impl From<sqlx::Error> for AppError {
-    /// Convert a sqlx::Error to an AppError
+    /// Convert a `sqlx::Error` to an `AppError`
     ///
     /// ### Arguments
-    /// - `err`: The sqlx::Error to convert
+    /// - `err`: The `sqlx::Error` to convert
     ///
     /// ### Returns
-    /// - `AppError`: The converted AppError
+    /// - `AppError`: The converted `AppError`
     fn from(err: sqlx::Error) -> Self {
         match err {
             sqlx::Error::RowNotFound => AppError::NotFound,
@@ -116,13 +116,13 @@ impl From<sqlx::Error> for AppError {
 }
 
 impl From<askama::Error> for AppError {
-    /// Convert an askama::Error to an AppError
+    /// Convert an `askama::Error` to an `AppError`
     ///
     /// ### Arguments
-    /// - `err`: The askama::Error to convert
+    /// - `err`: The `askama::Error` to convert
     ///
     /// ### Returns
-    /// - `AppError`: The converted AppError
+    /// - `AppError`: The converted `AppError`
     fn from(err: askama::Error) -> Self {
         AppError::TemplateError(err)
     }
