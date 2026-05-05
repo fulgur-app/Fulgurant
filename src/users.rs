@@ -2,7 +2,7 @@ use crate::db::DbPool;
 use crate::utils::format_date_utc;
 use crate::{db_execute, db_execute_dual, db_fetch_all, db_fetch_one, db_fetch_optional};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
