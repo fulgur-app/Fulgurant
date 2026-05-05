@@ -494,30 +494,27 @@ pub async fn register_step_2(
             )));
         }
     };
-    match verification_result {
-        VerificationResult::Verified => {
-            state
-                .user_repository
-                .mark_as_verified(user.id)
-                .await
-                .map_err(|e| {
-                    AppError::InternalError(anyhow::anyhow!(
-                        "Failed to mark user as verified: {:?}",
-                        e.to_string()
-                    ))
-                })?;
-            let template = templates::RegisterStep3Template {
-                first_name: user.first_name,
-            };
-            Ok(Html(template.render()?))
-        }
-        _ => {
-            let template = templates::RegisterStep2Template {
-                email,
-                error_message: format_verification_error(&verification_result),
-            };
-            Ok(Html(template.render()?))
-        }
+    if let VerificationResult::Verified = verification_result {
+        state
+            .user_repository
+            .mark_as_verified(user.id)
+            .await
+            .map_err(|e| {
+                AppError::InternalError(anyhow::anyhow!(
+                    "Failed to mark user as verified: {:?}",
+                    e.to_string()
+                ))
+            })?;
+        let template = templates::RegisterStep3Template {
+            first_name: user.first_name,
+        };
+        Ok(Html(template.render()?))
+    } else {
+        let template = templates::RegisterStep2Template {
+            email,
+            error_message: format_verification_error(&verification_result),
+        };
+        Ok(Html(template.render()?))
     }
 }
 
@@ -629,30 +626,27 @@ pub async fn forgot_password_step_2(
         )
         .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to verify code: {e}")))?;
-    match result {
-        VerificationResult::Verified => {
-            let _ = state
-                .verification_code_repository
-                .delete_for(request.email.clone(), "password_reset".to_string())
-                .await;
-            let template = templates::ForgotPasswordStep3Template {
-                email: request.email,
-                error_message: String::new(),
-            };
-            Ok(Html(template.render().map_err(|e| {
-                AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
-            })?))
-        }
-        _ => {
-            let template = templates::ForgotPasswordStep2Template {
-                email: request.email,
-                error_message: format_verification_error(&result),
-                success_message: String::new(),
-            };
-            Ok(Html(template.render().map_err(|e| {
-                AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
-            })?))
-        }
+    if let VerificationResult::Verified = result {
+        let _ = state
+            .verification_code_repository
+            .delete_for(request.email.clone(), "password_reset".to_string())
+            .await;
+        let template = templates::ForgotPasswordStep3Template {
+            email: request.email,
+            error_message: String::new(),
+        };
+        Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
+        })?))
+    } else {
+        let template = templates::ForgotPasswordStep2Template {
+            email: request.email,
+            error_message: format_verification_error(&result),
+            success_message: String::new(),
+        };
+        Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
+        })?))
     }
 }
 

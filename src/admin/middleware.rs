@@ -33,16 +33,15 @@ pub async fn require_admin(
 ) -> Result<Response, Response> {
     let user_id = session::get_session_user_id(&session).await.map_err(|e| {
         tracing::warn!("Unauthenticated user attempted to access admin route");
-        match e {
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized").into_response(),
-            _ => {
-                tracing::error!("Failed to get user_id from session: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".to_string(),
-                )
-                    .into_response()
-            }
+        if let AppError::Unauthorized = e {
+            (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
+        } else {
+            tracing::error!("Failed to get user_id from session: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            )
+                .into_response()
         }
     })?;
     let user = state
