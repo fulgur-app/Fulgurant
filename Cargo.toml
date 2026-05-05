@@ -19,13 +19,13 @@ path = "src/lib.rs"
 [dependencies]
 # Web framework
 axum = { version = "0.8.9", features = ["macros"] }
-tokio = { version = "1.49.0", features = ["full"] }
+tokio = { version = "1.52.2", features = ["full"] }
 tokio-util = "0.7.18"
 tower = "0.5.3"
 tower-http = { version = "0.6.8", features = ["fs", "trace", "set-header"] }
 tower_governor = "0.8.0"
-tower-sessions = "0.14.0"
-axum-tower-sessions-csrf = "0.1.1"
+tower-sessions = "0.15.0"
+axum-tower-sessions-csrf = "0.1.3"
 jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
 
 # Crypto
@@ -40,7 +40,7 @@ fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag =
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "postgres", "migrate", "time", "macros"] }
 
 # Templating
-askama = "0.15.1"
+askama = "0.16.0"
 
 # Serialization
 serde = { version = "1.0.228", features = ["derive"] }
@@ -74,7 +74,7 @@ time = { version = "0.3.47", features = ["serde", "formatting", "macros"] }
 
 [dev-dependencies]
 http-body-util = "0.1.3"
-axum-test = "18"
+axum-test = "20.0.0"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

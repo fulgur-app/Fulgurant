@@ -113,8 +113,7 @@ impl TestApp {
             .save_cookies()
             .expect_success_by_default()
             .http_transport()
-            .build(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-            .unwrap();
+            .build(app.into_make_service_with_connect_info::<std::net::SocketAddr>());
 
         TestApp {
             server,
