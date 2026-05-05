@@ -406,7 +406,7 @@ pub async fn register_step_1(
                 e.to_string()
             )));
         }
-    };
+    }
     if !is_password_valid(password) {
         let template = templates::RegisterStep1Template {
             error_message: "Invalid password".to_string(),

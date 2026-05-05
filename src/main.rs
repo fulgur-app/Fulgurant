@@ -257,7 +257,7 @@ async fn main() -> anyhow::Result<()> {
     match &pool {
         db::DbPool::Sqlite(p) => SQLITE_MIGRATOR.run(p).await?,
         db::DbPool::Postgres(p) => POSTGRES_MIGRATOR.run(p).await?,
-    };
+    }
     tracing::info!("Migrations completed successfully");
     let device_repository = devices::DeviceRepository::new(pool.clone());
     let user_repository = users::UserRepository::new(pool.clone());
