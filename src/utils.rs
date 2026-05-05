@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use regex::Regex;
 use std::sync::LazyLock;
 use time::OffsetDateTime;
