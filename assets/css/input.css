@@ -25,17 +25,44 @@
 	--noise: 0;
 }
 
-/* Inputs inherit their container's background so they blend with any card color */
-.input, .select, .textarea { background-color: inherit; outline: none; }
-.input:focus, .select:focus, .textarea:focus { border-color: var(--color-primary); }
-.table .btn-ghost { background-color: var(--color-base-300); }
-.btn-ghost:hover { background-color: var(--color-primary); color: var(--color-primary-content); }
-.join-item.btn:not(.btn-active):not(:disabled):hover { background-color: var(--color-primary); color: var(--color-primary-content); border-color: var(--color-primary); }
-.menu :where(li > a):hover, .menu :where(li > button):hover { background-color: var(--color-primary) !important; color: var(--color-primary-content) !important; }
+.input:focus,
+.select:focus,
+.textarea:focus {
+	border-color: var(--color-primary);
+}
+.table .btn-ghost {
+	background-color: var(--color-base-300);
+}
+.btn-ghost:hover {
+	background-color: var(--color-primary);
+	color: var(--color-primary-content);
+}
+.join-item.btn:not(.btn-active):not(:disabled):hover {
+	background-color: var(--color-primary);
+	color: var(--color-primary-content);
+	border-color: var(--color-primary);
+}
+.menu :where(li > a):hover,
+.menu :where(li > button):hover {
+	background-color: var(--color-primary) !important;
+	color: var(--color-primary-content) !important;
+}
+
+/* Firefox: nudge native select text to vertical center in inline device forms */
+@supports (-moz-appearance: none) {
+	.device-inline-form .inline-form-select {
+		padding-block: 0.5rem;
+		height: calc(var(--size-field, 0.25rem) * 10);
+	}
+}
 
 /* Remove table cell edge padding so first/last columns align with card-body content */
-.card-body .table :where(th, td):first-child { padding-left: 0; }
-.card-body .table :where(th, td):last-child { padding-right: 0; }
+.card-body .table :where(th, td):first-child {
+	padding-left: 0;
+}
+.card-body .table :where(th, td):last-child {
+	padding-right: 0;
+}
 
 /* HTMX transition classes (required - HTMX adds/removes these dynamically) */
 .htmx-swapping {
