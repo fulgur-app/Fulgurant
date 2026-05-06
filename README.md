@@ -16,6 +16,8 @@ The Admin dashboard (for Admin users only): allows to manage the users (edit the
 
 Version 0.5.0 introduces a breaking change in the communication with Fulgur. Make sure you update Fulgur to version 0.6.0+.
 
+Version 0.6.0 allows to set the maximum share file size from the UI and sends this information to the Fulgur client. Make sure to update Fulgur to 0.7.0+ to beneficiate from this feature. The linter `cargo clippy` now runs only in `pedantic` mode by default, making it stricter and more reliable.
+
 ## Features
 
 - User authentication with email verification
@@ -31,7 +33,7 @@ Version 0.5.0 introduces a breaking change in the communication with Fulgur. Mak
 
 ## In the backlog
 
-* More polished Admin interface (accounts creation/edition,...)
+* More polished Admin interface (stats,...)
 * ~~Docker image~~ DONE in v0.4.0 [Dockerhub](https://hub.docker.com/r/fulgurapp/fulgurant/tags)
 
 ## Requirements
@@ -169,7 +171,7 @@ SQLite requires no external setup. Set `DATABASE_URL=sqlite:data/database.db` (o
 
 ### PostgreSQL
 
-PostgreSQL is auto-detected when `DATABASE_URL` starts with `postgres://` or `postgresql://`. No migration from SQLite is supported — PostgreSQL is intended for new deployments.
+PostgreSQL is auto-detected when `DATABASE_URL` starts with `postgres://` or `postgresql://`. No migration from SQLite is supported, PostgreSQL is intended for new deployments.
 
 **Local development with Docker:**
 
