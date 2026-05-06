@@ -699,7 +699,7 @@ pub async fn forgot_password_step_3(
         .update_password(user.id, password_hash)
         .await
     {
-        Ok(_) => {
+        Ok(()) => {
             tracing::info!("Password reset for user: {}", user.email);
         }
         Err(e) => {
@@ -860,7 +860,7 @@ fn format_verification_error(result: &VerificationResult) -> String {
         VerificationResult::NotFound => {
             "No verification code found. Please request a new code.".to_string()
         }
-        _ => "Verification failed".to_string(),
+        VerificationResult::Verified => "Verification failed".to_string(),
     }
 }
 

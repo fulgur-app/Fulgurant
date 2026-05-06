@@ -17,7 +17,7 @@ pub const VERIFICATION_CODE_MAX_ATTEMPTS: i32 = 3;
 /// ### Returns
 /// - `String`: The generated code
 pub fn generate_code() -> String {
-    let code: u32 = rand::rng().random_range(100000..=999999);
+    let code: u32 = rand::rng().random_range(100_000..=999_999);
     code.to_string()
 }
 

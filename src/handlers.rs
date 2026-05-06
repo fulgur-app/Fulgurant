@@ -300,7 +300,7 @@ pub async fn delete_device(
 
     // Delete the device
     match state.device_repository.delete(id).await {
-        Ok(_) => {
+        Ok(()) => {
             // If this was the last device, return the empty state row
             if device_count == 1 {
                 let template = templates::DeviceEmptyStateRowTemplate;
@@ -412,7 +412,7 @@ pub async fn delete_share(
         return Err(AppError::Forbidden);
     }
     match state.share_repository.delete(&id).await {
-        Ok(_) => Ok(StatusCode::OK),
+        Ok(()) => Ok(StatusCode::OK),
         Err(e) => {
             tracing::error!("Error deleting share: {:?}", e);
             Err(AppError::DatabaseError(e))
