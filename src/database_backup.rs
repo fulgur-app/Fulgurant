@@ -111,7 +111,7 @@ pub fn make_daily_backup_task(pool: DbPool, shutdown_token: CancellationToken, i
                         }
                     }
                 },
-                _ = shutdown_token.cancelled() => {
+                () = shutdown_token.cancelled() => {
                     if is_prod {
                         tracing::info!("Database backup task shutting down - performing final backup");
                         match perform_backup(&sqlite_pool).await {

@@ -699,7 +699,7 @@ pub async fn forgot_password_step_3(
         .update_password(user.id, password_hash)
         .await
     {
-        Ok(_) => {
+        Ok(()) => {
             tracing::info!("Password reset for user: {}", user.email);
         }
         Err(e) => {
