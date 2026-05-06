@@ -33,6 +33,9 @@ pub mod users;
 pub mod utils;
 pub mod verification_code;
 
+/// Application version sourced from Cargo.toml at compile time.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 use axum::{
     Router,
     http::{HeaderValue, header},
