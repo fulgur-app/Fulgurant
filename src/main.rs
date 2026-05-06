@@ -288,9 +288,7 @@ async fn main() -> anyhow::Result<()> {
     let max_file_size_bytes = settings_repository.get_max_file_size_bytes().await?;
     tracing::info!(
         "Max file size for sharing: {}",
-        max_file_size_bytes
-            .map(|b| format!("{b} bytes"))
-            .unwrap_or_else(|| "no limit".to_string())
+        max_file_size_bytes.map_or_else(|| "no limit".to_string(), |b| format!("{b} bytes"))
     );
     let app_state = handlers::AppState {
         device_repository,

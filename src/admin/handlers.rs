@@ -391,9 +391,7 @@ pub async fn update_max_file_size(
     *state.max_file_size_bytes.write().await = new_value;
     tracing::info!(
         "Admin updated max file size to {:?}",
-        new_value
-            .map(|b| format!("{b} bytes"))
-            .unwrap_or_else(|| "no limit".to_string())
+        new_value.map_or_else(|| "no limit".to_string(), |b| format!("{b} bytes"))
     );
     let max_file_size_kb = new_value.map(|b| b / 1024);
     let template = templates::MaxFileSizeUpdateSuccessTemplate { max_file_size_kb };
