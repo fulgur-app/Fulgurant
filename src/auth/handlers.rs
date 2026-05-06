@@ -860,7 +860,7 @@ fn format_verification_error(result: &VerificationResult) -> String {
         VerificationResult::NotFound => {
             "No verification code found. Please request a new code.".to_string()
         }
-        _ => "Verification failed".to_string(),
+        VerificationResult::Verified => "Verification failed".to_string(),
     }
 }
 
