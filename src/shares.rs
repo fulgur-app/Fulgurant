@@ -145,7 +145,7 @@ impl ShareRepository {
         if data.deduplication_hash.is_some() {
             let share = db_fetch_one_dual!(
                 self.pool,
-                sqlite: r#"
+                sqlite: r"
                 INSERT INTO shares (
                     id, user_id, source_device_id, destination_device_id,
                     file_hash, file_name, file_size, content, deduplication_hash,
@@ -160,8 +160,8 @@ impl ShareRepository {
                     created_at = excluded.created_at,
                     expires_at = excluded.expires_at
                 RETURNING *
-                "#,
-                postgres: r#"
+                ",
+                postgres: r"
                 INSERT INTO shares (
                     id, user_id, source_device_id, destination_device_id,
                     file_hash, file_name, file_size, content, deduplication_hash,
@@ -176,7 +176,7 @@ impl ShareRepository {
                     created_at = excluded.created_at,
                     expires_at = excluded.expires_at
                 RETURNING *
-                "#,
+                ",
                 Share,
                 &id,
                 user_id,
@@ -194,22 +194,22 @@ impl ShareRepository {
         } else {
             let share = db_fetch_one_dual!(
                 self.pool,
-                sqlite: r#"
+                sqlite: r"
                 INSERT INTO shares (
                     id, user_id, source_device_id, destination_device_id,
                     file_hash, file_name, file_size, content, deduplication_hash,
                     created_at, expires_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 RETURNING *
-                "#,
-                postgres: r#"
+                ",
+                postgres: r"
                 INSERT INTO shares (
                     id, user_id, source_device_id, destination_device_id,
                     file_hash, file_name, file_size, content, deduplication_hash,
                     created_at, expires_at
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, to_timestamp($9), to_timestamp($10))
                 RETURNING *
-                "#,
+                ",
                 Share,
                 &id,
                 user_id,
