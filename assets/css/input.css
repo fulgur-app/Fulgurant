@@ -25,13 +25,6 @@
 	--noise: 0;
 }
 
-/* Inputs inherit their container's background so they blend with any card color */
-.input,
-.select,
-.textarea {
-	background-color: inherit;
-	outline: none;
-}
 .input:focus,
 .select:focus,
 .textarea:focus {
