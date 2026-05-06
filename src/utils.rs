@@ -29,8 +29,8 @@ pub fn is_valid_email(email: &str) -> bool {
 /// - `true` if the password is valid, `false` otherwise
 pub fn is_password_valid(password: &str) -> bool {
     let right_length = password.len() >= 8 && password.len() <= 64;
-    let has_uppercase = password.chars().any(|c| c.is_uppercase());
-    let has_lowercase = password.chars().any(|c| c.is_lowercase());
+    let has_uppercase = password.chars().any(char::is_uppercase);
+    let has_lowercase = password.chars().any(char::is_lowercase);
     let has_digit = password.chars().any(|c| c.is_ascii_digit());
     let has_special = password.chars().any(|c| !c.is_alphanumeric());
     if !right_length || !has_uppercase || !has_lowercase || !has_digit || !has_special {
