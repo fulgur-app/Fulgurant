@@ -11,7 +11,7 @@
                 </div>
                 <div>
                     <label class="label">Device Type</label>
-                    <select name="device_type" required class="select select-bordered w-full">
+                    <select name="device_type" required class="select select-bordered w-full inline-form-select">
                         <option value="Laptop" {% if device.device_type == "Laptop" %}selected{% endif %}>Laptop</option>
                         <option value="Desktop" {% if device.device_type == "Desktop" %}selected{% endif %}>Desktop</option>
                         <option value="AllInOne" {% if device.device_type == "AllInOne" %}selected{% endif %}>All-In-One</option>
