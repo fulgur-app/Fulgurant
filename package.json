@@ -5,8 +5,8 @@
 		"tw:build": "tailwindcss -i assets/css/input.css -o assets/css/output.css --minify"
 	},
 	"devDependencies": {
-		"tailwindcss": "4.2.4",
-		"@tailwindcss/cli": "4.2.4",
-		"daisyui": "5.5.19"
+		"tailwindcss": "4.3.0",
+		"@tailwindcss/cli": "4.3.0",
+		"daisyui": "5.5.20"
 	}
 }
