@@ -10,6 +10,7 @@ dependencies = [
  "argon2",
  "askama",
  "async-stream",
+ "async-trait",
  "axum",
  "axum-test",
  "axum-tower-sessions-csrf",

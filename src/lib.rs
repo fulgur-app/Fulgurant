@@ -44,7 +44,9 @@ use axum::{
 };
 use std::sync::Arc;
 use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
-use tower_sessions::{MemoryStore, SessionManagerLayer};
+use tower_sessions::SessionManagerLayer;
+
+use crate::session::FulgurSessionStore;
 
 /// Build the complete application router
 ///
@@ -56,7 +58,7 @@ use tower_sessions::{MemoryStore, SessionManagerLayer};
 /// - `Router`: The fully assembled router with all routes and middleware
 pub fn build_app(
     app_state: &handlers::AppState,
-    session_layer: SessionManagerLayer<MemoryStore>,
+    session_layer: SessionManagerLayer<FulgurSessionStore>,
 ) -> Router {
     let auth_routes = make_auth_routes(app_state, session_layer.clone());
     let api_routes = make_api_routes(app_state);
@@ -79,7 +81,7 @@ pub fn build_app(
 /// - `Router`: The router that handles the auth routes
 fn make_auth_routes(
     app_state: &handlers::AppState,
-    session_layer: SessionManagerLayer<MemoryStore>,
+    session_layer: SessionManagerLayer<FulgurSessionStore>,
 ) -> Router {
     let auth_governor_conf = Arc::new(
         tower_governor::governor::GovernorConfigBuilder::default()
@@ -236,7 +238,7 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
 /// - `Router`: The router that handles the web routes
 fn make_web_routes(
     app_state: &handlers::AppState,
-    session_layer: SessionManagerLayer<MemoryStore>,
+    session_layer: SessionManagerLayer<FulgurSessionStore>,
 ) -> Router {
     Router::new()
         .merge(make_public_routes(app_state))

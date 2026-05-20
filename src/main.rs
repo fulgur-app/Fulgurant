@@ -1,6 +1,6 @@
 use dotenvy::dotenv;
 use fulgurant::{
-    api, database_backup, db, devices, handlers, logging, mail, settings, shares, users,
+    api, database_backup, db, devices, handlers, logging, mail, session, settings, shares, users,
     users::UserRepository, verification_code,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -11,9 +11,7 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 use tower_http::services::ServeDir;
-use tower_sessions::{
-    Expiry, MemoryStore, SessionManagerLayer, cookie::time::Duration as CookieDuration,
-};
+use tower_sessions::{Expiry, SessionManagerLayer, cookie::time::Duration as CookieDuration};
 
 use shares::ShareRepository;
 use verification_code::VerificationCodeRepository;
@@ -311,7 +309,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     tracing::info!("API rate limiter: 100 requests per minute per IP");
     tracing::info!("Auth rate limiter: 10 requests per minute per IP");
-    let session_store = MemoryStore::default();
+    let session_repository = session::SessionRepository::new(pool.clone());
+    let session_store = session::FulgurSessionStore::new(session_repository);
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(is_prod)
         .with_expiry(Expiry::OnInactivity(CookieDuration::hours(1)));

@@ -1,6 +1,11 @@
+use std::str::FromStr;
+
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tower_sessions::Session;
+use tower_sessions::session::{Id, Record};
+use tower_sessions::session_store::{self, SessionStore};
 
 use crate::db::DbPool;
 use crate::errors::AppError;
@@ -236,5 +241,256 @@ impl SessionRepository {
             postgres: "DELETE FROM sessions WHERE expires_at < to_timestamp($1)",
             now
         )
+    }
+}
+
+/// Extract the authenticated user id from a tower-sessions record, if any.
+///
+/// ### Arguments
+/// - `record`: The tower-sessions record to inspect
+///
+/// ### Returns
+/// - `Some(i32)`: The authenticated user id stored under `SESSION_USER_ID`
+/// - `None`: No user id is set or the stored value is not an integer
+fn extract_user_id(record: &Record) -> Option<i32> {
+    record
+        .data
+        .get(SESSION_USER_ID)
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|n| i32::try_from(n).ok())
+}
+
+/// Extract the remember-me flag from a tower-sessions record.
+///
+/// ### Arguments
+/// - `record`: The tower-sessions record to inspect
+///
+/// ### Returns
+/// - `true`: The login form set `SESSION_REMEMBER_ME` to true
+/// - `false`: The key is missing or its value is not a boolean
+fn extract_remember_me(record: &Record) -> bool {
+    record
+        .data
+        .get(SESSION_REMEMBER_ME)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// Custom `tower_sessions::SessionStore` backed by `SessionRepository`.
+///
+/// Keeps the full session record as a JSON blob in the `data` column while
+/// hoisting `user_id` and `remember_me` into dedicated indexed columns so
+/// admin and user revocation queries do not need to deserialize every row.
+#[derive(Clone)]
+pub struct FulgurSessionStore {
+    repository: SessionRepository,
+}
+
+impl std::fmt::Debug for FulgurSessionStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FulgurSessionStore").finish()
+    }
+}
+
+impl FulgurSessionStore {
+    /// Create a new session store wrapping the given repository.
+    ///
+    /// ### Arguments
+    /// - `repository`: The session repository to dispatch persistence through
+    ///
+    /// ### Returns
+    /// - `FulgurSessionStore`: The configured store
+    pub fn new(repository: SessionRepository) -> Self {
+        Self { repository }
+    }
+}
+
+/// Encode a tower-sessions `Record` into the bytes stored in the `data` column.
+///
+/// ### Arguments
+/// - `record`: The record to encode
+///
+/// ### Returns
+/// - `Ok(Vec<u8>)`: JSON-encoded record
+/// - `Err(session_store::Error::Encode)`: If serialization fails
+fn encode_record(record: &Record) -> session_store::Result<Vec<u8>> {
+    serde_json::to_vec(record).map_err(|e| session_store::Error::Encode(e.to_string()))
+}
+
+/// Decode the `data` column back into a tower-sessions `Record`.
+///
+/// ### Arguments
+/// - `bytes`: The JSON-encoded record bytes
+///
+/// ### Returns
+/// - `Ok(Record)`: The decoded record
+/// - `Err(session_store::Error::Decode)`: If deserialization fails
+fn decode_record(bytes: &[u8]) -> session_store::Result<Record> {
+    serde_json::from_slice(bytes).map_err(|e| session_store::Error::Decode(e.to_string()))
+}
+
+#[async_trait]
+impl SessionStore for FulgurSessionStore {
+    /// Create a new session row, regenerating the id on collision.
+    ///
+    /// ### Arguments
+    /// - `record`: The tower-sessions record to persist; its `id` may be
+    ///   replaced if a collision is detected
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The row was inserted under a unique id
+    /// - `Err(session_store::Error::Backend)`: The backing repository failed
+    async fn create(&self, record: &mut Record) -> session_store::Result<()> {
+        loop {
+            let id_str = record.id.to_string();
+            let existing = self
+                .repository
+                .load(&id_str)
+                .await
+                .map_err(|e| session_store::Error::Backend(e.to_string()))?;
+            if existing.is_some() {
+                record.id = Id::default();
+                continue;
+            }
+            return self.save(record).await;
+        }
+    }
+
+    /// Persist a session record, hoisting `user_id` and `remember_me` into
+    /// their dedicated columns alongside the JSON-encoded blob.
+    ///
+    /// ### Arguments
+    /// - `record`: The tower-sessions record to persist
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The row was inserted or updated
+    /// - `Err(session_store::Error::Encode)`: JSON serialization failed
+    /// - `Err(session_store::Error::Backend)`: The backing repository failed
+    async fn save(&self, record: &Record) -> session_store::Result<()> {
+        let row = SessionRecord {
+            id: record.id.to_string(),
+            user_id: extract_user_id(record),
+            data: encode_record(record)?,
+            expires_at: record.expiry_date,
+            created_at: OffsetDateTime::now_utc(),
+            user_agent: None,
+            remember_me: extract_remember_me(record),
+        };
+        self.repository
+            .upsert(&row)
+            .await
+            .map_err(|e| session_store::Error::Backend(e.to_string()))
+    }
+
+    /// Load a session by id, re-applying the persisted `id` and
+    /// `expires_at` over the decoded blob to prevent payload tampering.
+    ///
+    /// ### Arguments
+    /// - `session_id`: The tower-sessions id to look up
+    ///
+    /// ### Returns
+    /// - `Ok(Some(Record))`: The session exists and is not expired
+    /// - `Ok(None)`: No matching session or it has expired
+    /// - `Err(session_store::Error::Decode)`: The stored blob could not be deserialized
+    /// - `Err(session_store::Error::Backend)`: The backing repository failed
+    async fn load(&self, session_id: &Id) -> session_store::Result<Option<Record>> {
+        let id_str = session_id.to_string();
+        let Some(row) = self
+            .repository
+            .load(&id_str)
+            .await
+            .map_err(|e| session_store::Error::Backend(e.to_string()))?
+        else {
+            return Ok(None);
+        };
+        let mut record = decode_record(&row.data)?;
+        // Defensive: trust the column over a stale id inside the blob, and
+        // trust the column expiry so callers cannot extend a revoked session
+        // by tampering with the serialized payload.
+        record.id = Id::from_str(&row.id)
+            .map_err(|e| session_store::Error::Decode(format!("invalid session id: {e}")))?;
+        record.expiry_date = row.expires_at;
+        Ok(Some(record))
+    }
+
+    /// Delete a session row by id.
+    ///
+    /// ### Arguments
+    /// - `session_id`: The tower-sessions id to delete
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The row was removed or no matching row existed
+    /// - `Err(session_store::Error::Backend)`: The backing repository failed
+    async fn delete(&self, session_id: &Id) -> session_store::Result<()> {
+        let id_str = session_id.to_string();
+        self.repository
+            .delete(&id_str)
+            .await
+            .map_err(|e| session_store::Error::Backend(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use time::Duration;
+
+    fn make_record() -> Record {
+        Record {
+            id: Id::default(),
+            data: std::collections::HashMap::new(),
+            expiry_date: OffsetDateTime::now_utc() + Duration::hours(1),
+        }
+    }
+
+    #[test]
+    fn extract_user_id_missing_returns_none() {
+        let record = make_record();
+        assert_eq!(extract_user_id(&record), None);
+    }
+
+    #[test]
+    fn extract_user_id_present_returns_value() {
+        let mut record = make_record();
+        record
+            .data
+            .insert(SESSION_USER_ID.to_string(), serde_json::json!(42));
+        assert_eq!(extract_user_id(&record), Some(42));
+    }
+
+    #[test]
+    fn extract_user_id_non_integer_returns_none() {
+        let mut record = make_record();
+        record
+            .data
+            .insert(SESSION_USER_ID.to_string(), serde_json::json!("oops"));
+        assert_eq!(extract_user_id(&record), None);
+    }
+
+    #[test]
+    fn extract_remember_me_defaults_false() {
+        let record = make_record();
+        assert!(!extract_remember_me(&record));
+    }
+
+    #[test]
+    fn extract_remember_me_reads_bool() {
+        let mut record = make_record();
+        record
+            .data
+            .insert(SESSION_REMEMBER_ME.to_string(), serde_json::json!(true));
+        assert!(extract_remember_me(&record));
+    }
+
+    #[test]
+    fn encode_decode_record_roundtrip() {
+        let mut record = make_record();
+        record
+            .data
+            .insert(SESSION_USER_ID.to_string(), serde_json::json!(7));
+        let bytes = encode_record(&record).expect("encode");
+        let decoded = decode_record(&bytes).expect("decode");
+        assert_eq!(decoded.id, record.id);
+        assert_eq!(decoded.data, record.data);
     }
 }
