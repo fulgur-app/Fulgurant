@@ -283,6 +283,7 @@ async fn main() -> anyhow::Result<()> {
         jwt_expiry_seconds,
         jwt_expiry_seconds / 60
     );
+    let session_repository = session::SessionRepository::new(pool.clone());
     let max_file_size_bytes = settings_repository.get_max_file_size_bytes().await?;
     tracing::info!(
         "Max file size for sharing: {}",
@@ -294,6 +295,7 @@ async fn main() -> anyhow::Result<()> {
         verification_code_repository,
         share_repository,
         settings_repository,
+        session_repository: session_repository.clone(),
         mailer: Arc::new(mail::Mailer::new(is_prod)?),
         is_prod,
         can_register: config.can_register,
@@ -309,7 +311,6 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     tracing::info!("API rate limiter: 100 requests per minute per IP");
     tracing::info!("Auth rate limiter: 10 requests per minute per IP");
-    let session_repository = session::SessionRepository::new(pool.clone());
     let session_store = session::FulgurSessionStore::new(session_repository);
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(is_prod)

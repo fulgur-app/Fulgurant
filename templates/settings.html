@@ -68,6 +68,27 @@
 				</div>
 			</div>
 
+			<div class="mb-8">
+				<h3 class="text-lg font-semibold mb-4">Active Sessions</h3>
+				<p class="text-sm text-base-content/60 mb-4">
+					Sign out of every other browser or device where this account is currently
+					logged in. Your current session will stay active.
+				</p>
+				<div id="sign-out-everywhere-container">
+					<div class="flex justify-end w-full">
+						<form
+							hx-post="/settings/sign-out-everywhere"
+							hx-target="#sign-out-everywhere-container"
+							hx-swap="innerHTML"
+						>
+							<button type="submit" class="btn btn-primary">
+								Sign out everywhere else
+							</button>
+						</form>
+					</div>
+				</div>
+			</div>
+
 			<div class="mb-4">
 				<h3 class="text-lg font-semibold mb-4">Password</h3>
 				<p class="text-sm text-base-content/60 mb-4">

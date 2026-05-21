@@ -298,6 +298,10 @@ fn make_protected_routes(app_state: &handlers::AppState) -> Router {
             "/settings/verify-email-change",
             post(handlers::update_email_step_2),
         )
+        .route(
+            "/settings/sign-out-everywhere",
+            post(handlers::sign_out_everywhere),
+        )
         .merge(make_admin_routes(app_state))
         .with_state(app_state.clone())
         .layer(TraceLayer::new_for_http())
