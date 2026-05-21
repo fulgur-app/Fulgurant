@@ -11,7 +11,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
-use tower_sessions::Session;
+use tower_sessions::{Expiry, Session, cookie::time::Duration as CookieDuration};
 
 use crate::{
     errors::AppError,
@@ -35,7 +35,12 @@ pub fn can_register() -> bool {
 pub struct LoginRequest {
     email: String,
     password: String,
+    #[serde(default)]
+    remember_me: Option<String>,
 }
+
+/// Idle timeout applied to "Remember me" sessions (30 days).
+const REMEMBER_ME_IDLE_DAYS: i64 = 30;
 
 /// GET /login - Returns the login page
 ///
@@ -114,6 +119,16 @@ pub async fn login(
         .insert(session::SESSION_USER_ID, user.id)
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    let remember_me = request.remember_me.is_some();
+    session
+        .insert(session::SESSION_REMEMBER_ME, remember_me)
+        .await
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    if remember_me {
+        session.set_expiry(Some(Expiry::OnInactivity(CookieDuration::days(
+            REMEMBER_ME_IDLE_DAYS,
+        ))));
+    }
     let redirect_url = if user.force_password_update {
         session
             .insert("force_password_update", true)
