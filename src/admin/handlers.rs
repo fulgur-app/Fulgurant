@@ -223,6 +223,23 @@ pub async fn toggle_force_password_update(
         .user_repository
         .toggle_force_password_update(id)
         .await?;
+    if updated_user.force_password_update {
+        let revoked = state
+            .session_repository
+            .delete_all_for_user(id)
+            .await
+            .map_err(|e| {
+                AppError::InternalError(anyhow::anyhow!(
+                    "Failed to revoke sessions after enabling force password update: {e}"
+                ))
+            })?;
+        tracing::info!(
+            "Admin {} enabled force-password-update for user {} and revoked {} session(s)",
+            user_id,
+            id,
+            revoked
+        );
+    }
     let template = templates::UserRowTemplate {
         display_user: updated_user,
         user: templates::UserContext::from(&user),

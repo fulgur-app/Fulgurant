@@ -252,10 +252,27 @@ pub async fn force_password_update(
         .remove::<bool>("force_password_update")
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
-    tracing::info!(
-        "User {} updated password via force password update",
-        user_id
-    );
+    if let Some(current_id) = session.id() {
+        let revoked = state
+            .session_repository
+            .delete_all_for_user_except(user_id, &current_id.to_string())
+            .await
+            .map_err(|e| {
+                AppError::InternalError(anyhow::anyhow!(
+                    "Failed to revoke other sessions after password update: {e}"
+                ))
+            })?;
+        tracing::info!(
+            "User {} updated password via force password update and revoked {} other session(s)",
+            user_id,
+            revoked
+        );
+    } else {
+        tracing::info!(
+            "User {} updated password via force password update",
+            user_id
+        );
+    }
     let mut response = Html("").into_response();
     response
         .headers_mut()
@@ -724,6 +741,20 @@ pub async fn forgot_password_step_3(
             )));
         }
     }
+    let revoked = state
+        .session_repository
+        .delete_all_for_user(user.id)
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!(
+                "Failed to revoke sessions after password reset: {e}"
+            ))
+        })?;
+    tracing::info!(
+        "Revoked {} session(s) for user {} after forgot-password reset",
+        revoked,
+        user.id
+    );
     let template = templates::ForgotPasswordSuccessTemplate {};
     Ok(Html(template.render()?))
 }
