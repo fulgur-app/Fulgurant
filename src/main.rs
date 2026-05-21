@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 use tower_http::services::ServeDir;
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::time::Duration as CookieDuration};
 
+use session::SessionRepository;
 use shares::ShareRepository;
 use verification_code::VerificationCodeRepository;
 
@@ -332,6 +333,8 @@ async fn main() -> anyhow::Result<()> {
     make_verification_code_cleanup_task(cleanup_verification_repo, shutdown_token.clone());
     let cleanup_user_repo = app_state.user_repository.clone();
     make_unverified_user_cleanup_task(cleanup_user_repo, shutdown_token.clone());
+    let cleanup_session_repo = app_state.session_repository.clone();
+    make_session_cleanup_task(cleanup_session_repo, shutdown_token.clone());
     database_backup::make_daily_backup_task(pool.clone(), shutdown_token.clone(), is_prod);
     let bind_host = config.bind_host.clone();
     let bind_port = config.bind_port;
@@ -503,6 +506,46 @@ fn make_verification_code_cleanup_task(
                 },
                 () = shutdown_token.cancelled() => {
                     tracing::info!("Verification code cleanup task shutting down gracefully");
+                    break;
+                }
+            }
+        }
+    });
+}
+
+/// Make the session cleanup task. Runs every hour. Deletes expired rows from
+/// the `sessions` table so the persistent store does not grow without bound.
+///
+/// ### Arguments
+/// - `session_repository`: The session repository
+/// - `shutdown_token`: Token to signal graceful shutdown
+fn make_session_cleanup_task(
+    session_repository: SessionRepository,
+    shutdown_token: CancellationToken,
+) {
+    tracing::info!("Starting session cleanup task (runs every 1 hour)");
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    match session_repository.delete_expired().await {
+                        Ok(count) => {
+                            if count > 0 {
+                                tracing::info!("Cleaned up {} expired session(s)", count);
+                            } else {
+                                tracing::debug!(
+                                    "Session cleanup check complete - no expired sessions found"
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Error cleaning up expired sessions: {:?}", e);
+                        }
+                    }
+                },
+                () = shutdown_token.cancelled() => {
+                    tracing::info!("Session cleanup task shutting down gracefully");
                     break;
                 }
             }
