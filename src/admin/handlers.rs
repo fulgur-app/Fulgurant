@@ -155,6 +155,50 @@ pub async fn change_user_role(
     Ok(Html(template.render()?))
 }
 
+/// POST /user/{id}/revoke-sessions - Revoke every active web session for a user
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session of the acting admin
+/// - `id`: The ID of the user whose sessions should be revoked
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The refreshed user row as formatted HTML
+/// - `Err(AppError)`: Error that occurred while revoking sessions
+pub async fn revoke_user_sessions(
+    State(state): State<AppState>,
+    session: Session,
+    axum::extract::Path(id): axum::extract::Path<i32>,
+) -> Result<Html<String>, AppError> {
+    let user_id = session::get_session_user_id(&session).await?;
+    let acting_user = state
+        .user_repository
+        .get_by_id(user_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    let target_user = state
+        .user_repository
+        .get_by_id(id)
+        .await?
+        .ok_or_else(|| AppError::InternalError(anyhow::anyhow!("Target user not found")))?;
+    let revoked = state
+        .session_repository
+        .delete_all_for_user(id)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to revoke sessions: {e}")))?;
+    tracing::info!(
+        "Admin {} revoked {} session(s) for user {}",
+        user_id,
+        revoked,
+        id
+    );
+    let template = templates::UserRowTemplate {
+        display_user: target_user.into(),
+        user: templates::UserContext::from(&acting_user),
+    };
+    Ok(Html(template.render()?))
+}
+
 /// POST /user/{id}/toggle-force-password-update - Toggle the `force_password_update` flag for a user
 ///
 /// ### Arguments

@@ -181,6 +181,10 @@ fn make_admin_routes(app_state: &handlers::AppState) -> Router<handlers::AppStat
             "/user/{id}/toggle-force-password-update",
             post(admin::handlers::toggle_force_password_update),
         )
+        .route(
+            "/user/{id}/revoke-sessions",
+            post(admin::handlers::revoke_user_sessions),
+        )
         .route("/user/{id}", delete(admin::handlers::delete_user))
         .route(
             "/user/create",
