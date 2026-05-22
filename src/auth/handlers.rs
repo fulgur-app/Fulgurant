@@ -11,7 +11,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
-use tower_sessions::Session;
+use tower_sessions::{Expiry, Session, cookie::time::Duration as CookieDuration};
 
 use crate::{
     errors::AppError,
@@ -35,7 +35,12 @@ pub fn can_register() -> bool {
 pub struct LoginRequest {
     email: String,
     password: String,
+    #[serde(default)]
+    remember_me: Option<String>,
 }
+
+/// Idle timeout applied to "Remember me" sessions (30 days).
+const REMEMBER_ME_IDLE_DAYS: i64 = 30;
 
 /// GET /login - Returns the login page
 ///
@@ -114,6 +119,16 @@ pub async fn login(
         .insert(session::SESSION_USER_ID, user.id)
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    let remember_me = request.remember_me.is_some();
+    session
+        .insert(session::SESSION_REMEMBER_ME, remember_me)
+        .await
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    if remember_me {
+        session.set_expiry(Some(Expiry::OnInactivity(CookieDuration::days(
+            REMEMBER_ME_IDLE_DAYS,
+        ))));
+    }
     let redirect_url = if user.force_password_update {
         session
             .insert("force_password_update", true)
@@ -237,10 +252,27 @@ pub async fn force_password_update(
         .remove::<bool>("force_password_update")
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
-    tracing::info!(
-        "User {} updated password via force password update",
-        user_id
-    );
+    if let Some(current_id) = session.id() {
+        let revoked = state
+            .session_repository
+            .delete_all_for_user_except(user_id, &current_id.to_string())
+            .await
+            .map_err(|e| {
+                AppError::InternalError(anyhow::anyhow!(
+                    "Failed to revoke other sessions after password update: {e}"
+                ))
+            })?;
+        tracing::info!(
+            "User {} updated password via force password update and revoked {} other session(s)",
+            user_id,
+            revoked
+        );
+    } else {
+        tracing::info!(
+            "User {} updated password via force password update",
+            user_id
+        );
+    }
     let mut response = Html("").into_response();
     response
         .headers_mut()
@@ -709,6 +741,20 @@ pub async fn forgot_password_step_3(
             )));
         }
     }
+    let revoked = state
+        .session_repository
+        .delete_all_for_user(user.id)
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!(
+                "Failed to revoke sessions after password reset: {e}"
+            ))
+        })?;
+    tracing::info!(
+        "Revoked {} session(s) for user {} after forgot-password reset",
+        revoked,
+        user.id
+    );
     let template = templates::ForgotPasswordSuccessTemplate {};
     Ok(Html(template.render()?))
 }

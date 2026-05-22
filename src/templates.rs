@@ -237,6 +237,13 @@ pub struct EmailChangeSuccessTemplate {
     pub email: String,
 }
 
+/// Sign-out-everywhere success template
+#[derive(Template)]
+#[template(path = "partials/settings/sign_out_everywhere_success.html")]
+pub struct SignOutEverywhereSuccessTemplate {
+    pub revoked: i64,
+}
+
 /// Forgot password step 1 template (full page)
 #[derive(Template)]
 #[template(path = "forgot_password.html")]

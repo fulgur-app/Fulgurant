@@ -1,0 +1,17 @@
+<div class="alert alert-success mb-4" role="alert">
+    {% if revoked == 0 %}
+        No other active sessions were found.
+    {% else if revoked == 1 %}
+        Signed out of 1 other session.
+    {% else %}
+        Signed out of {{ revoked }} other sessions.
+    {% endif %}
+</div>
+
+<div class="flex justify-end w-full">
+    <form hx-post="/settings/sign-out-everywhere"
+          hx-target="#sign-out-everywhere-container"
+          hx-swap="innerHTML">
+        <button type="submit" class="btn btn-primary">Sign out everywhere else</button>
+    </form>
+</div>

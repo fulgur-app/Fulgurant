@@ -1,15 +1,20 @@
 use axum_test::TestServer;
 use fulgurant::{
-    api::sse::SseChannelManager, db::DbPool, devices::DeviceRepository, handlers::AppState,
-    mail::Mailer, settings::SettingsRepository, shares::ShareRepository, users::UserRepository,
+    api::sse::SseChannelManager,
+    db::DbPool,
+    devices::DeviceRepository,
+    handlers::AppState,
+    mail::Mailer,
+    session::{FulgurSessionStore, SessionRepository},
+    settings::SettingsRepository,
+    shares::ShareRepository,
+    users::UserRepository,
     verification_code::VerificationCodeRepository,
 };
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::{Arc, atomic::AtomicBool};
-use tower_sessions::{
-    Expiry, MemoryStore, SessionManagerLayer, cookie::time::Duration as CookieDuration,
-};
+use tower_sessions::{Expiry, SessionManagerLayer, cookie::time::Duration as CookieDuration};
 
 /// Test application wrapper providing a configured test server with an in-memory database
 pub struct TestApp {
@@ -83,12 +88,15 @@ impl TestApp {
         let jwt_secret =
             "test_jwt_secret_key_minimum_32_bytes_long_for_testing_purposes".to_string();
 
+        let session_repository = SessionRepository::new(db_pool.clone());
+
         let app_state = AppState {
             device_repository: DeviceRepository::new(db_pool.clone()),
             user_repository: UserRepository::new(db_pool.clone()),
             verification_code_repository: VerificationCodeRepository::new(db_pool.clone()),
             share_repository: ShareRepository::new(db_pool.clone()),
             settings_repository: SettingsRepository::new(db_pool.clone()),
+            session_repository: session_repository.clone(),
             mailer: Arc::new(Mailer::new(false).unwrap()),
             is_prod: false,
             can_register: opts.can_register,
@@ -102,7 +110,7 @@ impl TestApp {
             max_file_size_bytes: Arc::new(tokio::sync::RwLock::new(Some(1_048_576))),
         };
 
-        let session_store = MemoryStore::default();
+        let session_store = FulgurSessionStore::new(session_repository);
         let session_layer = SessionManagerLayer::new(session_store)
             .with_secure(false)
             .with_expiry(Expiry::OnInactivity(CookieDuration::hours(1)));

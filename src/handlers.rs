@@ -20,7 +20,7 @@ use crate::{
     errors::AppError,
     logging::sanitize_for_log,
     mail,
-    session::{self},
+    session::{self, SessionRepository},
     settings::SettingsRepository,
     shares::{DisplayShare, ShareRepository},
     templates::{self},
@@ -35,6 +35,7 @@ pub struct AppState {
     pub verification_code_repository: VerificationCodeRepository,
     pub share_repository: ShareRepository,
     pub settings_repository: SettingsRepository,
+    pub session_repository: SessionRepository,
     pub mailer: Arc<mail::Mailer>,
     pub is_prod: bool,
     pub can_register: bool,
@@ -669,4 +670,38 @@ pub async fn update_email_step_2(
             Ok(Html(template.render()?))
         }
     }
+}
+
+/// POST /settings/sign-out-everywhere - Revokes all of the user's other web sessions
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The current session (preserved)
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: Success message as formatted HTML partial
+/// - `Err(AppError)`: Error that occurred while revoking sessions
+pub async fn sign_out_everywhere(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Html<String>, AppError> {
+    let user_id = session::get_session_user_id(&session).await?;
+    let current_id = session
+        .id()
+        .map(|id| id.to_string())
+        .ok_or_else(|| AppError::InternalError(anyhow::anyhow!("Current session has no id")))?;
+    let revoked = state
+        .session_repository
+        .delete_all_for_user_except(user_id, &current_id)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to revoke sessions: {e}")))?;
+    tracing::info!(
+        "User {} revoked {} other session(s) via sign-out-everywhere",
+        user_id,
+        revoked
+    );
+    let template = templates::SignOutEverywhereSuccessTemplate {
+        revoked: revoked as i64,
+    };
+    Ok(Html(template.render()?))
 }

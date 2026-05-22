@@ -1,6 +1,6 @@
 use dotenvy::dotenv;
 use fulgurant::{
-    api, database_backup, db, devices, handlers, logging, mail, settings, shares, users,
+    api, database_backup, db, devices, handlers, logging, mail, session, settings, shares, users,
     users::UserRepository, verification_code,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
@@ -11,10 +11,9 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 use tower_http::services::ServeDir;
-use tower_sessions::{
-    Expiry, MemoryStore, SessionManagerLayer, cookie::time::Duration as CookieDuration,
-};
+use tower_sessions::{Expiry, SessionManagerLayer, cookie::time::Duration as CookieDuration};
 
+use session::SessionRepository;
 use shares::ShareRepository;
 use verification_code::VerificationCodeRepository;
 
@@ -285,6 +284,7 @@ async fn main() -> anyhow::Result<()> {
         jwt_expiry_seconds,
         jwt_expiry_seconds / 60
     );
+    let session_repository = session::SessionRepository::new(pool.clone());
     let max_file_size_bytes = settings_repository.get_max_file_size_bytes().await?;
     tracing::info!(
         "Max file size for sharing: {}",
@@ -296,6 +296,7 @@ async fn main() -> anyhow::Result<()> {
         verification_code_repository,
         share_repository,
         settings_repository,
+        session_repository: session_repository.clone(),
         mailer: Arc::new(mail::Mailer::new(is_prod)?),
         is_prod,
         can_register: config.can_register,
@@ -311,7 +312,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     tracing::info!("API rate limiter: 100 requests per minute per IP");
     tracing::info!("Auth rate limiter: 10 requests per minute per IP");
-    let session_store = MemoryStore::default();
+    let session_store = session::FulgurSessionStore::new(session_repository);
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(is_prod)
         .with_expiry(Expiry::OnInactivity(CookieDuration::hours(1)));
@@ -332,6 +333,8 @@ async fn main() -> anyhow::Result<()> {
     make_verification_code_cleanup_task(cleanup_verification_repo, shutdown_token.clone());
     let cleanup_user_repo = app_state.user_repository.clone();
     make_unverified_user_cleanup_task(cleanup_user_repo, shutdown_token.clone());
+    let cleanup_session_repo = app_state.session_repository.clone();
+    make_session_cleanup_task(cleanup_session_repo, shutdown_token.clone());
     database_backup::make_daily_backup_task(pool.clone(), shutdown_token.clone(), is_prod);
     let bind_host = config.bind_host.clone();
     let bind_port = config.bind_port;
@@ -503,6 +506,46 @@ fn make_verification_code_cleanup_task(
                 },
                 () = shutdown_token.cancelled() => {
                     tracing::info!("Verification code cleanup task shutting down gracefully");
+                    break;
+                }
+            }
+        }
+    });
+}
+
+/// Make the session cleanup task. Runs every hour. Deletes expired rows from
+/// the `sessions` table so the persistent store does not grow without bound.
+///
+/// ### Arguments
+/// - `session_repository`: The session repository
+/// - `shutdown_token`: Token to signal graceful shutdown
+fn make_session_cleanup_task(
+    session_repository: SessionRepository,
+    shutdown_token: CancellationToken,
+) {
+    tracing::info!("Starting session cleanup task (runs every 1 hour)");
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    match session_repository.delete_expired().await {
+                        Ok(count) => {
+                            if count > 0 {
+                                tracing::info!("Cleaned up {} expired session(s)", count);
+                            } else {
+                                tracing::debug!(
+                                    "Session cleanup check complete - no expired sessions found"
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Error cleaning up expired sessions: {:?}", e);
+                        }
+                    }
+                },
+                () = shutdown_token.cancelled() => {
+                    tracing::info!("Session cleanup task shutting down gracefully");
                     break;
                 }
             }
