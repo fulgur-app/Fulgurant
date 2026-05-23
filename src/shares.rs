@@ -300,6 +300,28 @@ impl ShareRepository {
         )
     }
 
+    /// List IDs of all non-expired pending shares for a specific device without deleting them
+    ///
+    /// ### Arguments
+    /// - `device_id`: The ID of the destination device
+    ///
+    /// ### Returns
+    /// - `Ok(Vec<String>)`: The IDs of pending non-expired shares for the device, oldest first
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn list_share_ids_for_device(
+        &self,
+        device_id: &str,
+    ) -> Result<Vec<String>, sqlx::Error> {
+        let rows: Vec<(String,)> = db_fetch_all_dual!(
+            self.pool,
+            sqlite: "SELECT id FROM shares WHERE destination_device_id = ? AND expires_at > unixepoch('now') ORDER BY created_at ASC",
+            postgres: "SELECT id FROM shares WHERE destination_device_id = $1 AND expires_at > NOW() ORDER BY created_at ASC",
+            (String,),
+            device_id
+        )?;
+        Ok(rows.into_iter().map(|(id,)| id).collect())
+    }
+
     /// Get all non-expired shares for a specific device and delete them
     ///
     /// ### Description

@@ -218,7 +218,12 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
         .with_state(app_state.clone());
     let authenticated_routes = Router::new()
         .route("/api/ping", get(api::handlers::ping))
-        .route("/api/begin", post(api::handlers::begin))
+        .route(
+            "/api/begin",
+            #[allow(deprecated)]
+            post(api::handlers::begin),
+        )
+        .route("/api/v2/begin", post(api::handlers::begin_v2))
         .route("/api/devices", get(api::handlers::get_devices))
         .route("/api/share", post(api::handlers::share_file))
         .route("/api/shares", get(api::handlers::get_shares))
