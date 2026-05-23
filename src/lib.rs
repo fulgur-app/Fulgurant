@@ -227,6 +227,7 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
         .route("/api/devices", get(api::handlers::get_devices))
         .route("/api/share", post(api::handlers::share_file))
         .route("/api/shares", get(api::handlers::get_shares))
+        .route("/api/shares/{id}", get(api::handlers::get_share))
         .route("/api/sse", get(api::sse::handle_sse_connection))
         .layer(axum_mw::from_fn_with_state(
             app_state.clone(),

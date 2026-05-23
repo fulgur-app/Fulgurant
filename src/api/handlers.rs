@@ -5,7 +5,11 @@ use crate::{
     handlers::AppState,
     shares::{CreateShare, Share},
 };
-use axum::{Extension, Json, extract::State, http::StatusCode};
+use axum::{
+    Extension, Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use fulgur_common::api::{
     devices::{DeviceResponse, DevicesResponse},
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
@@ -294,6 +298,62 @@ pub async fn get_shares(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
                     error: "Failed to retrieve shares".to_string(),
+                }),
+            ))
+        }
+    }
+}
+
+/// GET /api/shares/:id - Retrieve a single pending share by ID for the authenticated device and delete it
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `auth_user`: The authenticated user
+/// - `id`: The share ID (from the URL path)
+///
+/// ### Returns
+/// - `Ok(Json(SharedFileResponse))`: The share content
+/// - `Err((StatusCode::NOT_FOUND, ...))`: No matching non-expired share for this device
+/// - `Err((StatusCode::INTERNAL_SERVER_ERROR, ...))`: Database error
+pub async fn get_share(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthenticatedUser>,
+    Path(id): Path<String>,
+) -> Result<Json<SharedFileResponse>, (StatusCode, Json<ErrorResponse>)> {
+    match state
+        .share_repository
+        .get_and_delete_share_for_device(&id, &auth_user.device_id)
+        .await
+    {
+        Ok(Some(share)) => {
+            tracing::info!(
+                "Retrieved share {} for device {} (user: {})",
+                share.id,
+                auth_user.device_id,
+                auth_user.user.email
+            );
+            Ok(Json(SharedFileResponse::from(share)))
+        }
+        Ok(None) => {
+            tracing::warn!(
+                "Share {} not found for device {} (user: {})",
+                id,
+                auth_user.device_id,
+                auth_user.user.email
+            );
+            Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Share not found".to_string(),
+                }),
+            ))
+        }
+        Err(e) => {
+            tracing::error!("Error getting share {}: {:?}", id, e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to retrieve share".to_string(),
                 }),
             ))
         }

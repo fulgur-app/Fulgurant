@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::db::DbPool;
 use crate::{
     db_execute, db_execute_dual, db_fetch_all, db_fetch_all_dual, db_fetch_one, db_fetch_one_dual,
+    db_fetch_optional_dual,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -320,6 +321,31 @@ impl ShareRepository {
             device_id
         )?;
         Ok(rows.into_iter().map(|(id,)| id).collect())
+    }
+
+    /// Get a single non-expired share by ID for a specific destination device and delete it atomically
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the share
+    /// - `device_id`: The ID of the destination device that must own the share
+    ///
+    /// ### Returns
+    /// - `Ok(Some(Share))`: The share that was deleted
+    /// - `Ok(None)`: No matching non-expired share for this device
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn get_and_delete_share_for_device(
+        &self,
+        id: &str,
+        device_id: &str,
+    ) -> Result<Option<Share>, sqlx::Error> {
+        db_fetch_optional_dual!(
+            self.pool,
+            sqlite: "DELETE FROM shares WHERE id = ? AND destination_device_id = ? AND expires_at > unixepoch('now') RETURNING *",
+            postgres: "DELETE FROM shares WHERE id = $1 AND destination_device_id = $2 AND expires_at > NOW() RETURNING *",
+            Share,
+            id,
+            device_id
+        )
     }
 
     /// Get all non-expired shares for a specific device and delete them
