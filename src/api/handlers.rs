@@ -5,13 +5,17 @@ use crate::{
     handlers::AppState,
     shares::{CreateShare, Share},
 };
-use axum::{Extension, Json, extract::State, http::StatusCode};
+use axum::{
+    Extension, Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use fulgur_common::api::{
     devices::{DeviceResponse, DevicesResponse},
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
     sync::{
-        AccessTokenResponse, BeginResponse, ErrorResponse, InitialSynchronizationPayload,
-        PingResponse,
+        AccessTokenResponse, BeginResponse, BeginV2Response, ErrorResponse,
+        InitialSynchronizationPayload, PingResponse,
     },
 };
 use time::{Duration, OffsetDateTime};
@@ -300,7 +304,66 @@ pub async fn get_shares(
     }
 }
 
+/// GET /api/shares/:id - Retrieve a single pending share by ID for the authenticated device and delete it
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `auth_user`: The authenticated user
+/// - `id`: The share ID (from the URL path)
+///
+/// ### Returns
+/// - `Ok(Json(SharedFileResponse))`: The share content
+/// - `Err((StatusCode::NOT_FOUND, ...))`: No matching non-expired share for this device
+/// - `Err((StatusCode::INTERNAL_SERVER_ERROR, ...))`: Database error
+pub async fn get_share(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthenticatedUser>,
+    Path(id): Path<String>,
+) -> Result<Json<SharedFileResponse>, (StatusCode, Json<ErrorResponse>)> {
+    match state
+        .share_repository
+        .get_and_delete_share_for_device(&id, &auth_user.device_id)
+        .await
+    {
+        Ok(Some(share)) => {
+            tracing::info!(
+                "Retrieved share {} for device {} (user: {})",
+                share.id,
+                auth_user.device_id,
+                auth_user.user.email
+            );
+            Ok(Json(SharedFileResponse::from(share)))
+        }
+        Ok(None) => {
+            tracing::warn!(
+                "Share {} not found for device {} (user: {})",
+                id,
+                auth_user.device_id,
+                auth_user.user.email
+            );
+            Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Share not found".to_string(),
+                }),
+            ))
+        }
+        Err(e) => {
+            tracing::error!("Error getting share {}: {:?}", id, e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to retrieve share".to_string(),
+                }),
+            ))
+        }
+    }
+}
+
 /// POST /api/begin - Initial synchronization endpoint that updates device encryption key and returns pending shares
+///
+/// ### Deprecated
+/// Use `POST /api/v2/begin` instead.
 ///
 /// ### Description
 /// This endpoint is called during app startup to:
@@ -316,11 +379,19 @@ pub async fn get_shares(
 /// ### Returns
 /// - `Ok(Json(BeginResponse))`: The response containing encryption key and shares
 /// - `Err((StatusCode, Json(ErrorResponse)))`: The error response if the operation fails
+#[deprecated(
+    note = "Use `begin_v2` (POST /api/v2/begin) instead. This endpoint will be removed in a future release."
+)]
 pub async fn begin(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthenticatedUser>,
     Json(payload): Json<InitialSynchronizationPayload>,
 ) -> Result<Json<BeginResponse>, (StatusCode, Json<ErrorResponse>)> {
+    tracing::warn!(
+        device_id = %auth_user.device_id,
+        user_id = auth_user.user.id,
+        "Deprecated endpoint POST /api/begin called; client should migrate to POST /api/v2/begin"
+    );
     if !payload.public_key.is_empty() {
         if let Err(e) = state
             .device_repository
@@ -377,6 +448,91 @@ pub async fn begin(
     Ok(Json(BeginResponse {
         device_name: auth_user.device_name,
         shares,
+        max_file_size_bytes,
+    }))
+}
+
+/// POST /api/v2/begin - Initial synchronization endpoint (v2) that signals pending share availability
+///
+/// ### Description
+/// Variant of `/api/begin` that does not return share payloads. It performs the same
+/// session warm-up as v1:
+/// 1. Update the device's encryption key (if provided)
+/// 2. Update the user's last activity timestamp
+/// 3. Return the IDs of pending non-expired shares for the device, without deleting them
+///
+/// The client is expected to call `GET /api/shares` to actually retrieve and consume the shares
+/// when `share_ids` is non-empty (or when an SSE share notification arrives).
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `auth_user`: The authenticated user
+/// - `payload`: The initial synchronization payload containing the public key (encryption key)
+///
+/// ### Returns
+/// - `Ok(Json(BeginV2Response))`: The device name, pending share IDs, and max file size
+/// - `Err((StatusCode, Json(ErrorResponse)))`: The error response if the operation fails
+pub async fn begin_v2(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthenticatedUser>,
+    Json(payload): Json<InitialSynchronizationPayload>,
+) -> Result<Json<BeginV2Response>, (StatusCode, Json<ErrorResponse>)> {
+    if !payload.public_key.is_empty() {
+        if let Err(e) = state
+            .device_repository
+            .update_encryption_key(&auth_user.device_id, payload.public_key.clone())
+            .await
+        {
+            tracing::error!(
+                "Failed to update encryption key for device {}: {}",
+                auth_user.device_id,
+                e
+            );
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to update encryption key".to_string(),
+                }),
+            ));
+        }
+        tracing::debug!(
+            "Updated encryption key for device {} (user: {})",
+            auth_user.device_id,
+            auth_user.user.email
+        );
+    }
+    if let Err(e) = state
+        .user_repository
+        .update_last_activity(auth_user.user.id)
+        .await
+    {
+        tracing::error!("Failed to update last_activity: {}", e);
+    }
+    let share_ids = match state
+        .share_repository
+        .list_share_ids_for_device(&auth_user.device_id)
+        .await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::error!("Error listing share ids for device: {:?}", e);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to retrieve share ids".to_string(),
+                }),
+            ));
+        }
+    };
+    tracing::info!(
+        "Begin v2 session for device {}: {} pending shares",
+        auth_user.device_id,
+        share_ids.len()
+    );
+    let max_file_size_bytes = *state.max_file_size_bytes.read().await;
+    Ok(Json(BeginV2Response {
+        device_name: auth_user.device_name,
+        share_ids,
         max_file_size_bytes,
     }))
 }
