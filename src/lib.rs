@@ -235,7 +235,12 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
         ))
         .layer(tower_governor::GovernorLayer::new(governor_conf))
         .with_state(app_state.clone());
-    token_route.merge(authenticated_routes)
+    token_route
+        .merge(authenticated_routes)
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("x-fulgurant-version"),
+            HeaderValue::from_static(VERSION),
+        ))
 }
 
 /// Make the web routes
