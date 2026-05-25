@@ -18,7 +18,6 @@ use crate::{
         UpdateDevice,
     },
     errors::AppError,
-    logging::sanitize_for_log,
     mail,
     session::{self, SessionRepository},
     settings::SettingsRepository,
@@ -184,12 +183,7 @@ pub async fn create_device(
         .device_repository
         .create(user_id, hash, request.clone())
         .await?;
-    tracing::info!(
-        "Device created: name={}, id={} for user {}",
-        sanitize_for_log(&device.name),
-        device.id,
-        user_id
-    );
+    tracing::info!("Device created: id={} for user {}", device.id, user_id);
     let template = templates::DeviceCreationResponseTemplate { device, api_key };
     Ok(Html(template.render()?))
 }
@@ -533,7 +527,7 @@ pub async fn update_email_step_1(
     session: Session,
     Form(request): Form<UpdateEmailRequest>,
 ) -> Result<Html<String>, AppError> {
-    let _user_id = session::get_session_user_id(&session).await?;
+    let user_id = session::get_session_user_id(&session).await?;
     if !request.email.contains('@') || !request.email.contains('.') {
         //TODO: improve email validation
         let template = templates::EmailChangeStep2Template {
@@ -571,10 +565,7 @@ pub async fn update_email_step_1(
             .send_verification_email(request.email.clone(), code.clone())
             .await
             .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to send email: {e}")))?;
-        tracing::info!(
-            "Verification email sent to {}",
-            sanitize_for_log(&request.email.clone())
-        );
+        tracing::info!("Verification email sent for user {}", user_id);
     } else {
         tracing::info!(
             "Not sending verification email in non-production environment\nVerification code: {}",
@@ -625,11 +616,7 @@ pub async fn update_email_step_2(
                 .user_repository
                 .update_email(user_id, request.email.clone())
                 .await?;
-            tracing::info!(
-                "User {} changed their email to {}",
-                user_id,
-                sanitize_for_log(&request.email)
-            );
+            tracing::info!("User {} changed their email", user_id);
             let template = templates::EmailChangeSuccessTemplate {
                 email: request.email,
             };

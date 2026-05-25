@@ -16,7 +16,6 @@ use tower_sessions::{Expiry, Session, cookie::time::Duration as CookieDuration};
 use crate::{
     errors::AppError,
     handlers::AppState,
-    logging::sanitize_for_log,
     session,
     templates::{self, LoginTemplate},
     users::MAX_NAME_LEN,
@@ -86,10 +85,7 @@ pub async fn login(
     let user = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(user)) => user,
         Ok(None) => {
-            tracing::warn!(
-                "Login attempt for non-existent user: {}",
-                sanitize_for_log(&email)
-            );
+            tracing::warn!("Login attempt for non-existent user");
             return invalid_credentials_response();
         }
         Err(e) => {
@@ -101,10 +97,7 @@ pub async fn login(
     };
     let password_verified = verify_password(password, user.password_hash.as_str());
     if !password_verified {
-        tracing::warn!(
-            "Login attempt with invalid password for user: {}",
-            sanitize_for_log(&email)
-        );
+        tracing::warn!("Login attempt with invalid password for user {}", user.id);
         return invalid_credentials_response();
     }
     state
@@ -732,7 +725,7 @@ pub async fn forgot_password_step_3(
         .await
     {
         Ok(()) => {
-            tracing::info!("Password reset for user: {}", user.email);
+            tracing::info!("Password reset for user {}", user.id);
         }
         Err(e) => {
             tracing::error!("Failed to update password: {}", e);
@@ -870,11 +863,10 @@ async fn create_and_send_verification_code(
                 tracing::error!("Failed to send email: {}", e);
                 AppError::InternalError(anyhow::anyhow!("Failed to send email: {e}"))
             })?;
-        tracing::info!("Verification email sent to {}", sanitize_for_log(email));
+        tracing::info!("Verification email sent");
     } else {
         tracing::info!(
-            "Development mode - verification email not sent\nVerification code for {}: {}",
-            sanitize_for_log(email),
+            "Development mode - verification email not sent\nVerification code: {}",
             &code
         );
     }
