@@ -23,6 +23,12 @@ pub struct ShareNotification {
     pub share_id: String,
 }
 
+/// Initial snapshot of currently pending share ids, sent once on SSE connect
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct PendingSharesSnapshot {
+    pub share_ids: Vec<String>,
+}
+
 /// Type alias for SSE channel manager
 pub type SseChannelManager = TaggedChannels<ShareNotification, ChannelTag>;
 
@@ -39,18 +45,53 @@ pub async fn handle_sse_connection(
     Extension(auth_user): Extension<AuthenticatedUser>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let device_id = auth_user.device_id.clone();
-    let device_name = auth_user.device_name.clone();
     tracing::info!(
         device_id = ?device_id,
-        device_name = ?device_name,
-        user_email = ?auth_user.user.email,
+        user_id = auth_user.user.id,
         "SSE connection established"
     );
     let mut channel = state
         .sse_manager
         .create_channel([ChannelTag::DeviceId(device_id.clone())]);
     let heartbeat_interval = Duration::from_secs(state.sse_heartbeat_seconds);
+    let initial_share_ids = match state
+        .share_repository
+        .list_share_ids_for_device(&device_id)
+        .await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::error!(
+                error = ?e,
+                device_id = ?device_id,
+                "Failed to load pending share ids for SSE snapshot; sending empty list"
+            );
+            Vec::new()
+        }
+    };
     let stream = async_stream::stream! {
+        let snapshot = PendingSharesSnapshot {
+            share_ids: initial_share_ids,
+        };
+        tracing::info!(
+            device_id = ?device_id,
+            count = snapshot.share_ids.len(),
+            "Sending pending shares snapshot via SSE"
+        );
+        match serde_json::to_string(&snapshot) {
+            Ok(data) => {
+                yield Ok(Event::default()
+                    .event("pending_shares")
+                    .data(data));
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = ?e,
+                    device_id = ?device_id,
+                    "Failed to serialize pending shares snapshot"
+                );
+            }
+        }
         let mut interval = tokio::time::interval(heartbeat_interval);
         loop {
             tokio::select! {
