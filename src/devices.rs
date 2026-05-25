@@ -272,7 +272,7 @@ impl DeviceRepository {
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn delete(&self, id: i32) -> Result<(), sqlx::Error> {
         let device = self.get_by_id(id).await?;
-        tracing::info!("Deleting device: {} (ID: {})", device.name, device.id);
+        tracing::info!("Deleting device with ID: {}", device.id);
         db_execute!(self.pool, "DELETE FROM devices WHERE id = ?", id)?;
         Ok(())
     }

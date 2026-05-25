@@ -395,14 +395,11 @@ pub async fn create_user_from_admin(
                 tracing::error!("Failed to send account creation email: {}", e);
                 AppError::InternalError(anyhow::anyhow!("Failed to send email: {e}"))
             })?;
-        tracing::info!(
-            "Account creation email sent to {}",
-            crate::logging::sanitize_for_log(email)
-        );
+        tracing::info!("Account creation email sent for user {}", new_user.id);
     } else {
         tracing::info!(
-            "Development mode - account creation email not sent\nPassword for {}: {}",
-            crate::logging::sanitize_for_log(email),
+            "Development mode - account creation email not sent\nPassword for user {}: {}",
+            new_user.id,
             &password
         );
     }

@@ -62,8 +62,7 @@ pub async fn require_admin(
     };
     if user.role != "Admin" {
         tracing::warn!(
-            "Non-admin user {} ({}) attempted to access admin route: {}",
-            user.email,
+            "Non-admin user {} attempted to access admin route: {}",
             user_id,
             request.uri().path()
         );

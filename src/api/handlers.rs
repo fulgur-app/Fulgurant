@@ -197,7 +197,7 @@ pub async fn share_file(
             tracing::info!(
                 "Created new share {} for user {} for device {}",
                 share.id,
-                auth_user.user.email,
+                auth_user.user.id,
                 payload.device_id
             );
             share
@@ -286,7 +286,7 @@ pub async fn get_shares(
                 "Retrieved {} shares for device {} (user: {})",
                 shares.len(),
                 auth_user.device_id,
-                auth_user.user.email
+                auth_user.user.id
             );
             let share_infos: Vec<SharedFileResponse> =
                 shares.into_iter().map(SharedFileResponse::from).collect();
@@ -330,7 +330,7 @@ pub async fn get_share(
                 "Retrieved share {} for device {} (user: {})",
                 share.id,
                 auth_user.device_id,
-                auth_user.user.email
+                auth_user.user.id
             );
             Ok(Json(SharedFileResponse::from(share)))
         }
@@ -339,7 +339,7 @@ pub async fn get_share(
                 "Share {} not found for device {} (user: {})",
                 id,
                 auth_user.device_id,
-                auth_user.user.email
+                auth_user.user.id
             );
             Err((
                 StatusCode::NOT_FOUND,
@@ -413,7 +413,7 @@ pub async fn begin(
         tracing::debug!(
             "Updated encryption key for device {} (user: {})",
             auth_user.device_id,
-            auth_user.user.email
+            auth_user.user.id
         );
     }
     if let Err(e) = state
@@ -498,7 +498,7 @@ pub async fn begin_v2(
         tracing::debug!(
             "Updated encryption key for device {} (user: {})",
             auth_user.device_id,
-            auth_user.user.email
+            auth_user.user.id
         );
     }
     if let Err(e) = state
@@ -589,7 +589,7 @@ pub async fn obtain_access_token(
     let user = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(user)) => user,
         Ok(None) => {
-            tracing::warn!("Token request for non-existent user: {}", email);
+            tracing::warn!("Token request for non-existent user");
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(ErrorResponse {
@@ -701,7 +701,7 @@ pub async fn obtain_access_token(
         }
     }
     let (device_id, device_name) = authenticated_device.ok_or_else(|| {
-        tracing::warn!("Invalid device key for user: {}", email);
+        tracing::warn!("Invalid device key for user {}", user.id);
         (
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
