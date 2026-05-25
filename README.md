@@ -38,7 +38,7 @@ Version 0.6.0 allows to set the maximum share file size from the UI and sends th
 
 ## Requirements
 
-- Rust 1.94 or later
+- Rust 1.95 or later
 
 ## Build and Run
 
