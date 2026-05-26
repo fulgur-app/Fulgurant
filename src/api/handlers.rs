@@ -45,7 +45,7 @@ impl From<Device> for DeviceResponse {
             id: device.device_id,
             name: device.name,
             device_type: device.device_type,
-            public_key: device.encryption_key,
+            public_key: device.public_key,
             created_at,
             expires_at,
         }
@@ -360,24 +360,24 @@ pub async fn get_share(
     }
 }
 
-/// POST /api/begin - Initial synchronization endpoint that updates device encryption key and returns pending shares
+/// POST /api/begin - Initial synchronization endpoint that updates the device's age public key and returns pending shares
 ///
 /// ### Deprecated
 /// Use `POST /api/v2/begin` instead.
 ///
 /// ### Description
 /// This endpoint is called during app startup to:
-/// 1. Update the device's encryption key (if provided)
+/// 1. Update the device's age public key (if provided)
 /// 2. Update user's last activity timestamp
 /// 3. Return pending shares for the device
 ///
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `auth_user`: The authenticated user
-/// - `payload`: The initial synchronization payload containing the public key (encryption key)
+/// - `payload`: The initial synchronization payload containing the device's age public key
 ///
 /// ### Returns
-/// - `Ok(Json(BeginResponse))`: The response containing encryption key and shares
+/// - `Ok(Json(BeginResponse))`: The response containing the device name and pending shares
 /// - `Err((StatusCode, Json(ErrorResponse)))`: The error response if the operation fails
 #[deprecated(
     note = "Use `begin_v2` (POST /api/v2/begin) instead. This endpoint will be removed in a future release."
@@ -395,23 +395,23 @@ pub async fn begin(
     if !payload.public_key.is_empty() {
         if let Err(e) = state
             .device_repository
-            .update_encryption_key(&auth_user.device_id, payload.public_key.clone())
+            .update_public_key(&auth_user.device_id, payload.public_key.clone())
             .await
         {
             tracing::error!(
-                "Failed to update encryption key for device {}: {}",
+                "Failed to update public key for device {}: {}",
                 auth_user.device_id,
                 e
             );
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: "Failed to update encryption key".to_string(),
+                    error: "Failed to update public key".to_string(),
                 }),
             ));
         }
         tracing::debug!(
-            "Updated encryption key for device {} (user: {})",
+            "Updated public key for device {} (user: {})",
             auth_user.device_id,
             auth_user.user.id
         );
@@ -457,7 +457,7 @@ pub async fn begin(
 /// ### Description
 /// Variant of `/api/begin` that does not return share payloads. It performs the same
 /// session warm-up as v1:
-/// 1. Update the device's encryption key (if provided)
+/// 1. Update the device's age public key (if provided)
 /// 2. Update the user's last activity timestamp
 /// 3. Return the IDs of pending non-expired shares for the device, without deleting them
 ///
@@ -467,7 +467,7 @@ pub async fn begin(
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `auth_user`: The authenticated user
-/// - `payload`: The initial synchronization payload containing the public key (encryption key)
+/// - `payload`: The initial synchronization payload containing the device's age public key
 ///
 /// ### Returns
 /// - `Ok(Json(BeginV2Response))`: The device name, pending share IDs, and max file size
@@ -480,23 +480,23 @@ pub async fn begin_v2(
     if !payload.public_key.is_empty() {
         if let Err(e) = state
             .device_repository
-            .update_encryption_key(&auth_user.device_id, payload.public_key.clone())
+            .update_public_key(&auth_user.device_id, payload.public_key.clone())
             .await
         {
             tracing::error!(
-                "Failed to update encryption key for device {}: {}",
+                "Failed to update public key for device {}: {}",
                 auth_user.device_id,
                 e
             );
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: "Failed to update encryption key".to_string(),
+                    error: "Failed to update public key".to_string(),
                 }),
             ));
         }
         tracing::debug!(
-            "Updated encryption key for device {} (user: {})",
+            "Updated public key for device {} (user: {})",
             auth_user.device_id,
             auth_user.user.id
         );

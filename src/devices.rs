@@ -29,7 +29,7 @@ pub struct Device {
     pub device_key_fast_hash: Option<String>, // SHA256 for fast lookup
     pub name: String,
     pub device_type: String,
-    pub encryption_key: Option<String>, // Base64-encoded 256-bit AES key for encrypting shared files (nullable)
+    pub public_key: Option<String>, // Age (X25519) public key uploaded by the client (format: "age1..."), nullable
     pub expires_at: OffsetDateTime,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
@@ -160,7 +160,7 @@ impl DeviceRepository {
         let id = match &self.pool {
             DbPool::Sqlite(pool) => {
                 let result = sqlx::query(
-                    "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, encryption_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, public_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind(user_id)
                 .bind(&device_id)
@@ -177,7 +177,7 @@ impl DeviceRepository {
             }
             DbPool::Postgres(pool) => {
                 let row: (i32,) = sqlx::query_as(
-                    "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, encryption_key, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8)) RETURNING id",
+                    "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, public_key, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8)) RETURNING id",
                 )
                 .bind(user_id)
                 .bind(&device_id)
@@ -217,25 +217,25 @@ impl DeviceRepository {
         self.get_by_id(id).await
     }
 
-    /// Update the encryption key for a device
+    /// Update the age public key for a device
     ///
     /// ### Arguments
     /// - `device_id`: The device ID (UUID)
-    /// - `encryption_key`: The new encryption key
+    /// - `public_key`: The device's age (X25519) public key, format "age1..."
     ///
     /// ### Returns
     /// - `Ok(())`: The result of the operation
     /// - `Err(sqlx::Error)`: The error if the operation fails
-    pub async fn update_encryption_key(
+    pub async fn update_public_key(
         &self,
         device_id: &str,
-        encryption_key: String,
+        public_key: String,
     ) -> Result<(), sqlx::Error> {
         db_execute_dual!(
             self.pool,
-            sqlite: "UPDATE devices SET encryption_key = ?, updated_at = unixepoch('now') WHERE device_id = ?",
-            postgres: "UPDATE devices SET encryption_key = $1, updated_at = NOW() WHERE device_id = $2",
-            encryption_key,
+            sqlite: "UPDATE devices SET public_key = ?, updated_at = unixepoch('now') WHERE device_id = ?",
+            postgres: "UPDATE devices SET public_key = $1, updated_at = NOW() WHERE device_id = $2",
+            public_key,
             device_id
         )?;
         Ok(())
