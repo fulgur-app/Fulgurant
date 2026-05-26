@@ -1,8 +1,6 @@
 use crate::db::DbPool;
 use crate::utils::format_date_utc;
 use crate::{db_execute, db_execute_dual, db_fetch_all, db_fetch_one, db_fetch_optional};
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -25,7 +23,6 @@ pub struct User {
     pub email_verified: bool,
     pub password_hash: String,
     pub role: String,
-    pub encryption_key: String, // Base64-encoded 256-bit AES key for encrypting shared files
     pub last_activity: OffsetDateTime,
     pub shares: i32,
     pub force_password_update: bool,
@@ -33,7 +30,7 @@ pub struct User {
     pub updated_at: OffsetDateTime,
 }
 
-/// Public-facing User struct that excludes sensitive information (`password_hash`, `encryption_key`)
+/// Public-facing User struct that excludes sensitive information (`password_hash`)
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct DisplayUser {
     pub id: i32,
@@ -145,16 +142,6 @@ pub struct PaginatedUsers {
     pub total_pages: i32,
 }
 
-/// Generate a random 256-bit (32-byte) encryption key encoded as base64
-///
-/// ### Returns
-/// - `String`: The generated encryption key
-pub fn generate_encryption_key() -> String {
-    let mut rng = rand::rng();
-    let key_bytes: [u8; 32] = rng.random();
-    BASE64.encode(key_bytes)
-}
-
 #[derive(Clone)]
 pub struct UserRepository {
     pool: DbPool,
@@ -223,18 +210,16 @@ impl UserRepository {
         is_email_verified: bool,
         force_password_update: bool,
     ) -> Result<i32, sqlx::Error> {
-        let encryption_key = generate_encryption_key();
         match &self.pool {
             DbPool::Sqlite(pool) => {
                 let now = OffsetDateTime::now_utc().unix_timestamp();
                 let result = sqlx::query(
-                    "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, force_password_update, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO users (email, first_name, last_name, password_hash, email_verified, force_password_update, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind(&email)
                 .bind(&first_name)
                 .bind(&last_name)
                 .bind(&password_hash)
-                .bind(&encryption_key)
                 .bind(is_email_verified)
                 .bind(force_password_update)
                 .bind(now)
@@ -245,13 +230,12 @@ impl UserRepository {
             }
             DbPool::Postgres(pool) => {
                 let id: (i32,) = sqlx::query_as(
-                    "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, force_password_update) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+                    "INSERT INTO users (email, first_name, last_name, password_hash, email_verified, force_password_update) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
                 )
                 .bind(&email)
                 .bind(&first_name)
                 .bind(&last_name)
                 .bind(&password_hash)
-                .bind(&encryption_key)
                 .bind(is_email_verified)
                 .bind(force_password_update)
                 .fetch_one(pool)
@@ -415,7 +399,6 @@ impl UserRepository {
         last_name: String,
         password_hash: String,
     ) -> Result<i32, sqlx::Error> {
-        let encryption_key = generate_encryption_key();
         match &self.pool {
             DbPool::Sqlite(pool) => {
                 let mut tx = pool.begin().await?;
@@ -428,13 +411,12 @@ impl UserRepository {
                     return Err(sqlx::Error::RowNotFound);
                 }
                 let result = sqlx::query(
-                    "INSERT INTO users (email, first_name, last_name, password_hash, role, encryption_key, email_verified) VALUES (?, ?, ?, ?, 'Admin', ?, TRUE)",
+                    "INSERT INTO users (email, first_name, last_name, password_hash, role, email_verified) VALUES (?, ?, ?, ?, 'Admin', TRUE)",
                 )
                 .bind(&email)
                 .bind(&first_name)
                 .bind(&last_name)
                 .bind(&password_hash)
-                .bind(&encryption_key)
                 .execute(&mut *tx)
                 .await?;
                 tx.commit().await?;
@@ -451,13 +433,12 @@ impl UserRepository {
                     return Err(sqlx::Error::RowNotFound);
                 }
                 let id: (i32,) = sqlx::query_as(
-                    "INSERT INTO users (email, first_name, last_name, password_hash, role, encryption_key, email_verified) VALUES ($1, $2, $3, $4, 'Admin', $5, TRUE) RETURNING id",
+                    "INSERT INTO users (email, first_name, last_name, password_hash, role, email_verified) VALUES ($1, $2, $3, $4, 'Admin', TRUE) RETURNING id",
                 )
                 .bind(&email)
                 .bind(&first_name)
                 .bind(&last_name)
                 .bind(&password_hash)
-                .bind(&encryption_key)
                 .fetch_one(&mut *tx)
                 .await?;
                 tx.commit().await?;

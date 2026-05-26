@@ -1,6 +1,5 @@
 use dotenvy::dotenv;
 use fulgurant::api_key::hash_api_key;
-use fulgurant::users::generate_encryption_key;
 use rand::Rng;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
@@ -65,7 +64,6 @@ async fn main() -> anyhow::Result<()> {
             last_name.to_lowercase(),
             random_num
         );
-        let encryption_key = generate_encryption_key();
         let email_verified = rng.random_bool(0.7); // 70% chance of being verified
         let role = if rng.random_bool(0.2) {
             "Admin"
@@ -76,13 +74,12 @@ async fn main() -> anyhow::Result<()> {
         let last_activity = OffsetDateTime::now_utc() - Duration::days(days_ago);
         let shares = rng.random_range(0..51);
         match sqlx::query(
-            "INSERT INTO users (email, first_name, last_name, password_hash, encryption_key, email_verified, role, last_activity, shares) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO users (email, first_name, last_name, password_hash, email_verified, role, last_activity, shares) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&email)
         .bind(first_name)
         .bind(last_name)
         .bind(&password_hash)
-        .bind(&encryption_key)
         .bind(email_verified)
         .bind(role)
         .bind(last_activity)

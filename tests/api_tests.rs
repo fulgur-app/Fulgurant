@@ -813,7 +813,7 @@ async fn test_begin_returns_shares_and_updates_key() {
     .unwrap();
 
     let begin_payload = serde_json::json!({
-        "public_key": "base64_encoded_aes_key_for_testing"
+        "public_key": "age1testpublickeyfortesting"
     });
 
     let response = app
@@ -828,12 +828,12 @@ async fn test_begin_returns_shares_and_updates_key() {
     assert_eq!(body.shares.len(), 1);
     assert_eq!(body.shares[0].file_name, "begin.txt");
 
-    // Verify encryption key was updated
+    // Verify public key was updated
     let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
     let device = device_repo.get_by_device_id(&dest_id).await.unwrap();
     assert_eq!(
-        device.encryption_key.as_deref(),
-        Some("base64_encoded_aes_key_for_testing")
+        device.public_key.as_deref(),
+        Some("age1testpublickeyfortesting")
     );
 }
 
@@ -890,8 +890,8 @@ async fn test_begin_empty_public_key_skips_update() {
         .json(&begin_payload)
         .await;
 
-    // Verify encryption key was NOT set (still None)
+    // Verify public key was NOT set (still None)
     let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
     let device = device_repo.get_by_device_id(&device_id).await.unwrap();
-    assert!(device.encryption_key.is_none());
+    assert!(device.public_key.is_none());
 }

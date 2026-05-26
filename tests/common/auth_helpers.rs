@@ -2,7 +2,7 @@ use axum::http::header::{HeaderName, HeaderValue};
 use axum_test::TestServer;
 use fulgurant::auth::handlers::hash_password;
 use fulgurant::db::DbPool;
-use fulgurant::users::{UserRepository, generate_encryption_key};
+use fulgurant::users::UserRepository;
 use serde::Serialize;
 use sqlx::SqlitePool;
 
@@ -53,13 +53,11 @@ pub async fn create_admin_user(pool: &SqlitePool) -> (i32, String, String) {
     let email = "admin2@test.com".to_string();
     let password = "TestAdmin1!".to_string();
     let password_hash = hash_password(&password).unwrap();
-    let encryption_key = generate_encryption_key();
     let result = sqlx::query(
-        "INSERT INTO users (email, first_name, last_name, password_hash, role, email_verified, encryption_key) VALUES (?, 'Admin', 'User', ?, 'Admin', TRUE, ?)",
+        "INSERT INTO users (email, first_name, last_name, password_hash, role, email_verified) VALUES (?, 'Admin', 'User', ?, 'Admin', TRUE)",
     )
     .bind(&email)
     .bind(&password_hash)
-    .bind(&encryption_key)
     .execute(pool)
     .await
     .unwrap();
