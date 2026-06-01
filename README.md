@@ -18,6 +18,8 @@ Version 0.5.0 introduces a breaking change in the communication with Fulgur. Mak
 
 Version 0.6.0 allows to set the maximum share file size from the UI and sends this information to the Fulgur client. Make sure to update Fulgur to 0.7.0+ to beneficiate from this feature. The linter `cargo clippy` now runs only in `pedantic` mode by default, making it stricter and more reliable.
 
+Version 0.7.0 brings a faster, more secure and more resilient communication with Fulgur 0.8.0+. In order to extend Fulgurant's set of features in next releases, Fulgurant now supports user sessions for a more practical experience.
+
 ## Features
 
 - User authentication with email verification
