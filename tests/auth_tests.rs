@@ -8,12 +8,20 @@ use common::{
     },
     test_app::{TestApp, TestAppOptions},
 };
+use fulgurant::db::DbPool;
+use fulgurant::verification_code::VerificationCodeRepository;
 use serde::Serialize;
 
 #[derive(Serialize)]
 struct LoginFormData<'a> {
     email: &'a str,
     password: &'a str,
+}
+
+#[derive(Serialize)]
+struct VerifyCodeFormData<'a> {
+    email: &'a str,
+    code: &'a str,
 }
 
 #[derive(Serialize)]
@@ -406,6 +414,56 @@ async fn test_reset_password_success() {
     let app = TestApp::new().await;
     create_verified_user(&app.pool, "user@test.com", "Password123!").await;
 
+    // Step 1: load the page to obtain a CSRF token and start a session.
+    let page = app.server.get("/auth/forgot-password").await;
+    let csrf = extract_csrf_token(&page.text());
+
+    // Seed a known verification code so step 2 can succeed deterministically.
+    VerificationCodeRepository::new(DbPool::Sqlite(app.pool.clone()))
+        .create(
+            "user@test.com".to_string(),
+            "123456".to_string(),
+            "password_reset".to_string(),
+        )
+        .await
+        .unwrap();
+
+    // Step 2: verify the code, which authorizes the reset for this session.
+    let (name, value) = csrf_header(&csrf);
+    let step2 = app
+        .server
+        .post("/auth/forgot-password/verify")
+        .add_header(name, value)
+        .form(&VerifyCodeFormData {
+            email: "user@test.com",
+            code: "123456",
+        })
+        .await;
+    step2.assert_status_ok();
+
+    // Step 3: reset succeeds because the session now carries the authorization.
+    let (name, value) = csrf_header(&csrf);
+    let response = app
+        .server
+        .post("/auth/forgot-password/reset")
+        .add_header(name, value)
+        .form(&ResetPasswordFormData {
+            email: "user@test.com",
+            password: "NewPassword2!",
+        })
+        .await;
+
+    response.assert_status_ok();
+    // Verify the new password now works
+    login(&app.server, "user@test.com", "NewPassword2!").await;
+}
+
+#[tokio::test]
+async fn test_reset_password_without_step2_is_rejected() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+
+    // Attacker calls step 3 directly with a valid CSRF token but never passed step 2.
     let page = app.server.get("/auth/forgot-password").await;
     let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
 
@@ -420,6 +478,25 @@ async fn test_reset_password_success() {
         .await;
 
     response.assert_status_ok();
-    // Verify the new password now works
-    login(&app.server, "user@test.com", "NewPassword2!").await;
+    assert!(
+        response.text().contains("expired or is invalid"),
+        "reset without step 2 should be refused"
+    );
+
+    // The new password must not have taken effect: logging in with it fails.
+    let page = app.server.get("/login").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+    let login_attempt = app
+        .server
+        .post("/login")
+        .add_header(name, value)
+        .form(&LoginFormData {
+            email: "user@test.com",
+            password: "NewPassword2!",
+        })
+        .await;
+    assert!(
+        login_attempt.text().contains("Invalid email or password"),
+        "the password must not have been changed"
+    );
 }

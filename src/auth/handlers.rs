@@ -640,6 +640,7 @@ pub struct ForgotPasswordStep2Request {
 /// - `Err(AppError)`: Error that occurred while verifying the code
 pub async fn forgot_password_step_2(
     State(state): State<AppState>,
+    session: Session,
     Form(request): Form<ForgotPasswordStep2Request>,
 ) -> Result<Html<String>, AppError> {
     let result = state
@@ -656,6 +657,7 @@ pub async fn forgot_password_step_2(
             .verification_code_repository
             .delete_for(request.email.clone(), "password_reset".to_string())
             .await;
+        session::authorize_password_reset(&session, &request.email).await?;
         let template = templates::ForgotPasswordStep3Template {
             email: request.email,
             error_message: String::new(),
@@ -692,12 +694,27 @@ pub struct ForgotPasswordStep3Request {
 /// - `Err(AppError)`: Error that occurred while resetting the password
 pub async fn forgot_password_step_3(
     State(state): State<AppState>,
+    session: Session,
     Form(request): Form<ForgotPasswordStep3Request>,
 ) -> Result<Html<String>, AppError> {
     if !is_password_valid(&request.password) {
         let template = templates::ForgotPasswordStep3Template {
             email: request.email,
             error_message: "Password must be 8-64 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.".to_string(),
+        };
+        return Ok(Html(template.render().map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
+        })?));
+    }
+    if !session::consume_password_reset_authorization(&session, &request.email).await? {
+        tracing::warn!(
+            "Rejected forgot-password reset without a valid step-2 authorization for the submitted email"
+        );
+        let template = templates::ForgotPasswordStep3Template {
+            email: request.email,
+            error_message:
+                "Your password reset session has expired or is invalid. Please restart the process."
+                    .to_string(),
         };
         return Ok(Html(template.render().map_err(|e| {
             AppError::InternalError(anyhow::anyhow!("Template error: {e}"))

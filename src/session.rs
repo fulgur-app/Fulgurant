@@ -22,6 +22,80 @@ pub const SESSION_FORCE_PASSWORD_UPDATE: &str = "force_password_update";
 /// Session key for storing the remember-me flag chosen at login
 pub const SESSION_REMEMBER_ME: &str = "remember_me";
 
+/// Session key for the short-lived forgot-password authorization set after step 2
+pub const SESSION_PASSWORD_RESET_AUTHORIZED: &str = "password_reset_authorized";
+
+/// Lifetime of a forgot-password authorization marker, in seconds (5 minutes)
+const PASSWORD_RESET_AUTHORIZATION_TTL_SECONDS: i64 = 300;
+
+/// Server-side proof that a user completed step 2 of the forgot-password flow.
+///
+/// Stored in the session after a verification code is accepted and consumed in
+/// step 3, so the password reset cannot be triggered without proving step 2.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PasswordResetAuthorization {
+    email: String,
+    expires_at: i64,
+}
+
+/// Record that the given email passed forgot-password step 2.
+///
+/// ### Arguments
+/// - `session`: The session to store the authorization in
+/// - `email`: The email that successfully verified its reset code
+///
+/// ### Returns
+/// - `Ok(())`: The authorization marker was stored
+/// - `Err(AppError::InternalError)`: If session access fails
+pub async fn authorize_password_reset(session: &Session, email: &str) -> Result<(), AppError> {
+    let authorization = PasswordResetAuthorization {
+        email: email.to_string(),
+        expires_at: OffsetDateTime::now_utc().unix_timestamp()
+            + PASSWORD_RESET_AUTHORIZATION_TTL_SECONDS,
+    };
+    session
+        .insert(SESSION_PASSWORD_RESET_AUTHORIZED, authorization)
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!(
+                "Failed to store password reset authorization: {e}"
+            ))
+        })?;
+    Ok(())
+}
+
+/// Consume a forgot-password authorization, verifying it matches the email and is fresh.
+///
+/// The marker is always removed from the session, whether or not it was valid,
+/// so it cannot be replayed for a second reset.
+///
+/// ### Arguments
+/// - `session`: The session holding the authorization
+/// - `email`: The email submitted in step 3
+///
+/// ### Returns
+/// - `Ok(true)`: A fresh authorization for `email` existed and was consumed
+/// - `Ok(false)`: No authorization, the email did not match, or it had expired
+/// - `Err(AppError::InternalError)`: If session access fails
+pub async fn consume_password_reset_authorization(
+    session: &Session,
+    email: &str,
+) -> Result<bool, AppError> {
+    let authorization: Option<PasswordResetAuthorization> = session
+        .remove(SESSION_PASSWORD_RESET_AUTHORIZED)
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!(
+                "Failed to read password reset authorization: {e}"
+            ))
+        })?;
+    let Some(authorization) = authorization else {
+        return Ok(false);
+    };
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    Ok(authorization.email.eq_ignore_ascii_case(email) && authorization.expires_at > now)
+}
+
 /// Extracts the authenticated user ID from the session
 ///
 /// ### Arguments
