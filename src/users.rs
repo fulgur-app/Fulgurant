@@ -381,6 +381,20 @@ impl UserRepository {
         Ok(count.0 > 0)
     }
 
+    /// Count the number of admin users
+    ///
+    /// ### Returns
+    /// - `Ok(i32)`: The number of users with the `Admin` role
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn count_admins(&self) -> Result<i32, sqlx::Error> {
+        let count: (i64,) = db_fetch_one!(
+            self.pool,
+            "SELECT COUNT(*) FROM users WHERE role = 'Admin'",
+            (i64,)
+        )?;
+        Ok(count.0 as i32)
+    }
+
     /// Create a new admin user (for initial setup, no email verification required)
     ///
     /// ### Arguments
@@ -603,6 +617,11 @@ impl UserRepository {
     pub async fn toggle_role(&self, id: i32) -> Result<DisplayUser, sqlx::Error> {
         let user = self.get_by_id(id).await?;
         let user = user.ok_or(sqlx::Error::RowNotFound)?;
+        if user.role == "Admin" && self.count_admins().await? == 1 {
+            return Err(sqlx::Error::Protocol(
+                "Cannot demote the last remaining admin".to_string(),
+            ));
+        }
         let new_role = if user.role == "Admin" {
             "User"
         } else {
@@ -629,6 +648,11 @@ impl UserRepository {
     pub async fn delete(&self, id: i32) -> Result<DisplayUser, sqlx::Error> {
         let user = self.get_by_id(id).await?;
         let user = user.ok_or(sqlx::Error::RowNotFound)?;
+        if user.role == "Admin" && self.count_admins().await? == 1 {
+            return Err(sqlx::Error::Protocol(
+                "Cannot delete the last remaining admin".to_string(),
+            ));
+        }
         db_execute!(self.pool, "DELETE FROM users WHERE id = ?", id)?;
         Ok(user.into())
     }

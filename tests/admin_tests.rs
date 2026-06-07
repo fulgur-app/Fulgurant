@@ -114,6 +114,51 @@ async fn test_toggle_role() {
     assert!(response.text().contains("Role successfully changed"));
 }
 
+#[tokio::test]
+async fn test_cannot_demote_last_admin() {
+    let app = TestApp::new().await;
+    let (admin_id, _, _) = login_as_admin(&app.server, &app.pool).await;
+
+    let page = app.server.get("/admin").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post(&format!("/user/{admin_id}/change-role"))
+        .add_header(name, value)
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_can_demote_admin_when_multiple_exist() {
+    let app = TestApp::new().await;
+    login_as_admin(&app.server, &app.pool).await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+
+    // Promote the user to admin so two admins exist
+    let page = app.server.get("/admin").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+    app.server
+        .post(&format!("/user/{user_id}/change-role"))
+        .add_header(name, value)
+        .await;
+
+    // Demoting the second admin now succeeds (one admin remains)
+    let page = app.server.get("/admin").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+    let response = app
+        .server
+        .post(&format!("/user/{user_id}/change-role"))
+        .add_header(name, value)
+        .await;
+
+    response.assert_status_ok();
+    assert!(response.text().contains("Role successfully changed"));
+}
+
 // ─────────────────────────────────────────────
 // DELETE /user/{id}
 // ─────────────────────────────────────────────
@@ -135,6 +180,24 @@ async fn test_delete_user_success() {
 
     response.assert_status_ok();
     assert!(response.text().contains("has been deleted"));
+}
+
+#[tokio::test]
+async fn test_cannot_delete_last_admin() {
+    let app = TestApp::new().await;
+    let (admin_id, _, _) = login_as_admin(&app.server, &app.pool).await;
+
+    let page = app.server.get("/admin").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .delete(&format!("/user/{admin_id}"))
+        .add_header(name, value)
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
 }
 
 // ─────────────────────────────────────────────

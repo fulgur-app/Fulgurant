@@ -146,6 +146,16 @@ pub async fn change_user_role(
     let Some(user) = user else {
         return Err(AppError::Unauthorized);
     };
+    let target_user = state
+        .user_repository
+        .get_by_id(id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if target_user.role == "Admin" && state.user_repository.count_admins().await? == 1 {
+        return Err(AppError::ValidationError(
+            "Cannot demote the last remaining admin".to_string(),
+        ));
+    }
     let updated_user = state.user_repository.toggle_role(id).await?;
 
     let template = templates::RoleChangeSuccessTemplate {
@@ -263,6 +273,16 @@ pub async fn delete_user(
     axum::extract::Path(id): axum::extract::Path<i32>,
 ) -> Result<Html<String>, AppError> {
     let _user_id = session::get_session_user_id(&session).await?;
+    let target_user = state
+        .user_repository
+        .get_by_id(id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if target_user.role == "Admin" && state.user_repository.count_admins().await? == 1 {
+        return Err(AppError::ValidationError(
+            "Cannot delete the last remaining admin".to_string(),
+        ));
+    }
     let deleted_user = match state.user_repository.delete(id).await {
         Ok(deleted) => deleted,
         Err(e) => return Err(AppError::DatabaseError(e)),
