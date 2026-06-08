@@ -142,11 +142,27 @@ pub async fn change_user_role(
     axum::extract::Path(id): axum::extract::Path<i32>,
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
+    if id == user_id {
+        return Err(AppError::ValidationError(
+            "Cannot change your own role".to_string(),
+        ));
+    }
     let user = state.user_repository.get_by_id(user_id).await?;
     let Some(user) = user else {
         return Err(AppError::Unauthorized);
     };
+    let target_user = state
+        .user_repository
+        .get_by_id(id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if target_user.role == "Admin" && state.user_repository.count_admins().await? == 1 {
+        return Err(AppError::ValidationError(
+            "Cannot demote the last remaining admin".to_string(),
+        ));
+    }
     let updated_user = state.user_repository.toggle_role(id).await?;
+    tracing::info!("Admin {} changed role of user {}", user_id, id);
 
     let template = templates::RoleChangeSuccessTemplate {
         display_user: updated_user,
@@ -262,11 +278,41 @@ pub async fn delete_user(
     session: Session,
     axum::extract::Path(id): axum::extract::Path<i32>,
 ) -> Result<Html<String>, AppError> {
-    let _user_id = session::get_session_user_id(&session).await?;
+    let user_id = session::get_session_user_id(&session).await?;
+    if id == user_id {
+        return Err(AppError::ValidationError(
+            "Cannot delete your own account".to_string(),
+        ));
+    }
+    let target_user = state
+        .user_repository
+        .get_by_id(id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if target_user.role == "Admin" && state.user_repository.count_admins().await? == 1 {
+        return Err(AppError::ValidationError(
+            "Cannot delete the last remaining admin".to_string(),
+        ));
+    }
+    let revoked = state
+        .session_repository
+        .delete_all_for_user(id)
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!(
+                "Failed to revoke sessions before deletion: {e}"
+            ))
+        })?;
     let deleted_user = match state.user_repository.delete(id).await {
         Ok(deleted) => deleted,
         Err(e) => return Err(AppError::DatabaseError(e)),
     };
+    tracing::info!(
+        "Admin {} deleted user {} and revoked {} session(s)",
+        user_id,
+        id,
+        revoked
+    );
     let template = templates::DeleteUserSuccessTemplate {
         first_name: deleted_user.first_name,
         last_name: deleted_user.last_name,
