@@ -142,6 +142,11 @@ pub async fn change_user_role(
     axum::extract::Path(id): axum::extract::Path<i32>,
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
+    if id == user_id {
+        return Err(AppError::ValidationError(
+            "Cannot change your own role".to_string(),
+        ));
+    }
     let user = state.user_repository.get_by_id(user_id).await?;
     let Some(user) = user else {
         return Err(AppError::Unauthorized);
@@ -157,6 +162,7 @@ pub async fn change_user_role(
         ));
     }
     let updated_user = state.user_repository.toggle_role(id).await?;
+    tracing::info!("Admin {} changed role of user {}", user_id, id);
 
     let template = templates::RoleChangeSuccessTemplate {
         display_user: updated_user,
@@ -272,7 +278,12 @@ pub async fn delete_user(
     session: Session,
     axum::extract::Path(id): axum::extract::Path<i32>,
 ) -> Result<Html<String>, AppError> {
-    let _user_id = session::get_session_user_id(&session).await?;
+    let user_id = session::get_session_user_id(&session).await?;
+    if id == user_id {
+        return Err(AppError::ValidationError(
+            "Cannot delete your own account".to_string(),
+        ));
+    }
     let target_user = state
         .user_repository
         .get_by_id(id)
@@ -287,6 +298,7 @@ pub async fn delete_user(
         Ok(deleted) => deleted,
         Err(e) => return Err(AppError::DatabaseError(e)),
     };
+    tracing::info!("Admin {} deleted user {}", user_id, id);
     let template = templates::DeleteUserSuccessTemplate {
         first_name: deleted_user.first_name,
         last_name: deleted_user.last_name,
