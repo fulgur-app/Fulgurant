@@ -294,11 +294,25 @@ pub async fn delete_user(
             "Cannot delete the last remaining admin".to_string(),
         ));
     }
+    let revoked = state
+        .session_repository
+        .delete_all_for_user(id)
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!(
+                "Failed to revoke sessions before deletion: {e}"
+            ))
+        })?;
     let deleted_user = match state.user_repository.delete(id).await {
         Ok(deleted) => deleted,
         Err(e) => return Err(AppError::DatabaseError(e)),
     };
-    tracing::info!("Admin {} deleted user {}", user_id, id);
+    tracing::info!(
+        "Admin {} deleted user {} and revoked {} session(s)",
+        user_id,
+        id,
+        revoked
+    );
     let template = templates::DeleteUserSuccessTemplate {
         first_name: deleted_user.first_name,
         last_name: deleted_user.last_name,
