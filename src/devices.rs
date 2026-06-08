@@ -98,6 +98,28 @@ pub struct RenewDevice {
     pub api_key_lifetime: i64,
 }
 
+/// Error returned when creating a device
+#[derive(Debug)]
+pub enum CreateDeviceError {
+    /// The user already owns the maximum allowed number of devices
+    LimitReached(i32),
+    /// An underlying database error occurred
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for CreateDeviceError {
+    /// Convert a `sqlx::Error` into a `CreateDeviceError`
+    ///
+    /// ### Arguments
+    /// - `err`: The `sqlx::Error` to convert
+    ///
+    /// ### Returns
+    /// - `CreateDeviceError`: The wrapped database error
+    fn from(err: sqlx::Error) -> Self {
+        CreateDeviceError::Database(err)
+    }
+}
+
 #[derive(Clone)]
 pub struct DeviceRepository {
     pool: DbPool,
@@ -132,22 +154,32 @@ impl DeviceRepository {
         )
     }
 
-    /// Create a new device
+    /// Create a new device, enforcing the per-user device limit atomically
+    ///
+    /// The count and the insert run inside a single transaction so two
+    /// concurrent requests cannot both observe `count < max_devices` and exceed
+    /// the limit (TOCTOU race). On `PostgreSQL` a per-user transaction-scoped
+    /// advisory lock serializes concurrent creations for the same user; on
+    /// `SQLite` (WAL mode) the read-then-write transaction surfaces a snapshot
+    /// conflict instead of silently over-counting.
     ///
     /// ### Arguments
     /// - `user_id`: The ID of the user
     /// - `device_key`: The device key
     /// - `data`: The data for the device
+    /// - `max_devices`: The maximum number of devices allowed per user
     ///
     /// ### Returns
     /// - `Ok(Device)`: The created device
-    /// - `Err(sqlx::Error)`: The error if the operation fails
+    /// - `Err(CreateDeviceError::LimitReached)`: The user already owns `max_devices` devices
+    /// - `Err(CreateDeviceError::Database)`: The error if the operation fails
     pub async fn create(
         &self,
         user_id: i32,
         device_key: String,
         data: CreateDevice,
-    ) -> Result<Device, sqlx::Error> {
+        max_devices: i32,
+    ) -> Result<Device, CreateDeviceError> {
         let now = OffsetDateTime::now_utc();
         let device_id = Uuid::new_v4().to_string();
         let CreateDevice {
@@ -159,6 +191,16 @@ impl DeviceRepository {
         let fast_hash = crate::api_key::hash_api_key_fast(&device_key);
         let id = match &self.pool {
             DbPool::Sqlite(pool) => {
+                let mut tx = pool.begin().await?;
+                let count: (i64,) =
+                    sqlx::query_as("SELECT COUNT(*) FROM devices WHERE user_id = ?")
+                        .bind(user_id)
+                        .fetch_one(&mut *tx)
+                        .await?;
+                if count.0 as i32 >= max_devices {
+                    tx.rollback().await?;
+                    return Err(CreateDeviceError::LimitReached(max_devices));
+                }
                 let result = sqlx::query(
                     "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, public_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 )
@@ -171,11 +213,27 @@ impl DeviceRepository {
                 .bind(None::<String>)
                 .bind(expires_at.unix_timestamp())
                 .bind(now.unix_timestamp())
-                .execute(pool)
+                .execute(&mut *tx)
                 .await?;
-                result.last_insert_rowid() as i32
+                let id = result.last_insert_rowid() as i32;
+                tx.commit().await?;
+                id
             }
             DbPool::Postgres(pool) => {
+                let mut tx = pool.begin().await?;
+                sqlx::query("SELECT pg_advisory_xact_lock($1)")
+                    .bind(i64::from(user_id))
+                    .execute(&mut *tx)
+                    .await?;
+                let count: (i64,) =
+                    sqlx::query_as("SELECT COUNT(*) FROM devices WHERE user_id = $1")
+                        .bind(user_id)
+                        .fetch_one(&mut *tx)
+                        .await?;
+                if count.0 as i32 >= max_devices {
+                    tx.rollback().await?;
+                    return Err(CreateDeviceError::LimitReached(max_devices));
+                }
                 let row: (i32,) = sqlx::query_as(
                     "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, public_key, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8)) RETURNING id",
                 )
@@ -187,12 +245,13 @@ impl DeviceRepository {
                 .bind(&device_type)
                 .bind(None::<String>)
                 .bind(expires_at.unix_timestamp())
-                .fetch_one(pool)
+                .fetch_one(&mut *tx)
                 .await?;
+                tx.commit().await?;
                 row.0
             }
         };
-        self.get_by_id(id).await
+        Ok(self.get_by_id(id).await?)
     }
 
     /// Update a device

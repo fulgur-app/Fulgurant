@@ -38,6 +38,7 @@ pub async fn create_device_for_user(
                 device_type: "Desktop".to_string(),
                 api_key_lifetime: 365,
             },
+            i32::MAX,
         )
         .await
         .unwrap();

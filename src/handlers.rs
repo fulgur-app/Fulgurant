@@ -166,23 +166,20 @@ pub async fn create_device(
     }
     request.name = name;
     request.device_type = device_type;
-    let devices_number = state
-        .device_repository
-        .count_devices_for_user(user_id)
-        .await?;
-    if devices_number >= state.max_devices_per_user {
-        tracing::error!("Max devices per user reached for user: {}", user_id);
-        return Err(AppError::MaxDevicesPerUserReached(
-            state.max_devices_per_user,
-        ));
-    }
     let api_key = api_key::generate_api_key();
     let hash = api_key::hash_api_key(&api_key)
         .map_err(|e| AppError::ApiKeyError(anyhow::anyhow!("Failed to hash API key: {e}")))?;
     let device = state
         .device_repository
-        .create(user_id, hash, request.clone())
-        .await?;
+        .create(user_id, hash, request.clone(), state.max_devices_per_user)
+        .await
+        .map_err(|e| match e {
+            devices::CreateDeviceError::LimitReached(max) => {
+                tracing::error!("Max devices per user reached for user: {}", user_id);
+                AppError::MaxDevicesPerUserReached(max)
+            }
+            devices::CreateDeviceError::Database(e) => AppError::from(e),
+        })?;
     tracing::info!("Device created: id={} for user {}", device.id, user_id);
     let template = templates::DeviceCreationResponseTemplate { device, api_key };
     Ok(Html(template.render()?))
