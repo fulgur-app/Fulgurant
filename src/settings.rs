@@ -25,19 +25,19 @@ impl SettingsRepository {
     /// - `Ok(Some(n))`: Files are limited to `n` bytes
     /// - `Err(sqlx::Error)`: Database error
     pub async fn get_max_file_size_bytes(&self) -> Result<Option<u64>, sqlx::Error> {
-        let value: Option<i64> = match &self.pool {
+        let value: Option<Option<i64>> = match &self.pool {
             DbPool::Sqlite(pool) => {
                 sqlx::query_scalar("SELECT max_file_size_bytes FROM server_settings WHERE id = 1")
-                    .fetch_one(pool)
+                    .fetch_optional(pool)
                     .await?
             }
             DbPool::Postgres(pool) => {
                 sqlx::query_scalar("SELECT max_file_size_bytes FROM server_settings WHERE id = 1")
-                    .fetch_one(pool)
+                    .fetch_optional(pool)
                     .await?
             }
         };
-        Ok(value.map(|v| v as u64))
+        Ok(value.flatten().map(|v| v as u64))
     }
 
     /// Update the maximum share file size.
