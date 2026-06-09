@@ -160,6 +160,42 @@ async fn test_create_device_max_reached() {
 }
 
 #[tokio::test]
+async fn test_create_device_limit_enforced_at_boundary() {
+    let app = TestApp::with_options(TestAppOptions {
+        max_devices_per_user: 1,
+        ..TestAppOptions::default()
+    })
+    .await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+
+    // Seed the single allowed device directly.
+    create_device_for_user(&app.pool, user_id, "Existing Device").await;
+
+    let page = app.server.get("/").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post(&format!("/device/{user_id}/create"))
+        .add_header(name, value)
+        .form(&CreateDeviceFormData {
+            name: "Second Device",
+            device_type: "Desktop",
+            api_key_lifetime: 365,
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+
+    // The transactional check must not have inserted the extra device.
+    let device_repo = DeviceRepository::new(app.db_pool.clone());
+    let count = device_repo.count_devices_for_user(user_id).await.unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
 async fn test_create_device_for_another_user_forbidden() {
     let app = TestApp::new().await;
     let attacker_id = create_verified_user(&app.pool, "attacker@test.com", "Password123!").await;
