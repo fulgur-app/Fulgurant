@@ -273,6 +273,13 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("SSE heartbeat interval: {} seconds", sse_heartbeat_seconds);
     let sse_manager = Arc::new(api::sse::SseChannelManager::new());
     tracing::info!("SSE channel manager initialized");
+    let sse_connection_limiter = Arc::new(api::sse::SseConnectionLimiter::new(
+        api::sse::MAX_SSE_CONNECTIONS_PER_DEVICE,
+    ));
+    tracing::info!(
+        "SSE per-device connection limit: {}",
+        api::sse::MAX_SSE_CONNECTIONS_PER_DEVICE
+    );
     let jwt_secret = config.jwt_secret.clone();
     tracing::info!(
         "JWT secret loaded (length: {} characters)",
@@ -304,6 +311,7 @@ async fn main() -> anyhow::Result<()> {
         share_validity_days: config.share_validity_days,
         max_devices_per_user: config.max_devices_per_user,
         sse_manager,
+        sse_connection_limiter,
         sse_heartbeat_seconds,
         jwt_secret,
         jwt_expiry_seconds,
