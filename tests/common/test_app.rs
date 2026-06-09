@@ -1,6 +1,6 @@
 use axum_test::TestServer;
 use fulgurant::{
-    api::sse::SseChannelManager,
+    api::sse::{MAX_SSE_CONNECTIONS_PER_DEVICE, SseChannelManager, SseConnectionLimiter},
     db::DbPool,
     devices::DeviceRepository,
     handlers::AppState,
@@ -104,6 +104,9 @@ impl TestApp {
             share_validity_days: 3,
             max_devices_per_user: opts.max_devices_per_user,
             sse_manager: Arc::new(SseChannelManager::new()),
+            sse_connection_limiter: Arc::new(SseConnectionLimiter::new(
+                MAX_SSE_CONNECTIONS_PER_DEVICE,
+            )),
             sse_heartbeat_seconds: 30,
             jwt_secret: jwt_secret.clone(),
             jwt_expiry_seconds: 900,

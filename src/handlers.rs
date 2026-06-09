@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use tower_sessions::Session;
 
 use crate::{
-    api::sse::SseChannelManager,
+    api::sse::{SseChannelManager, SseConnectionLimiter},
     api_key::{self},
     devices::{
         self, CreateDevice, DeviceRepository, MAX_DEVICE_NAME_LEN, MAX_DEVICE_TYPE_LEN,
@@ -42,6 +42,7 @@ pub struct AppState {
     pub share_validity_days: i64,
     pub max_devices_per_user: i32,
     pub sse_manager: Arc<SseChannelManager>,
+    pub sse_connection_limiter: Arc<SseConnectionLimiter>,
     pub sse_heartbeat_seconds: u64,
     pub jwt_secret: String,
     pub jwt_expiry_seconds: i64,

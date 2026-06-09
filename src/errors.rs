@@ -16,6 +16,7 @@ pub enum AppError {
     Unauthorized,
     Forbidden,
     MaxDevicesPerUserReached(i32),
+    TooManyConnections,
     ValidationError(String),
 }
 
@@ -39,6 +40,7 @@ impl std::fmt::Display for AppError {
             AppError::MaxDevicesPerUserReached(max) => {
                 write!(f, "Max number of devices per user reached: {max}")
             }
+            AppError::TooManyConnections => write!(f, "Too many concurrent connections"),
             AppError::ValidationError(msg) => write!(f, "Validation error: {msg}"),
         }
     }
@@ -85,6 +87,10 @@ impl IntoResponse for AppError {
             AppError::MaxDevicesPerUserReached(max_number_of_devices) => (
                 StatusCode::FORBIDDEN,
                 format!("Max number of devices per user reached: {max_number_of_devices}"),
+            ),
+            AppError::TooManyConnections => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too many concurrent connections".to_string(),
             ),
             AppError::ValidationError(msg) => (StatusCode::BAD_REQUEST, msg),
         };
