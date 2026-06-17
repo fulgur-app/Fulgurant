@@ -422,6 +422,11 @@ async fn test_delete_share_success() {
         .await;
 
     response.assert_status_ok();
+
+    // The row is kept as a historic record: status becomes "deleted" and content is cleared.
+    let deleted = share_repo.get_by_id(&share.id).await.unwrap();
+    assert_eq!(deleted.status, "deleted");
+    assert!(deleted.content.is_empty());
 }
 
 #[tokio::test]

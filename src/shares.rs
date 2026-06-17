@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use crate::db::DbPool;
 use crate::{
     db_execute, db_execute_dual, db_fetch_all, db_fetch_all_dual, db_fetch_one, db_fetch_one_dual,
-    db_fetch_optional_dual,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -14,6 +13,21 @@ use crate::utils::format_datetime_utc;
 
 // Default validity period for shares (3 days)
 pub const SHARE_VALIDITY_DAYS: i64 = 3;
+
+/// Lifecycle status of a share.
+///
+/// Shares are never hard-deleted: their content is cleared and their status
+/// updated, keeping the row as a historic/stat record.
+pub mod status {
+    /// Shared by a device, not yet downloaded by the destination device.
+    pub const AVAILABLE: &str = "available";
+    /// Downloaded by the destination device.
+    pub const DOWNLOADED: &str = "downloaded";
+    /// Expired before the destination device downloaded it.
+    pub const EXPIRED: &str = "expired";
+    /// Manually deleted by the user.
+    pub const DELETED: &str = "deleted";
+}
 
 pub fn get_share_validity_days() -> i64 {
     std::env::var("SHARE_VALIDITY_DAYS")
@@ -33,6 +47,7 @@ pub struct Share {
     pub file_size: i32,
     pub content: String,
     pub deduplication_hash: Option<String>,
+    pub status: String,
     pub created_at: OffsetDateTime,
     pub expires_at: OffsetDateTime,
 }
@@ -158,6 +173,7 @@ impl ShareRepository {
                     file_name = excluded.file_name,
                     file_size = excluded.file_size,
                     content = excluded.content,
+                    status = 'available',
                     created_at = excluded.created_at,
                     expires_at = excluded.expires_at
                 RETURNING *
@@ -174,6 +190,7 @@ impl ShareRepository {
                     file_name = excluded.file_name,
                     file_size = excluded.file_size,
                     content = excluded.content,
+                    status = 'available',
                     created_at = excluded.created_at,
                     expires_at = excluded.expires_at
                 RETURNING *
@@ -239,7 +256,7 @@ impl ShareRepository {
         db_fetch_one!(self.pool, "SELECT * FROM shares WHERE id = ?", Share, id)
     }
 
-    /// Get all shares for a user
+    /// Get all shares for a user, regardless of status (including historic rows)
     ///
     /// ### Arguments
     /// - `user_id`: The ID of the user
@@ -256,33 +273,59 @@ impl ShareRepository {
         )
     }
 
-    /// Delete a share by ID
+    /// Get the available (not yet downloaded, expired, or deleted) shares for a user
+    ///
+    /// ### Arguments
+    /// - `user_id`: The ID of the user
+    ///
+    /// ### Returns
+    /// - `Ok(Vec<Share>)`: The available shares for the user
+    /// - `Err(sqlx::Error)`: The error that occurred while getting the shares for the user
+    pub async fn get_available_for_user(&self, user_id: i32) -> Result<Vec<Share>, sqlx::Error> {
+        db_fetch_all!(
+            self.pool,
+            "SELECT * FROM shares WHERE user_id = ? AND status = 'available' ORDER BY created_at DESC",
+            Share,
+            user_id
+        )
+    }
+
+    /// Mark a share as deleted and clear its content
+    ///
+    /// The row is kept as a historic record; only its `status` becomes `deleted` and its `content` is cleared.
     ///
     /// ### Arguments
     /// - `id`: The ID of the share to delete
     ///
     /// ### Returns
-    /// - `Ok(())`: The result of the operation if the share was deleted successfully
-    /// - `Err(sqlx::Error)`: The error that occurred while deleting the share
-    pub async fn delete(&self, id: &str) -> Result<(), sqlx::Error> {
-        db_execute!(self.pool, "DELETE FROM shares WHERE id = ?", id)?;
+    /// - `Ok(())`: The result of the operation if the share was marked as deleted successfully
+    /// - `Err(sqlx::Error)`: The error that occurred while marking the share as deleted
+    pub async fn mark_deleted(&self, id: &str) -> Result<(), sqlx::Error> {
+        db_execute!(
+            self.pool,
+            "UPDATE shares SET status = 'deleted', content = '' WHERE id = ?",
+            id
+        )?;
         Ok(())
     }
 
-    /// Delete all expired shares (for cleanup job)
+    /// Mark all expired available shares as expired and clear their content (for cleanup job)
+    ///
+    /// Only `available` shares past their expiration are affected; already downloaded
+    /// or deleted shares are left untouched. Rows are kept as historic records.
     ///
     /// ### Returns
-    /// - `Ok(u64)`: The number of deleted shares
+    /// - `Ok(u64)`: The number of shares marked as expired
     /// - `Err(sqlx::Error)`: The error if the operation fails
-    pub async fn delete_expired(&self) -> Result<u64, sqlx::Error> {
+    pub async fn mark_expired(&self) -> Result<u64, sqlx::Error> {
         db_execute_dual!(
             self.pool,
-            sqlite: "DELETE FROM shares WHERE expires_at < unixepoch('now')",
-            postgres: "DELETE FROM shares WHERE expires_at < NOW()"
+            sqlite: "UPDATE shares SET status = 'expired', content = '' WHERE status = 'available' AND expires_at < unixepoch('now')",
+            postgres: "UPDATE shares SET status = 'expired', content = '' WHERE status = 'available' AND expires_at < NOW()"
         )
     }
 
-    /// Get all non-expired shares for a specific device
+    /// Get all available (not yet downloaded or expired) shares for a specific device
     /// Returns shares where the `device_id` matches the `destination_device_id`
     ///
     /// ### Arguments
@@ -294,20 +337,20 @@ impl ShareRepository {
     pub async fn get_shares_for_device(&self, device_id: &str) -> Result<Vec<Share>, sqlx::Error> {
         db_fetch_all_dual!(
             self.pool,
-            sqlite: "SELECT * FROM shares WHERE destination_device_id = ? AND expires_at > unixepoch('now') ORDER BY created_at DESC",
-            postgres: "SELECT * FROM shares WHERE destination_device_id = $1 AND expires_at > NOW() ORDER BY created_at DESC",
+            sqlite: "SELECT * FROM shares WHERE destination_device_id = ? AND status = 'available' AND expires_at > unixepoch('now') ORDER BY created_at DESC",
+            postgres: "SELECT * FROM shares WHERE destination_device_id = $1 AND status = 'available' AND expires_at > NOW() ORDER BY created_at DESC",
             Share,
             device_id
         )
     }
 
-    /// List IDs of all non-expired pending shares for a specific device without deleting them
+    /// List IDs of all available (not yet downloaded or expired) shares for a specific device without consuming them
     ///
     /// ### Arguments
     /// - `device_id`: The ID of the destination device
     ///
     /// ### Returns
-    /// - `Ok(Vec<String>)`: The IDs of pending non-expired shares for the device, oldest first
+    /// - `Ok(Vec<String>)`: The IDs of available shares for the device, oldest first
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn list_share_ids_for_device(
         &self,
@@ -315,62 +358,129 @@ impl ShareRepository {
     ) -> Result<Vec<String>, sqlx::Error> {
         let rows: Vec<(String,)> = db_fetch_all_dual!(
             self.pool,
-            sqlite: "SELECT id FROM shares WHERE destination_device_id = ? AND expires_at > unixepoch('now') ORDER BY created_at ASC",
-            postgres: "SELECT id FROM shares WHERE destination_device_id = $1 AND expires_at > NOW() ORDER BY created_at ASC",
+            sqlite: "SELECT id FROM shares WHERE destination_device_id = ? AND status = 'available' AND expires_at > unixepoch('now') ORDER BY created_at ASC",
+            postgres: "SELECT id FROM shares WHERE destination_device_id = $1 AND status = 'available' AND expires_at > NOW() ORDER BY created_at ASC",
             (String,),
             device_id
         )?;
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
-    /// Get a single non-expired share by ID for a specific destination device and delete it atomically
+    /// Consume a single available share by ID for a specific destination device
+    ///
+    /// ### Description
+    /// Atomically claims the share by flipping its status from `available` to
+    /// `downloaded` (so a concurrent consumer cannot claim it twice), returns its
+    /// content, then clears the stored content. The row is kept as a historic
+    /// record. The whole operation runs in a transaction.
     ///
     /// ### Arguments
     /// - `id`: The ID of the share
     /// - `device_id`: The ID of the destination device that must own the share
     ///
     /// ### Returns
-    /// - `Ok(Some(Share))`: The share that was deleted
-    /// - `Ok(None)`: No matching non-expired share for this device
+    /// - `Ok(Some(Share))`: The consumed share, with its content intact
+    /// - `Ok(None)`: No matching available share for this device
     /// - `Err(sqlx::Error)`: The error if the operation fails
-    pub async fn get_and_delete_share_for_device(
+    pub async fn consume_share_for_device(
         &self,
         id: &str,
         device_id: &str,
     ) -> Result<Option<Share>, sqlx::Error> {
-        db_fetch_optional_dual!(
-            self.pool,
-            sqlite: "DELETE FROM shares WHERE id = ? AND destination_device_id = ? AND expires_at > unixepoch('now') RETURNING *",
-            postgres: "DELETE FROM shares WHERE id = $1 AND destination_device_id = $2 AND expires_at > NOW() RETURNING *",
-            Share,
-            id,
-            device_id
-        )
+        match &self.pool {
+            DbPool::Sqlite(pool) => {
+                let mut tx = pool.begin().await?;
+                let claimed: Option<Share> = sqlx::query_as(
+                    "UPDATE shares SET status = 'downloaded' WHERE id = ? AND destination_device_id = ? AND status = 'available' AND expires_at > unixepoch('now') RETURNING *",
+                )
+                .bind(id)
+                .bind(device_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                if claimed.is_some() {
+                    sqlx::query("UPDATE shares SET content = '' WHERE id = ?")
+                        .bind(id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+                tx.commit().await?;
+                Ok(claimed)
+            }
+            DbPool::Postgres(pool) => {
+                let mut tx = pool.begin().await?;
+                let claimed: Option<Share> = sqlx::query_as(
+                    "UPDATE shares SET status = 'downloaded' WHERE id = $1 AND destination_device_id = $2 AND status = 'available' AND expires_at > NOW() RETURNING *",
+                )
+                .bind(id)
+                .bind(device_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                if claimed.is_some() {
+                    sqlx::query("UPDATE shares SET content = '' WHERE id = $1")
+                        .bind(id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+                tx.commit().await?;
+                Ok(claimed)
+            }
+        }
     }
 
-    /// Get all non-expired shares for a specific device and delete them
+    /// Consume all available shares for a specific destination device
     ///
     /// ### Description
-    /// This function gets all non-expired shares for a specific device and deletes them in a single atomic operation.
-    /// Returns shares where the `device_id` matches the `destination_device_id`
+    /// Atomically claims every available share for the device by flipping their
+    /// status from `available` to `downloaded`, returns them with their content
+    /// intact, then clears the stored content. Rows are kept as historic records.
+    /// The whole operation runs in a transaction.
     ///
     /// ### Arguments
     /// - `device_id`: The ID of the device
     ///
     /// ### Returns
-    /// - `Ok(Vec<Share>)`: The shares for the device that were deleted
+    /// - `Ok(Vec<Share>)`: The consumed shares, with their content intact
     /// - `Err(sqlx::Error)`: The error if the operation fails
-    pub async fn get_and_delete_shares_for_device(
+    pub async fn consume_shares_for_device(
         &self,
         device_id: &str,
     ) -> Result<Vec<Share>, sqlx::Error> {
-        db_fetch_all_dual!(
-            self.pool,
-            sqlite: "DELETE FROM shares WHERE destination_device_id = ? AND expires_at > unixepoch('now') RETURNING *",
-            postgres: "DELETE FROM shares WHERE destination_device_id = $1 AND expires_at > NOW() RETURNING *",
-            Share,
-            device_id
-        )
+        match &self.pool {
+            DbPool::Sqlite(pool) => {
+                let mut tx = pool.begin().await?;
+                let claimed: Vec<Share> = sqlx::query_as(
+                    "UPDATE shares SET status = 'downloaded' WHERE destination_device_id = ? AND status = 'available' AND expires_at > unixepoch('now') RETURNING *",
+                )
+                .bind(device_id)
+                .fetch_all(&mut *tx)
+                .await?;
+                if !claimed.is_empty() {
+                    sqlx::query("UPDATE shares SET content = '' WHERE destination_device_id = ? AND status = 'downloaded' AND content <> ''")
+                        .bind(device_id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+                tx.commit().await?;
+                Ok(claimed)
+            }
+            DbPool::Postgres(pool) => {
+                let mut tx = pool.begin().await?;
+                let claimed: Vec<Share> = sqlx::query_as(
+                    "UPDATE shares SET status = 'downloaded' WHERE destination_device_id = $1 AND status = 'available' AND expires_at > NOW() RETURNING *",
+                )
+                .bind(device_id)
+                .fetch_all(&mut *tx)
+                .await?;
+                if !claimed.is_empty() {
+                    sqlx::query("UPDATE shares SET content = '' WHERE destination_device_id = $1 AND status = 'downloaded' AND content <> ''")
+                        .bind(device_id)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+                tx.commit().await?;
+                Ok(claimed)
+            }
+        }
     }
 }
 

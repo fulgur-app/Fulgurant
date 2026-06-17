@@ -572,6 +572,71 @@ async fn test_share_file_deduplication() {
 }
 
 #[tokio::test]
+async fn test_download_keeps_share_as_historic_downloaded_record() {
+    let app = TestApp::new().await;
+    let email = "download_history@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (source_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_device_id, _) = create_device_for_user(&app.pool, user_id, "Dest").await;
+
+    let source_jwt = access_token::generate_access_token(
+        user_id,
+        source_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "secret payload".to_string(),
+        file_name: "note.txt".to_string(),
+        device_id: dest_device_id.clone(),
+        deduplication_hash: None,
+    };
+    app.server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&source_jwt))
+        .json(&payload)
+        .await;
+
+    let dest_jwt = access_token::generate_access_token(
+        user_id,
+        dest_device_id,
+        "Dest".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    // First download returns the content.
+    let first = app
+        .server
+        .get("/api/shares")
+        .add_header(AUTHORIZATION, bearer(&dest_jwt))
+        .await;
+    let first_shares: Vec<SharedFileResponse> = first.json();
+    assert_eq!(first_shares.len(), 1);
+    assert_eq!(first_shares[0].content, "secret payload");
+    let share_id = first_shares[0].id.clone();
+
+    // Second download no longer returns the already-downloaded share.
+    let second = app
+        .server
+        .get("/api/shares")
+        .add_header(AUTHORIZATION, bearer(&dest_jwt))
+        .await;
+    let second_shares: Vec<SharedFileResponse> = second.json();
+    assert!(second_shares.is_empty());
+
+    // The row is kept as a historic record: status "downloaded", content cleared.
+    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let stored = share_repo.get_by_id(&share_id).await.unwrap();
+    assert_eq!(stored.status, "downloaded");
+    assert!(stored.content.is_empty());
+}
+
+#[tokio::test]
 async fn test_share_file_rejects_nonexistent_destination_device() {
     let app = TestApp::new().await;
     let email = "share_missing_dest@test.com";

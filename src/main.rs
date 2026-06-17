@@ -421,16 +421,16 @@ fn make_share_cleanup_task(share_repository: ShareRepository, shutdown_token: Ca
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    match share_repository.delete_expired().await {
+                    match share_repository.mark_expired().await {
                         Ok(count) => {
                             if count > 0 {
-                                tracing::info!("Cleaned up {} expired share(s)", count);
+                                tracing::info!("Marked {} share(s) as expired", count);
                             } else {
                                 tracing::debug!("Share cleanup check complete - no expired shares found");
                             }
                         }
                         Err(e) => {
-                            tracing::error!("Error cleaning up expired shares: {:?}", e);
+                            tracing::error!("Error marking expired shares: {:?}", e);
                         }
                     }
                 },
