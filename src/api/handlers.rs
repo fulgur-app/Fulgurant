@@ -278,7 +278,7 @@ pub async fn get_shares(
 ) -> Result<Json<Vec<SharedFileResponse>>, (StatusCode, Json<ErrorResponse>)> {
     match state
         .share_repository
-        .get_and_delete_shares_for_device(&auth_user.device_id)
+        .consume_shares_for_device(&auth_user.device_id)
         .await
     {
         Ok(shares) => {
@@ -322,7 +322,7 @@ pub async fn get_share(
 ) -> Result<Json<SharedFileResponse>, (StatusCode, Json<ErrorResponse>)> {
     match state
         .share_repository
-        .get_and_delete_share_for_device(&id, &auth_user.device_id)
+        .consume_share_for_device(&id, &auth_user.device_id)
         .await
     {
         Ok(Some(share)) => {
@@ -425,7 +425,7 @@ pub async fn begin(
     }
     let shares: Vec<SharedFileResponse> = match state
         .share_repository
-        .get_and_delete_shares_for_device(&auth_user.device_id)
+        .consume_shares_for_device(&auth_user.device_id)
         .await
     {
         Ok(shares) => shares.into_iter().map(SharedFileResponse::from).collect(),

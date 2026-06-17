@@ -93,7 +93,7 @@ pub async fn index(
             return Err(AppError::DatabaseError(e));
         }
     };
-    let raw_shares = match state.share_repository.get_all_for_user(user_id).await {
+    let raw_shares = match state.share_repository.get_available_for_user(user_id).await {
         Ok(shares) => shares,
         Err(e) => {
             tracing::error!("Error getting shares: {:?}", e);
@@ -404,7 +404,7 @@ pub async fn delete_share(
     if share.user_id != session_user_id {
         return Err(AppError::Forbidden);
     }
-    match state.share_repository.delete(&id).await {
+    match state.share_repository.mark_deleted(&id).await {
         Ok(()) => Ok(StatusCode::OK),
         Err(e) => {
             tracing::error!("Error deleting share: {:?}", e);
