@@ -360,6 +360,118 @@ pub async fn get_share(
     }
 }
 
+/// GET /api/v2/shares/:id - Retrieve a single available share by ID
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `auth_user`: The authenticated user
+/// - `id`: The share ID (from the URL path)
+///
+/// ### Returns
+/// - `Ok(Json(SharedFileResponse))`: The share content, left intact server-side
+/// - `Err((StatusCode::NOT_FOUND, ...))`: No matching available share for this device
+/// - `Err((StatusCode::INTERNAL_SERVER_ERROR, ...))`: Database error
+pub async fn get_share_v2(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthenticatedUser>,
+    Path(id): Path<String>,
+) -> Result<Json<SharedFileResponse>, (StatusCode, Json<ErrorResponse>)> {
+    match state
+        .share_repository
+        .peek_available_share_for_device(&id, &auth_user.device_id)
+        .await
+    {
+        Ok(Some(share)) => {
+            tracing::info!(
+                "Served share {} (without consuming) for device {} (user: {})",
+                share.id,
+                auth_user.device_id,
+                auth_user.user.id
+            );
+            Ok(Json(SharedFileResponse::from(share)))
+        }
+        Ok(None) => {
+            tracing::warn!(
+                "Share {} not found for device {} (user: {})",
+                id,
+                auth_user.device_id,
+                auth_user.user.id
+            );
+            Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Share not found".to_string(),
+                }),
+            ))
+        }
+        Err(e) => {
+            tracing::error!("Error getting share {}: {:?}", id, e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to retrieve share".to_string(),
+                }),
+            ))
+        }
+    }
+}
+
+/// POST /api/v2/shares/:id/successful - Acknowledge a successful download and consume the share
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `auth_user`: The authenticated user
+/// - `id`: The share ID (from the URL path)
+///
+/// ### Returns
+/// - `Ok(StatusCode::NO_CONTENT)`: The share was marked as downloaded
+/// - `Err((StatusCode::NOT_FOUND, ...))`: No matching available share for this device
+/// - `Err((StatusCode::INTERNAL_SERVER_ERROR, ...))`: Database error
+pub async fn share_successful(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthenticatedUser>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    match state
+        .share_repository
+        .mark_downloaded(&id, &auth_user.device_id)
+        .await
+    {
+        Ok(true) => {
+            tracing::info!(
+                "Share {} acknowledged as downloaded by device {} (user: {})",
+                id,
+                auth_user.device_id,
+                auth_user.user.id
+            );
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Ok(false) => {
+            tracing::warn!(
+                "Share {} not available to acknowledge for device {} (user: {})",
+                id,
+                auth_user.device_id,
+                auth_user.user.id
+            );
+            Err((
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "Share not found".to_string(),
+                }),
+            ))
+        }
+        Err(e) => {
+            tracing::error!("Error acknowledging share {}: {:?}", id, e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Failed to acknowledge share".to_string(),
+                }),
+            ))
+        }
+    }
+}
+
 /// POST /api/begin - Initial synchronization endpoint that updates the device's age public key and returns pending shares
 ///
 /// ### Deprecated

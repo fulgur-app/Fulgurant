@@ -637,6 +637,201 @@ async fn test_download_keeps_share_as_historic_downloaded_record() {
 }
 
 #[tokio::test]
+async fn test_get_share_v2_returns_content_without_consuming() {
+    let app = TestApp::new().await;
+    let email = "get_share_v2@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (source_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_device_id, _) = create_device_for_user(&app.pool, user_id, "Dest").await;
+
+    let source_jwt = access_token::generate_access_token(
+        user_id,
+        source_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "secret payload".to_string(),
+        file_name: "note.txt".to_string(),
+        device_id: dest_device_id.clone(),
+        deduplication_hash: None,
+    };
+    app.server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&source_jwt))
+        .json(&payload)
+        .await;
+
+    let dest_jwt = access_token::generate_access_token(
+        user_id,
+        dest_device_id,
+        "Dest".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    // Discover the pending share id without consuming it.
+    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let pending = share_repo.get_available_for_user(user_id).await.unwrap();
+    assert_eq!(pending.len(), 1);
+    let share_id = pending[0].id.clone();
+
+    // Two consecutive reads both return the content: the share is never consumed.
+    for _ in 0..2 {
+        let response = app
+            .server
+            .get(&format!("/api/v2/shares/{share_id}"))
+            .add_header(AUTHORIZATION, bearer(&dest_jwt))
+            .await;
+        response.assert_status_ok();
+        let share: SharedFileResponse = response.json();
+        assert_eq!(share.content, "secret payload");
+    }
+
+    // The row is still available with its content intact.
+    let stored = share_repo.get_by_id(&share_id).await.unwrap();
+    assert_eq!(stored.status, "available");
+    assert_eq!(stored.content, "secret payload");
+}
+
+#[tokio::test]
+async fn test_share_successful_consumes_share() {
+    let app = TestApp::new().await;
+    let email = "share_successful@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (source_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_device_id, _) = create_device_for_user(&app.pool, user_id, "Dest").await;
+
+    let source_jwt = access_token::generate_access_token(
+        user_id,
+        source_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "secret payload".to_string(),
+        file_name: "note.txt".to_string(),
+        device_id: dest_device_id.clone(),
+        deduplication_hash: None,
+    };
+    app.server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&source_jwt))
+        .json(&payload)
+        .await;
+
+    let dest_jwt = access_token::generate_access_token(
+        user_id,
+        dest_device_id,
+        "Dest".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
+        .id
+        .clone();
+
+    // Acknowledging the download consumes the share.
+    let ack = app
+        .server
+        .post(&format!("/api/v2/shares/{share_id}/successful"))
+        .add_header(AUTHORIZATION, bearer(&dest_jwt))
+        .await;
+    ack.assert_status(StatusCode::NO_CONTENT);
+
+    // The row is kept as a historic record: status "downloaded", content cleared.
+    let stored = share_repo.get_by_id(&share_id).await.unwrap();
+    assert_eq!(stored.status, "downloaded");
+    assert!(stored.content.is_empty());
+
+    // The consumed share is no longer readable via the v2 endpoint.
+    let read = app
+        .server
+        .get(&format!("/api/v2/shares/{share_id}"))
+        .add_header(AUTHORIZATION, bearer(&dest_jwt))
+        .expect_failure()
+        .await;
+    read.assert_status_not_found();
+
+    // A duplicate acknowledgement is a harmless no-op returning 404.
+    let second_ack = app
+        .server
+        .post(&format!("/api/v2/shares/{share_id}/successful"))
+        .add_header(AUTHORIZATION, bearer(&dest_jwt))
+        .expect_failure()
+        .await;
+    second_ack.assert_status_not_found();
+}
+
+#[tokio::test]
+async fn test_share_successful_rejects_other_devices_share() {
+    let app = TestApp::new().await;
+    let email = "share_successful_other@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (source_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_device_id, _) = create_device_for_user(&app.pool, user_id, "Dest").await;
+    let (other_device_id, _) = create_device_for_user(&app.pool, user_id, "Other").await;
+
+    let source_jwt = access_token::generate_access_token(
+        user_id,
+        source_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "secret payload".to_string(),
+        file_name: "note.txt".to_string(),
+        device_id: dest_device_id.clone(),
+        deduplication_hash: None,
+    };
+    app.server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&source_jwt))
+        .json(&payload)
+        .await;
+
+    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
+        .id
+        .clone();
+
+    // A device that is not the destination cannot acknowledge the share.
+    let other_jwt = access_token::generate_access_token(
+        user_id,
+        other_device_id,
+        "Other".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+    let response = app
+        .server
+        .post(&format!("/api/v2/shares/{share_id}/successful"))
+        .add_header(AUTHORIZATION, bearer(&other_jwt))
+        .expect_failure()
+        .await;
+    response.assert_status_not_found();
+
+    // The share remains available for the legitimate destination device.
+    let stored = share_repo.get_by_id(&share_id).await.unwrap();
+    assert_eq!(stored.status, "available");
+    assert_eq!(stored.content, "secret payload");
+}
+
+#[tokio::test]
 async fn test_share_file_rejects_nonexistent_destination_device() {
     let app = TestApp::new().await;
     let email = "share_missing_dest@test.com";

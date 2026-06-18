@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::db::DbPool;
 use crate::{
     db_execute, db_execute_dual, db_fetch_all, db_fetch_all_dual, db_fetch_one, db_fetch_one_dual,
+    db_fetch_optional_dual,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -425,6 +426,52 @@ impl ShareRepository {
                 Ok(claimed)
             }
         }
+    }
+
+    /// Peek at a single available share by ID for a specific destination device
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the share
+    /// - `device_id`: The ID of the destination device that must own the share
+    ///
+    /// ### Returns
+    /// - `Ok(Some(Share))`: The available share, with its content intact
+    /// - `Ok(None)`: No matching available share for this device
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn peek_available_share_for_device(
+        &self,
+        id: &str,
+        device_id: &str,
+    ) -> Result<Option<Share>, sqlx::Error> {
+        db_fetch_optional_dual!(
+            self.pool,
+            sqlite: "SELECT * FROM shares WHERE id = ? AND destination_device_id = ? AND status = 'available' AND expires_at > unixepoch('now')",
+            postgres: "SELECT * FROM shares WHERE id = $1 AND destination_device_id = $2 AND status = 'available' AND expires_at > NOW()",
+            Share,
+            id,
+            device_id
+        )
+    }
+
+    /// Mark a single available share as downloaded and clear its content
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the share
+    /// - `device_id`: The ID of the destination device that must own the share
+    ///
+    /// ### Returns
+    /// - `Ok(true)`: The share was marked as downloaded
+    /// - `Ok(false)`: No matching available share for this device (already consumed, expired, or unknown)
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn mark_downloaded(&self, id: &str, device_id: &str) -> Result<bool, sqlx::Error> {
+        let affected = db_execute_dual!(
+            self.pool,
+            sqlite: "UPDATE shares SET status = 'downloaded', content = '' WHERE id = ? AND destination_device_id = ? AND status = 'available' AND expires_at > unixepoch('now')",
+            postgres: "UPDATE shares SET status = 'downloaded', content = '' WHERE id = $1 AND destination_device_id = $2 AND status = 'available' AND expires_at > NOW()",
+            id,
+            device_id
+        )?;
+        Ok(affected > 0)
     }
 
     /// Consume all available shares for a specific destination device
