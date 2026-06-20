@@ -1181,3 +1181,170 @@ async fn test_begin_v2_advertises_min_fulgur_version() {
         "begin v2 must advertise the server's minimum Fulgur version"
     );
 }
+
+#[tokio::test]
+async fn test_begin_v2_lists_pending_shares_without_consuming() {
+    let app = TestApp::new().await;
+    let email = "begin_v2_pending@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (source_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_id, _) = create_device_for_user(&app.pool, user_id, "Dest").await;
+
+    let source_jwt = access_token::generate_access_token(
+        user_id,
+        source_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "v2 begin content".to_string(),
+        file_name: "v2begin.txt".to_string(),
+        device_id: dest_id.clone(),
+        deduplication_hash: None,
+    };
+    app.server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&source_jwt))
+        .json(&payload)
+        .await;
+
+    let dest_jwt = access_token::generate_access_token(
+        user_id,
+        dest_id.clone(),
+        "Dest".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let begin_payload = serde_json::json!({ "public_key": "" });
+    let response = app
+        .server
+        .post("/api/v2/begin")
+        .add_header(AUTHORIZATION, bearer(&dest_jwt))
+        .json(&begin_payload)
+        .await;
+
+    let body: BeginV2Response = response.json();
+    assert_eq!(body.device_name, "Dest");
+    assert_eq!(
+        body.share_ids.len(),
+        1,
+        "should advertise the pending share"
+    );
+
+    // The v2 contract is non-destructive: the share must stay available with intact content.
+    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let stored = share_repo.get_by_id(&body.share_ids[0]).await.unwrap();
+    assert_eq!(stored.status, "available");
+    assert_eq!(stored.content, "v2 begin content");
+}
+
+#[tokio::test]
+async fn test_begin_v2_persists_public_key() {
+    let app = TestApp::new().await;
+    let email = "begin_v2_key@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (device_id, _) = create_device_for_user(&app.pool, user_id, "Device").await;
+
+    let jwt = access_token::generate_access_token(
+        user_id,
+        device_id.clone(),
+        "Device".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let begin_payload = serde_json::json!({ "public_key": "age1testpublickeyfortesting" });
+    app.server
+        .post("/api/v2/begin")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&begin_payload)
+        .await;
+
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
+    let device = device_repo.get_by_device_id(&device_id).await.unwrap();
+    assert_eq!(
+        device.public_key.as_deref(),
+        Some("age1testpublickeyfortesting")
+    );
+}
+
+#[tokio::test]
+async fn test_begin_v2_updates_last_activity() {
+    let app = TestApp::new().await;
+    let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    let begin_payload = serde_json::json!({ "public_key": "" });
+    app.server
+        .post("/api/v2/begin")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&begin_payload)
+        .await;
+
+    let user_repo = fulgurant::users::UserRepository::new(app.db_pool.clone());
+    let user = user_repo
+        .get_by_email("api_user@test.com".to_string())
+        .await
+        .unwrap()
+        .unwrap();
+    let now = time::OffsetDateTime::now_utc();
+    let diff = now - user.last_activity;
+    assert!(
+        diff.whole_seconds() < 5,
+        "last_activity should be updated to within 5 seconds"
+    );
+}
+
+#[tokio::test]
+async fn test_begin_v2_empty_public_key_skips_update() {
+    let app = TestApp::new().await;
+    let email = "begin_v2_nokey@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (device_id, _) = create_device_for_user(&app.pool, user_id, "Device").await;
+
+    let jwt = access_token::generate_access_token(
+        user_id,
+        device_id.clone(),
+        "Device".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let begin_payload = serde_json::json!({ "public_key": "" });
+    app.server
+        .post("/api/v2/begin")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&begin_payload)
+        .await;
+
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
+    let device = device_repo.get_by_device_id(&device_id).await.unwrap();
+    assert!(device.public_key.is_none());
+}
+
+#[tokio::test]
+async fn test_begin_v2_empty_when_nothing_pending() {
+    let app = TestApp::new().await;
+    let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    let begin_payload = serde_json::json!({ "public_key": "" });
+    let response = app
+        .server
+        .post("/api/v2/begin")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&begin_payload)
+        .await;
+
+    let body: BeginV2Response = response.json();
+    assert!(
+        body.share_ids.is_empty(),
+        "no shares pending should yield an empty list"
+    );
+    assert_eq!(body.max_file_size_bytes, Some(1_048_576));
+}
