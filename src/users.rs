@@ -637,7 +637,7 @@ impl UserRepository {
         Ok(updated_user.into())
     }
 
-    /// Delete a user by ID
+    /// Delete a user by ID along with the devices they own
     ///
     /// ### Arguments
     /// - `id`: The ID of the user to delete
@@ -653,7 +653,32 @@ impl UserRepository {
                 "Cannot delete the last remaining admin".to_string(),
             ));
         }
-        db_execute!(self.pool, "DELETE FROM users WHERE id = ?", id)?;
+        match &self.pool {
+            DbPool::Sqlite(pool) => {
+                let mut tx = pool.begin().await?;
+                sqlx::query("DELETE FROM devices WHERE user_id = ?")
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await?;
+                sqlx::query("DELETE FROM users WHERE id = ?")
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await?;
+                tx.commit().await?;
+            }
+            DbPool::Postgres(pool) => {
+                let mut tx = pool.begin().await?;
+                sqlx::query("DELETE FROM devices WHERE user_id = $1")
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await?;
+                sqlx::query("DELETE FROM users WHERE id = $1")
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await?;
+                tx.commit().await?;
+            }
+        }
         Ok(user.into())
     }
 
@@ -718,6 +743,77 @@ impl UserRepository {
 #[cfg(test)]
 mod tests {
     use super::escape_like;
+    use crate::db::DbPool;
+    use crate::users::UserRepository;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    /// Build an in-memory `SQLite` pool with the project migrations applied.
+    async fn setup_test_repository() -> UserRepository {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("failed to open in-memory SQLite");
+        sqlx::migrate!("./data/migrations")
+            .run(&pool)
+            .await
+            .expect("failed to run migrations");
+        UserRepository::new(DbPool::Sqlite(pool))
+    }
+
+    #[tokio::test]
+    async fn test_delete_user_owning_devices_succeeds_on_sqlite() {
+        let repository = setup_test_repository().await;
+        let user_id = repository
+            .create(
+                "owner@example.com".to_string(),
+                "Owner".to_string(),
+                "User".to_string(),
+                "hash".to_string(),
+                true,
+                false,
+            )
+            .await
+            .expect("failed to create user");
+
+        let DbPool::Sqlite(pool) = &repository.pool else {
+            unreachable!("test repository is SQLite-backed");
+        };
+        sqlx::query(
+            "INSERT INTO devices (user_id, device_id, device_key, name, device_type) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(user_id)
+        .bind("device-uuid")
+        .bind("hashed-key")
+        .bind("Laptop")
+        .bind("desktop")
+        .execute(pool)
+        .await
+        .expect("failed to insert device");
+
+        repository
+            .delete(user_id)
+            .await
+            .expect("deleting a user that owns devices should succeed");
+
+        assert!(
+            repository
+                .get_by_id(user_id)
+                .await
+                .expect("query failed")
+                .is_none(),
+            "user row should be gone after delete"
+        );
+        let DbPool::Sqlite(pool) = &repository.pool else {
+            unreachable!("test repository is SQLite-backed");
+        };
+        let remaining: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM devices WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await
+            .expect("count query failed");
+        assert_eq!(remaining.0, 0, "devices should be removed with the user");
+    }
 
     #[test]
     fn test_escape_like_plain_string() {
