@@ -4,7 +4,8 @@ use axum::http::StatusCode;
 use axum::http::header::{HeaderName, HeaderValue};
 use common::{
     auth_helpers::{
-        create_user_with_force_update, create_verified_user, extract_csrf_token, login,
+        create_unverified_user, create_user_with_force_update, create_verified_user,
+        extract_csrf_token, login,
     },
     test_app::{TestApp, TestAppOptions},
 };
@@ -143,6 +144,31 @@ async fn test_login_nonexistent_user() {
 
     response.assert_status_ok();
     assert!(response.text().contains("Invalid email or password"));
+}
+
+#[tokio::test]
+async fn test_login_unverified_user_rejected() {
+    let app = TestApp::new().await;
+    create_unverified_user(&app.pool, "unverified@test.com", "Password123!").await;
+
+    let page = app.server.get("/login").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post("/login")
+        .add_header(name, value)
+        .form(&LoginFormData {
+            email: "unverified@test.com",
+            password: "Password123!",
+        })
+        .await;
+
+    response.assert_status_ok();
+    // Correct credentials but unverified email: same generic error as a bad
+    // password, and no authenticated redirect (no enumeration oracle).
+    assert!(response.text().contains("Invalid email or password"));
+    assert!(response.headers().get("HX-Redirect").is_none());
 }
 
 // ─────────────────────────────────────────────
