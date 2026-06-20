@@ -68,6 +68,7 @@ pub fn build_app(
     let web_routes = make_web_routes(app_state, session_layer);
 
     Router::new()
+        .route("/healthz", get(handlers::health_check))
         .merge(auth_routes)
         .merge(web_routes)
         .merge(api_routes)
