@@ -51,6 +51,18 @@ pub struct AppState {
     pub max_file_size_bytes: Arc<RwLock<Option<u64>>>,
 }
 
+/// GET /healthz - Unauthenticated liveness probe for container orchestration
+///
+/// Registered at the top level of the router, outside the API auth middleware
+/// and the rate limiter, so health checks succeed without credentials and are
+/// never throttled.
+///
+/// ### Returns
+/// - `(StatusCode, &'static str)`: `200 OK` with a plain-text body
+pub async fn health_check() -> impl IntoResponse {
+    (StatusCode::OK, "OK")
+}
+
 /// Fallback handler for 404 Not Found
 ///
 /// ### Returns
