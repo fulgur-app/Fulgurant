@@ -1348,3 +1348,187 @@ async fn test_begin_v2_empty_when_nothing_pending() {
     );
     assert_eq!(body.max_file_size_bytes, Some(1_048_576));
 }
+
+#[tokio::test]
+async fn test_get_share_legacy_consumes_and_keeps_historic_record() {
+    let app = TestApp::new().await;
+    let email = "get_share_legacy@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (source_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_device_id, _) = create_device_for_user(&app.pool, user_id, "Dest").await;
+
+    let source_jwt = access_token::generate_access_token(
+        user_id,
+        source_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "secret payload".to_string(),
+        file_name: "note.txt".to_string(),
+        device_id: dest_device_id.clone(),
+        deduplication_hash: None,
+    };
+    app.server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&source_jwt))
+        .json(&payload)
+        .await;
+
+    let dest_jwt = access_token::generate_access_token(
+        user_id,
+        dest_device_id,
+        "Dest".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
+        .id
+        .clone();
+
+    // First claim returns the intact content to the caller.
+    let first = app
+        .server
+        .get(&format!("/api/shares/{share_id}"))
+        .add_header(AUTHORIZATION, bearer(&dest_jwt))
+        .await;
+    first.assert_status_ok();
+    let share: SharedFileResponse = first.json();
+    assert_eq!(share.content, "secret payload");
+
+    // The row is kept as a historic record: status "downloaded", content cleared.
+    let stored = share_repo.get_by_id(&share_id).await.unwrap();
+    assert_eq!(stored.status, "downloaded");
+    assert!(stored.content.is_empty());
+
+    // A second claim returns 404: the once-only download guarantee holds.
+    let second = app
+        .server
+        .get(&format!("/api/shares/{share_id}"))
+        .add_header(AUTHORIZATION, bearer(&dest_jwt))
+        .expect_failure()
+        .await;
+    second.assert_status_not_found();
+}
+
+#[tokio::test]
+async fn test_get_share_legacy_rejects_other_devices_share() {
+    let app = TestApp::new().await;
+    let email = "get_share_legacy_other@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (source_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_device_id, _) = create_device_for_user(&app.pool, user_id, "Dest").await;
+    let (other_device_id, _) = create_device_for_user(&app.pool, user_id, "Other").await;
+
+    let source_jwt = access_token::generate_access_token(
+        user_id,
+        source_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "secret payload".to_string(),
+        file_name: "note.txt".to_string(),
+        device_id: dest_device_id.clone(),
+        deduplication_hash: None,
+    };
+    app.server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&source_jwt))
+        .json(&payload)
+        .await;
+
+    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
+        .id
+        .clone();
+
+    // A device that is not the destination cannot claim the share.
+    let other_jwt = access_token::generate_access_token(
+        user_id,
+        other_device_id,
+        "Other".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+    let response = app
+        .server
+        .get(&format!("/api/shares/{share_id}"))
+        .add_header(AUTHORIZATION, bearer(&other_jwt))
+        .expect_failure()
+        .await;
+    response.assert_status_not_found();
+
+    // The share remains available for the legitimate destination device.
+    let stored = share_repo.get_by_id(&share_id).await.unwrap();
+    assert_eq!(stored.status, "available");
+    assert_eq!(stored.content, "secret payload");
+}
+
+#[tokio::test]
+async fn test_get_share_legacy_returns_not_found_for_expired_share() {
+    let app = TestApp::new().await;
+    let email = "get_share_legacy_expired@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (source_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_device_id, _) = create_device_for_user(&app.pool, user_id, "Dest").await;
+
+    let source_jwt = access_token::generate_access_token(
+        user_id,
+        source_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let payload = ShareFilePayload {
+        content: "secret payload".to_string(),
+        file_name: "note.txt".to_string(),
+        device_id: dest_device_id.clone(),
+        deduplication_hash: None,
+    };
+    app.server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&source_jwt))
+        .json(&payload)
+        .await;
+
+    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
+        .id
+        .clone();
+
+    // Force the share past its expiration while still in the "available" state.
+    sqlx::query("UPDATE shares SET expires_at = unixepoch('now') - 60 WHERE id = ?")
+        .bind(&share_id)
+        .execute(&app.pool)
+        .await
+        .unwrap();
+
+    let dest_jwt = access_token::generate_access_token(
+        user_id,
+        dest_device_id,
+        "Dest".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+    let response = app
+        .server
+        .get(&format!("/api/shares/{share_id}"))
+        .add_header(AUTHORIZATION, bearer(&dest_jwt))
+        .expect_failure()
+        .await;
+    response.assert_status_not_found();
+}
