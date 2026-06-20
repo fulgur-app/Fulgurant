@@ -37,6 +37,35 @@ pub async fn create_verified_user(pool: &SqlitePool, email: &str, password: &str
         .unwrap()
 }
 
+/// Create an unverified user directly in the database
+///
+/// The user is persisted with `email_verified = false`, mirroring the row created
+/// by registration step 1 before the email code is confirmed.
+///
+/// ### Arguments
+/// - `pool`: The `SQLite` connection pool
+/// - `email`: The user's email address
+/// - `password`: The user's plaintext password (will be hashed)
+///
+/// ### Returns
+/// - `i32`: The created user's ID
+#[allow(dead_code)]
+pub async fn create_unverified_user(pool: &SqlitePool, email: &str, password: &str) -> i32 {
+    let password_hash = hash_password(password).unwrap();
+    let user_repo = UserRepository::new(DbPool::Sqlite(pool.clone()));
+    user_repo
+        .create(
+            email.to_string(),
+            "Test".to_string(),
+            "User".to_string(),
+            password_hash,
+            false,
+            false,
+        )
+        .await
+        .unwrap()
+}
+
 /// Create an admin user directly in the database
 ///
 /// Bypasses the production guard in `UserRepository::create_admin()` that prevents

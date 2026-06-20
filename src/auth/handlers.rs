@@ -100,6 +100,10 @@ pub async fn login(
         tracing::warn!("Login attempt with invalid password for user {}", user.id);
         return invalid_credentials_response();
     }
+    if !user.email_verified {
+        tracing::warn!("Login attempt for unverified user {}", user.id);
+        return invalid_credentials_response();
+    }
     state
         .user_repository
         .update_last_activity(user.id)
