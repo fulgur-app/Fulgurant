@@ -646,6 +646,7 @@ pub async fn begin_v2(
         device_name: auth_user.device_name,
         share_ids,
         max_file_size_bytes,
+        min_fulgur_version: Some(crate::MIN_FULGUR_VERSION.to_string()),
     }))
 }
 

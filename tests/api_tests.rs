@@ -10,7 +10,7 @@ use common::{
 use fulgur_common::api::{
     devices::DevicesResponse,
     shares::{ShareFilePayload, ShareFileResponse, SharedFileResponse},
-    sync::{AccessTokenResponse, BeginResponse, ErrorResponse, PingResponse},
+    sync::{AccessTokenResponse, BeginResponse, BeginV2Response, ErrorResponse, PingResponse},
 };
 use fulgurant::access_token;
 
@@ -1154,4 +1154,30 @@ async fn test_begin_empty_public_key_skips_update() {
     let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
     let device = device_repo.get_by_device_id(&device_id).await.unwrap();
     assert!(device.public_key.is_none());
+}
+
+// ─────────────────────────────────────────────
+// POST /api/v2/begin
+// ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_begin_v2_advertises_min_fulgur_version() {
+    let app = TestApp::new().await;
+    let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    let begin_payload = serde_json::json!({ "public_key": "" });
+
+    let response = app
+        .server
+        .post("/api/v2/begin")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&begin_payload)
+        .await;
+
+    let body: BeginV2Response = response.json();
+    assert_eq!(
+        body.min_fulgur_version.as_deref(),
+        Some(fulgurant::MIN_FULGUR_VERSION),
+        "begin v2 must advertise the server's minimum Fulgur version"
+    );
 }

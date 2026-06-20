@@ -36,6 +36,9 @@ pub mod verification_code;
 /// Application version sourced from Cargo.toml at compile time.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Minimum recommended Fulgur client version advertised to devices on connect.
+pub const MIN_FULGUR_VERSION: &str = "0.9.0";
+
 use axum::{
     Router,
     http::{HeaderValue, header},
