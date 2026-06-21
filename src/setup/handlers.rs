@@ -154,6 +154,7 @@ pub async fn create_admin(
             }
         })?;
     tracing::info!("Initial admin user created with ID: {}", user_id);
+    session::rotate_session(&session).await?;
     session
         .insert(session::SESSION_USER_ID, user_id)
         .await
