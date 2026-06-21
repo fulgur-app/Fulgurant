@@ -703,6 +703,33 @@ async fn test_get_share_v2_returns_content_without_consuming() {
 }
 
 #[tokio::test]
+async fn test_get_share_v2_unknown_id_returns_not_found() {
+    let app = TestApp::new().await;
+    let email = "get_share_v2_unknown@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (device_id, _) = create_device_for_user(&app.pool, user_id, "Device").await;
+
+    let jwt = access_token::generate_access_token(
+        user_id,
+        device_id,
+        "Device".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    // A syntactically valid but unknown share id hits the not-found branch (404, not 500).
+    let unknown_id = uuid::Uuid::new_v4().to_string();
+    let response = app
+        .server
+        .get(&format!("/api/v2/shares/{unknown_id}"))
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .expect_failure()
+        .await;
+    response.assert_status_not_found();
+}
+
+#[tokio::test]
 async fn test_share_successful_consumes_share() {
     let app = TestApp::new().await;
     let email = "share_successful@test.com";
