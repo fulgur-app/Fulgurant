@@ -13,6 +13,10 @@ use fulgur_common::api::{
     sync::{AccessTokenResponse, BeginResponse, BeginV2Response, ErrorResponse, PingResponse},
 };
 use fulgurant::access_token;
+use fulgurant::api::sse::MAX_SSE_CONNECTIONS_PER_DEVICE;
+use std::time::Duration as StdDuration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 /// Helper to create a Bearer auth header value
 fn bearer(jwt: &str) -> HeaderValue {
@@ -1531,4 +1535,166 @@ async fn test_get_share_legacy_returns_not_found_for_expired_share() {
         .expect_failure()
         .await;
     response.assert_status_not_found();
+}
+
+// ─────────────────────────────────────────────
+// GET /api/sse
+// ─────────────────────────────────────────────
+
+/// Open a raw TCP connection to the running test server and issue an SSE GET request.
+///
+/// A raw socket is required rather than `axum_test`'s buffering client: the SSE response never
+/// completes, so a normally awaited request would block forever. The request is written but no
+/// response bytes are read here.
+///
+/// ### Arguments
+/// - `app`: the running test application exposing the bound HTTP address
+/// - `jwt`: the bearer access token authenticating the device
+///
+/// ### Returns
+/// - `TcpStream`: the connected socket with the SSE request already written
+async fn open_sse_connection(app: &TestApp, jwt: &str) -> TcpStream {
+    let address = app
+        .server
+        .server_address()
+        .expect("HTTP transport must expose a bound address");
+    let authority = address.authority();
+    let socket_addr = address
+        .socket_addrs(|| None)
+        .expect("server address must resolve")[0];
+    let mut stream = TcpStream::connect(socket_addr)
+        .await
+        .expect("connecting to the test server must succeed");
+    let request = format!(
+        "GET /api/sse HTTP/1.1\r\nHost: {authority}\r\nAuthorization: Bearer {jwt}\r\nAccept: text/event-stream\r\n\r\n"
+    );
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("writing the SSE request must succeed");
+    stream
+}
+
+/// Read from an SSE socket until `needle` appears in the response or the timeout elapses.
+///
+/// ### Arguments
+/// - `stream`: the connected SSE socket to read from
+/// - `needle`: the substring to wait for in the accumulated response bytes
+/// - `timeout`: the maximum time to wait before giving up
+///
+/// ### Returns
+/// - `String`: the bytes read from the socket, decoded lossily
+async fn read_sse_until(stream: &mut TcpStream, needle: &str, timeout: StdDuration) -> String {
+    let mut buffer = Vec::new();
+    let mut chunk = [0u8; 1024];
+    let _ = tokio::time::timeout(timeout, async {
+        loop {
+            let read = stream
+                .read(&mut chunk)
+                .await
+                .expect("reading from the SSE socket must succeed");
+            if read == 0 {
+                break;
+            }
+            buffer.extend_from_slice(&chunk[..read]);
+            if String::from_utf8_lossy(&buffer).contains(needle) {
+                break;
+            }
+        }
+    })
+    .await;
+    String::from_utf8_lossy(&buffer).into_owned()
+}
+
+#[tokio::test]
+async fn test_sse_emits_pending_shares_snapshot_on_connect() {
+    let app = TestApp::new().await;
+    let email = "sse_snapshot@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (source_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_device_id, _) = create_device_for_user(&app.pool, user_id, "Dest").await;
+
+    let source_jwt = access_token::generate_access_token(
+        user_id,
+        source_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    // Create a pending share addressed to the device that will open the SSE stream.
+    let payload = ShareFilePayload {
+        content: "secret payload".to_string(),
+        file_name: "note.txt".to_string(),
+        device_id: dest_device_id.clone(),
+        deduplication_hash: None,
+    };
+    app.server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&source_jwt))
+        .json(&payload)
+        .await;
+
+    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
+        .id
+        .clone();
+
+    let dest_jwt = access_token::generate_access_token(
+        user_id,
+        dest_device_id,
+        "Dest".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    // On connect, the device immediately receives a pending_shares snapshot listing the share id.
+    let mut stream = open_sse_connection(&app, &dest_jwt).await;
+    let received = read_sse_until(&mut stream, "pending_shares", StdDuration::from_secs(5)).await;
+
+    assert!(
+        received.contains("200 OK"),
+        "the SSE connection must succeed, got: {received}"
+    );
+    assert!(
+        received.contains("pending_shares"),
+        "expected a pending_shares snapshot event, got: {received}"
+    );
+    assert!(
+        received.contains(&share_id),
+        "snapshot must list the pending share id {share_id}, got: {received}"
+    );
+}
+
+#[tokio::test]
+async fn test_sse_rejects_connections_over_per_device_cap() {
+    let app = TestApp::new().await;
+    let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    // Saturate the per-device connection cap, keeping every stream open so its guard stays held.
+    let mut held_connections = Vec::new();
+    for _ in 0..MAX_SSE_CONNECTIONS_PER_DEVICE {
+        let mut stream = open_sse_connection(&app, &jwt).await;
+        // Reading the initial snapshot proves the handler passed the limiter and holds a slot.
+        let received =
+            read_sse_until(&mut stream, "pending_shares", StdDuration::from_secs(5)).await;
+        assert!(
+            received.contains("200 OK"),
+            "an in-cap SSE connection must succeed, got: {received}"
+        );
+        held_connections.push(stream);
+    }
+
+    // One more connection for the same device must be rejected with 429.
+    let mut overflow = open_sse_connection(&app, &jwt).await;
+    let rejected = read_sse_until(&mut overflow, "429", StdDuration::from_secs(5)).await;
+    assert!(
+        rejected.contains("429"),
+        "the over-cap SSE connection must be rejected with 429, got: {rejected}"
+    );
+
+    // Keep the saturating connections alive until after the over-cap assertion has run.
+    drop(held_connections);
 }
