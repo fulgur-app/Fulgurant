@@ -534,6 +534,9 @@ impl ShareRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::devices::{CreateDevice, DeviceRepository};
+    use crate::users::UserRepository;
+    use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 
     #[test]
     fn test_calculate_file_hash() {
@@ -549,5 +552,221 @@ mod tests {
     #[test]
     fn test_share_validity_days_constant() {
         assert_eq!(SHARE_VALIDITY_DAYS, 3);
+    }
+
+    /// Build an in-memory `SQLite`-backed share repository with an owning user and a source device.
+    ///
+    /// ### Returns
+    /// - `(ShareRepository, SqlitePool, i32, String)`: The repository, the raw pool (for direct
+    ///   setup such as forcing rows past expiry), the owning user id, and the source device's
+    ///   public `device_id`
+    async fn setup_test_repository() -> (ShareRepository, SqlitePool, i32, String) {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("failed to open in-memory SQLite");
+        sqlx::migrate!("./data/migrations")
+            .run(&pool)
+            .await
+            .expect("failed to run migrations");
+        let db_pool = DbPool::Sqlite(pool.clone());
+        let user_id = UserRepository::new(db_pool.clone())
+            .create(
+                "share-owner@example.com".to_string(),
+                "Share".to_string(),
+                "Owner".to_string(),
+                "hash".to_string(),
+                true,
+                false,
+            )
+            .await
+            .expect("failed to create owning user");
+        let source_device = DeviceRepository::new(db_pool.clone())
+            .create(
+                user_id,
+                "source-device-key".to_string(),
+                CreateDevice {
+                    name: "Source".to_string(),
+                    device_type: "desktop".to_string(),
+                    api_key_lifetime: 30,
+                },
+                10,
+            )
+            .await
+            .expect("failed to create source device");
+        (
+            ShareRepository::new(db_pool),
+            pool,
+            user_id,
+            source_device.device_id,
+        )
+    }
+
+    /// Build a `CreateShare` payload from a source device to an arbitrary destination.
+    ///
+    /// ### Arguments
+    /// - `source_device_id`: The public id of the source device (must exist for the FK)
+    /// - `destination_device_id`: The recipient device id (no FK, any string works)
+    /// - `deduplication_hash`: Optional dedup tuple component
+    ///
+    /// ### Returns
+    /// - `CreateShare`: A small text share payload
+    fn sample_share(
+        source_device_id: &str,
+        destination_device_id: &str,
+        deduplication_hash: Option<&str>,
+    ) -> CreateShare {
+        CreateShare {
+            source_device_id: source_device_id.to_string(),
+            destination_device_id: destination_device_id.to_string(),
+            file_name: "note.txt".to_string(),
+            content: "secret content".to_string(),
+            deduplication_hash: deduplication_hash.map(str::to_string),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_mark_expired_only_touches_available_rows() {
+        let (repository, pool, user_id, source_device_id) = setup_test_repository().await;
+
+        let available = repository
+            .create(
+                user_id,
+                sample_share(&source_device_id, "dest-available", None),
+            )
+            .await
+            .expect("create available share");
+        let downloaded = repository
+            .create(
+                user_id,
+                sample_share(&source_device_id, "dest-downloaded", None),
+            )
+            .await
+            .expect("create downloaded share");
+        let deleted = repository
+            .create(
+                user_id,
+                sample_share(&source_device_id, "dest-deleted", None),
+            )
+            .await
+            .expect("create deleted share");
+
+        // Force every row past its expiration, then move two of them out of the
+        // `available` state so only one row is eligible for `mark_expired`.
+        sqlx::query("UPDATE shares SET expires_at = unixepoch('now') - 1")
+            .execute(&pool)
+            .await
+            .expect("age rows past expiry");
+        sqlx::query("UPDATE shares SET status = 'downloaded' WHERE id = ?")
+            .bind(&downloaded.id)
+            .execute(&pool)
+            .await
+            .expect("set downloaded status");
+        sqlx::query("UPDATE shares SET status = 'deleted' WHERE id = ?")
+            .bind(&deleted.id)
+            .execute(&pool)
+            .await
+            .expect("set deleted status");
+
+        let affected = repository.mark_expired().await.expect("mark_expired runs");
+        assert_eq!(
+            affected, 1,
+            "only the expired available share must be touched"
+        );
+
+        assert_eq!(
+            repository.get_by_id(&available.id).await.unwrap().status,
+            status::EXPIRED
+        );
+        assert_eq!(
+            repository.get_by_id(&downloaded.id).await.unwrap().status,
+            status::DOWNLOADED,
+            "downloaded rows must not be re-expired"
+        );
+        assert_eq!(
+            repository.get_by_id(&deleted.id).await.unwrap().status,
+            status::DELETED,
+            "deleted rows must not be re-expired"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_recreate_with_dedup_resets_consumed_share_to_available() {
+        let (repository, _pool, user_id, source_device_id) = setup_test_repository().await;
+        let dedup = Some("dedup-tuple");
+
+        let first = repository
+            .create(user_id, sample_share(&source_device_id, "dest-1", dedup))
+            .await
+            .expect("create initial share");
+
+        let consumed = repository
+            .consume_share_for_device(&first.id, "dest-1")
+            .await
+            .expect("consume succeeds");
+        assert!(
+            consumed.is_some(),
+            "the available share should be consumable"
+        );
+        let after_consume = repository.get_by_id(&first.id).await.unwrap();
+        assert_eq!(after_consume.status, status::DOWNLOADED);
+        assert_eq!(
+            after_consume.content, "",
+            "consumed content must be cleared"
+        );
+
+        // Re-share the same (source, destination, dedup) tuple.
+        let mut reshare = sample_share(&source_device_id, "dest-1", dedup);
+        reshare.content = "fresh content".to_string();
+        let second = repository
+            .create(user_id, reshare)
+            .await
+            .expect("re-create succeeds");
+
+        assert_eq!(second.id, first.id, "UPSERT must reuse the same row");
+        assert_eq!(
+            second.status,
+            status::AVAILABLE,
+            "re-sharing a consumed row must reactivate it"
+        );
+        assert_eq!(second.content, "fresh content");
+    }
+
+    #[tokio::test]
+    async fn test_peek_returns_content_without_mutating_status() {
+        let (repository, _pool, user_id, source_device_id) = setup_test_repository().await;
+        let share = repository
+            .create(user_id, sample_share(&source_device_id, "dest-1", None))
+            .await
+            .expect("create share");
+
+        let peeked = repository
+            .peek_available_share_for_device(&share.id, "dest-1")
+            .await
+            .expect("peek runs")
+            .expect("available share should be returned");
+        assert_eq!(peeked.content, "secret content");
+        assert_eq!(peeked.status, status::AVAILABLE);
+
+        let stored = repository.get_by_id(&share.id).await.unwrap();
+        assert_eq!(
+            stored.status,
+            status::AVAILABLE,
+            "peek must not mutate status"
+        );
+        assert_eq!(
+            stored.content, "secret content",
+            "peek must not clear content"
+        );
+
+        assert!(
+            repository
+                .peek_available_share_for_device(&share.id, "dest-1")
+                .await
+                .unwrap()
+                .is_some(),
+            "peek must be idempotently retryable"
+        );
     }
 }
