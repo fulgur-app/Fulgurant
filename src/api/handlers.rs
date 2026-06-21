@@ -703,6 +703,7 @@ pub async fn obtain_access_token(
         Ok(Some(user)) => user,
         Ok(None) => {
             tracing::warn!("Token request for non-existent user");
+            crate::api_key::dummy_verify_api_key();
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(ErrorResponse {
@@ -720,14 +721,7 @@ pub async fn obtain_access_token(
             ));
         }
     };
-    if !user.email_verified {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "Email not verified".to_string(),
-            }),
-        ));
-    }
+
     let fast_hash = crate::api_key::hash_api_key_fast(device_key);
     let mut authenticated_device = None;
     match state.device_repository.get_by_fast_hash(&fast_hash).await {
@@ -822,6 +816,16 @@ pub async fn obtain_access_token(
             }),
         )
     })?;
+
+    if !user.email_verified {
+        tracing::warn!("Token request for unverified user {}", user.id);
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Email not verified".to_string(),
+            }),
+        ));
+    }
     let access_token = match crate::access_token::generate_access_token(
         user.id,
         device_id.clone(),
