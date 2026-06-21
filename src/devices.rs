@@ -437,3 +437,253 @@ impl DeviceRepository {
         Ok(count.0 as i32)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::DbPool;
+    use crate::users::UserRepository;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    /// Build an in-memory `SQLite`-backed device repository and seed one owning user.
+    ///
+    /// ### Returns
+    /// - `(DeviceRepository, i32)`: The repository and the seeded user id (used as the device owner)
+    async fn setup_test_repository() -> (DeviceRepository, i32) {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("failed to open in-memory SQLite");
+        sqlx::migrate!("./data/migrations")
+            .run(&pool)
+            .await
+            .expect("failed to run migrations");
+        let db_pool = DbPool::Sqlite(pool);
+        let user_id = UserRepository::new(db_pool.clone())
+            .create(
+                "device-owner@example.com".to_string(),
+                "Device".to_string(),
+                "Owner".to_string(),
+                "hash".to_string(),
+                true,
+                false,
+            )
+            .await
+            .expect("failed to create owning user");
+        (DeviceRepository::new(db_pool), user_id)
+    }
+
+    /// Build a `CreateDevice` payload with a 30-day key lifetime.
+    ///
+    /// ### Arguments
+    /// - `name`: The device name
+    ///
+    /// ### Returns
+    /// - `CreateDevice`: A desktop device payload
+    fn sample_device(name: &str) -> CreateDevice {
+        CreateDevice {
+            name: name.to_string(),
+            device_type: "desktop".to_string(),
+            api_key_lifetime: 30,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_enforces_device_limit() {
+        let (repository, user_id) = setup_test_repository().await;
+        let max_devices = 2;
+        for index in 0..max_devices {
+            repository
+                .create(
+                    user_id,
+                    format!("device-key-{index}"),
+                    sample_device(&format!("Device {index}")),
+                    max_devices,
+                )
+                .await
+                .expect("creating a device under the limit should succeed");
+        }
+
+        let result = repository
+            .create(
+                user_id,
+                "device-key-overflow".to_string(),
+                sample_device("Overflow"),
+                max_devices,
+            )
+            .await;
+        match result {
+            Err(CreateDeviceError::LimitReached(limit)) => assert_eq!(limit, max_devices),
+            other => panic!("expected LimitReached, got {other:?}"),
+        }
+
+        assert_eq!(
+            repository
+                .count_devices_for_user(user_id)
+                .await
+                .expect("count query should succeed"),
+            max_devices,
+            "the rejected device must not have been inserted"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_by_device_id_round_trip_and_not_found() {
+        let (repository, user_id) = setup_test_repository().await;
+        let created = repository
+            .create(
+                user_id,
+                "device-key".to_string(),
+                sample_device("Laptop"),
+                10,
+            )
+            .await
+            .expect("create should succeed");
+
+        let fetched = repository
+            .get_by_device_id(&created.device_id)
+            .await
+            .expect("device should be found by its UUID");
+        assert_eq!(fetched.id, created.id);
+        assert_eq!(fetched.name, "Laptop");
+
+        let missing = repository.get_by_device_id("non-existent-uuid").await;
+        assert!(
+            matches!(missing, Err(sqlx::Error::RowNotFound)),
+            "an unknown device_id should yield RowNotFound"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_public_key_persists() {
+        let (repository, user_id) = setup_test_repository().await;
+        let created = repository
+            .create(
+                user_id,
+                "device-key".to_string(),
+                sample_device("Phone"),
+                10,
+            )
+            .await
+            .expect("create should succeed");
+        assert!(
+            created.public_key.is_none(),
+            "a new device starts without a public key"
+        );
+
+        let recipient = "age1examplerecipientstring".to_string();
+        repository
+            .update_public_key(&created.device_id, recipient.clone())
+            .await
+            .expect("updating the public key should succeed");
+
+        let refreshed = repository
+            .get_by_device_id(&created.device_id)
+            .await
+            .expect("device should still exist");
+        assert_eq!(refreshed.public_key.as_deref(), Some(recipient.as_str()));
+    }
+
+    #[tokio::test]
+    async fn test_fast_hash_lookup_matches_argon2_verification() {
+        let (repository, user_id) = setup_test_repository().await;
+        let raw_key = crate::api_key::generate_api_key();
+        let stored_hash =
+            crate::api_key::hash_api_key(&raw_key).expect("hashing the key should succeed");
+        let created = repository
+            .create(user_id, stored_hash, sample_device("Tablet"), 10)
+            .await
+            .expect("create should succeed");
+
+        // Mirror the token endpoint lazy migration: the persisted fast hash is the
+        // SHA256 of the raw key, not of the stored Argon2 hash written at create time.
+        let fast_hash = crate::api_key::hash_api_key_fast(&raw_key);
+        repository
+            .update_fast_hash(created.id, fast_hash.clone())
+            .await
+            .expect("populating the fast hash should succeed");
+
+        let found = repository
+            .get_by_fast_hash(&fast_hash)
+            .await
+            .expect("fast hash query should succeed")
+            .expect("device should be found via its fast hash");
+        assert_eq!(found.id, created.id);
+        assert!(
+            crate::api_key::verify_api_key(&raw_key, &found.device_key)
+                .expect("verification should not error"),
+            "the raw key must verify against the stored Argon2 hash"
+        );
+
+        let none = repository
+            .get_by_fast_hash("deadbeef")
+            .await
+            .expect("fast hash query should succeed");
+        assert!(none.is_none(), "an unknown fast hash should return None");
+    }
+
+    #[tokio::test]
+    async fn test_renew_extends_expiration() {
+        let (repository, user_id) = setup_test_repository().await;
+        let created = repository
+            .create(
+                user_id,
+                "device-key".to_string(),
+                sample_device("Desktop"),
+                10,
+            )
+            .await
+            .expect("create should succeed");
+
+        let renewed = repository
+            .renew(
+                created.id,
+                RenewDevice {
+                    api_key_lifetime: 30,
+                },
+            )
+            .await
+            .expect("renew should succeed");
+        assert!(
+            renewed.expires_at > created.expires_at,
+            "renewing should push the expiry further out"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_is_expired_reflects_expiration_date() {
+        let (repository, user_id) = setup_test_repository().await;
+        let active = repository
+            .create(
+                user_id,
+                "active-key".to_string(),
+                sample_device("Active"),
+                10,
+            )
+            .await
+            .expect("create should succeed");
+        assert!(
+            !active.is_expired(),
+            "a freshly created device is not expired"
+        );
+
+        let expired = repository
+            .create(
+                user_id,
+                "expired-key".to_string(),
+                CreateDevice {
+                    name: "Expired".to_string(),
+                    device_type: "desktop".to_string(),
+                    api_key_lifetime: -1,
+                },
+                10,
+            )
+            .await
+            .expect("create should succeed");
+        assert!(
+            expired.is_expired(),
+            "a device with a past expiry date is expired"
+        );
+    }
+}
