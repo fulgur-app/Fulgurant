@@ -11,6 +11,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
+use std::sync::LazyLock;
 use tower_sessions::{Expiry, Session, cookie::time::Duration as CookieDuration};
 
 use crate::{
@@ -86,6 +87,7 @@ pub async fn login(
         Ok(Some(user)) => user,
         Ok(None) => {
             tracing::warn!("Login attempt for non-existent user");
+            dummy_verify_password();
             return invalid_credentials_response();
         }
         Err(e) => {
@@ -609,17 +611,13 @@ pub async fn forgot_password_step_1(
             return Err(AppError::InternalError(anyhow::anyhow!("Database error")));
         }
     };
-    if let Err(e) = check_verification_code_rate_limit(&state, &user.email, "password_reset").await
+
+    if check_verification_code_rate_limit(&state, &user.email, "password_reset")
+        .await
+        .is_ok()
     {
-        let template = templates::ForgotPasswordStep1PartialTemplate {
-            email: request.email,
-            error_message: e.to_string(),
-        };
-        return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
-        })?));
+        create_and_spawn_verification_code(&state, &user.email, "password_reset").await?;
     }
-    let _code = create_and_send_verification_code(&state, &user.email, "password_reset").await?;
     let template = templates::ForgotPasswordStep2Template {
         email: request.email,
         error_message: String::new(),
@@ -793,16 +791,6 @@ pub async fn resend_forgot_password_code(
     Query(query): Query<ResendCodeQuery>,
 ) -> Result<Html<String>, AppError> {
     let email = query.email.trim().to_lowercase();
-    if let Err(e) = check_verification_code_rate_limit(&state, &email, "password_reset").await {
-        let template = templates::ForgotPasswordStep2Template {
-            email,
-            error_message: e.to_string(),
-            success_message: String::new(),
-        };
-        return Ok(Html(template.render().map_err(|e| {
-            AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
-        })?));
-    }
     let user_exists = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(_)) => true,
         Ok(None) => false,
@@ -811,8 +799,13 @@ pub async fn resend_forgot_password_code(
             return Err(AppError::InternalError(anyhow::anyhow!("Database error")));
         }
     };
-    if user_exists {
-        let _code = create_and_send_verification_code(&state, &email, "password_reset").await?;
+
+    if user_exists
+        && check_verification_code_rate_limit(&state, &email, "password_reset")
+            .await
+            .is_ok()
+    {
+        create_and_spawn_verification_code(&state, &email, "password_reset").await?;
     }
     let template = templates::ForgotPasswordStep2Template {
         email,
@@ -895,6 +888,48 @@ async fn create_and_send_verification_code(
     Ok(code)
 }
 
+/// Create a verification code and dispatch its email without blocking the response
+///
+/// ### Arguments
+/// - `state`: The application state
+/// - `email`: The user's email
+/// - `purpose`: The verification code purpose
+///
+/// ### Returns
+/// - `Ok(())`: The code was created (the email send is dispatched in the background)
+/// - `Err(AppError)`: Error occurred while creating the code
+async fn create_and_spawn_verification_code(
+    state: &AppState,
+    email: &str,
+    purpose: &str,
+) -> Result<(), AppError> {
+    let code = generate_code();
+    state
+        .verification_code_repository
+        .create(email.to_string(), code.clone(), purpose.to_string())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to create verification code: {}", e);
+            AppError::InternalError(anyhow::anyhow!("Failed to create verification code: {e}"))
+        })?;
+    if state.is_prod {
+        let mailer = state.mailer.clone();
+        let recipient = email.to_string();
+        tokio::spawn(async move {
+            match mailer.send_verification_email(recipient, code).await {
+                Ok(()) => tracing::info!("Verification email sent"),
+                Err(e) => tracing::error!("Failed to send verification email: {}", e),
+            }
+        });
+    } else {
+        tracing::info!(
+            "Development mode - verification email not sent\nVerification code: {}",
+            &code
+        );
+    }
+    Ok(())
+}
+
 /// Format verification result into user-friendly error message
 ///
 /// ### Arguments
@@ -950,10 +985,22 @@ pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Er
 fn verify_password(password: &str, password_hash: &str) -> bool {
     let Ok(password_hash) = PasswordHash::new(password_hash) else {
         tracing::warn!("Failed to parse password hash - treating as invalid");
+        dummy_verify_password();
         return false;
     };
     let argon2 = Argon2::default();
     argon2
         .verify_password(password.as_bytes(), &password_hash)
         .is_ok()
+}
+
+/// A precomputed Argon2 hash of a fixed dummy password.
+static DUMMY_PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| {
+    hash_password("dummy-password-for-constant-time-verification")
+        .expect("dummy password hashing must succeed with default Argon2 parameters")
+});
+
+/// Performs a throwaway Argon2 verification against a fixed dummy hash.
+fn dummy_verify_password() {
+    let _ = verify_password("dummy-password", DUMMY_PASSWORD_HASH.as_str());
 }

@@ -253,14 +253,6 @@ pub struct ForgotPasswordStep1Template {
     pub csrf_token: String,
 }
 
-/// Forgot password step 1 partial template (form only, for HTMX responses)
-#[derive(Template)]
-#[template(path = "partials/auth/forgot_password_step_1.html")]
-pub struct ForgotPasswordStep1PartialTemplate {
-    pub error_message: String,
-    pub email: String,
-}
-
 /// Forgot password step 2 template (verification code)
 #[derive(Template)]
 #[template(path = "partials/auth/forgot_password_step_2.html")]

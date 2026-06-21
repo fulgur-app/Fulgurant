@@ -3,6 +3,7 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::{Engine as _, engine::general_purpose};
 use rand::RngExt;
 use sha2::{Digest, Sha256};
+use std::sync::LazyLock;
 
 /// Generate a new API key
 ///
@@ -55,6 +56,20 @@ pub fn verify_api_key(api_key: &str, hash: &str) -> anyhow::Result<bool> {
     Ok(Argon2::default()
         .verify_password(api_key.as_bytes(), &hash)
         .is_ok())
+}
+
+/// A precomputed Argon2 hash of a fixed dummy API key.
+///
+/// Computed once with the default Argon2 parameters so a verification against it costs
+/// exactly the same as verifying a real device key.
+static DUMMY_API_KEY_HASH: LazyLock<String> = LazyLock::new(|| {
+    hash_api_key("fulgur_dummy_key_for_constant_time_verification")
+        .expect("dummy API key hashing must succeed with default Argon2 parameters")
+});
+
+/// Perform a throwaway Argon2 verification against a fixed dummy hash
+pub fn dummy_verify_api_key() {
+    let _ = verify_api_key("fulgur_dummy_key", DUMMY_API_KEY_HASH.as_str());
 }
 
 /// Hash an API key using SHA256 for fast lookup (not security)
