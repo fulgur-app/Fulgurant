@@ -112,6 +112,7 @@ pub async fn login(
             tracing::error!("Failed to update last_activity: {}", e);
             AppError::InternalError(anyhow::anyhow!("Failed to update last_activity"))
         })?;
+    session::rotate_session(&session).await?;
     session
         .insert(session::SESSION_USER_ID, user.id)
         .await

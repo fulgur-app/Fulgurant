@@ -113,6 +113,26 @@ pub async fn get_session_user_id(session: &Session) -> Result<i32, AppError> {
     user_id.ok_or(AppError::Unauthorized)
 }
 
+/// Rotate the session ID and discard the anonymous CSRF token at a privilege boundary.
+///
+/// ### Arguments
+/// - `session`: The session to rotate
+///
+/// ### Returns
+/// - `Ok(())`: The session ID was rotated and the CSRF token cleared
+/// - `Err(AppError::InternalError)`: If session access fails
+pub async fn rotate_session(session: &Session) -> Result<(), AppError> {
+    session
+        .cycle_id()
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to rotate session: {e}")))?;
+    session
+        .remove::<String>(axum_tower_sessions_csrf::TOKEN_KEY)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to clear CSRF token: {e}")))?;
+    Ok(())
+}
+
 /// Persisted session row backing the custom tower-sessions store.
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct SessionRecord {
