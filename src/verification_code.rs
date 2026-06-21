@@ -56,6 +56,7 @@ pub fn verify_code(code: &str, hash: &str) -> bool {
         .is_ok()
 }
 
+#[derive(Debug)]
 pub enum VerificationResult {
     NotFound,
     Invalid { attempts_remaining: i32 },
@@ -293,5 +294,286 @@ impl VerificationCodeRepository {
             postgres: "DELETE FROM verification_codes WHERE expires_at < to_timestamp($1)",
             now.unix_timestamp()
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    /// Build an in-memory `SQLite`-backed verification code repository.
+    ///
+    /// ### Returns
+    /// - `VerificationCodeRepository`: A repository over a fresh, migrated database
+    async fn setup_test_repository() -> VerificationCodeRepository {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("failed to open in-memory SQLite");
+        sqlx::migrate!("./data/migrations")
+            .run(&pool)
+            .await
+            .expect("failed to run migrations");
+        VerificationCodeRepository::new(DbPool::Sqlite(pool))
+    }
+
+    /// Insert a verification code with an explicit expiry offset, bypassing the
+    /// public `create` helper which always sets a five-minute future expiry.
+    ///
+    /// ### Arguments
+    /// - `repository`: The repository whose pool receives the row
+    /// - `email`: The owning email
+    /// - `purpose`: The code purpose
+    /// - `code`: The plaintext code to hash and store
+    /// - `expires_in_minutes`: Minutes from now until expiry (negative for already-expired)
+    async fn insert_code_with_expiry(
+        repository: &VerificationCodeRepository,
+        email: &str,
+        purpose: &str,
+        code: &str,
+        expires_in_minutes: i64,
+    ) {
+        let code_hash = hash_code(code).expect("hashing the code should succeed");
+        let id = Uuid::new_v4().to_string();
+        let expires_at = OffsetDateTime::now_utc() + Duration::minutes(expires_in_minutes);
+        db_execute_dual!(
+            repository.pool,
+            sqlite: "INSERT INTO verification_codes (id, email, code_hash, expires_at, purpose) VALUES (?, ?, ?, ?, ?)",
+            postgres: "INSERT INTO verification_codes (id, email, code_hash, expires_at, purpose) VALUES ($1, $2, $3, to_timestamp($4), $5)",
+            id,
+            email.to_string(),
+            code_hash,
+            expires_at.unix_timestamp(),
+            purpose.to_string()
+        )
+        .expect("inserting a verification code should succeed");
+    }
+
+    #[test]
+    fn test_hash_and_verify_code_round_trip() {
+        let code = "123456";
+        let hash = hash_code(code).expect("hashing the code should succeed");
+        assert!(
+            verify_code(code, &hash),
+            "the matching code must verify successfully"
+        );
+        assert!(
+            !verify_code("654321", &hash),
+            "a non-matching code must fail verification"
+        );
+    }
+
+    #[test]
+    fn test_verify_code_rejects_malformed_hash_without_panicking() {
+        assert!(
+            !verify_code("123456", "not-a-valid-argon2-hash"),
+            "a malformed hash must be treated as invalid rather than panicking"
+        );
+        assert!(
+            !verify_code("123456", ""),
+            "an empty hash must be treated as invalid"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_verify_code_rejects_expired_code() {
+        let repository = setup_test_repository().await;
+        insert_code_with_expiry(
+            &repository,
+            "user@example.com",
+            "registration",
+            "123456",
+            -1,
+        )
+        .await;
+
+        let result = repository
+            .verify_code(
+                "123456".to_string(),
+                "user@example.com".to_string(),
+                "registration".to_string(),
+            )
+            .await
+            .expect("verification should not error");
+
+        assert!(
+            matches!(result, VerificationResult::Expired),
+            "a code past its expiry must be rejected as Expired"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_verify_code_round_trip_marks_verified() {
+        let repository = setup_test_repository().await;
+        let created = repository
+            .create(
+                "user@example.com".to_string(),
+                "123456".to_string(),
+                "registration".to_string(),
+            )
+            .await
+            .expect("creating a verification code should succeed");
+        assert!(
+            created.verified_at.is_none(),
+            "a freshly created code must not be marked verified"
+        );
+
+        let result = repository
+            .verify_code(
+                "123456".to_string(),
+                "user@example.com".to_string(),
+                "registration".to_string(),
+            )
+            .await
+            .expect("verification should not error");
+        assert!(
+            matches!(result, VerificationResult::Verified),
+            "the correct code must verify successfully"
+        );
+
+        let still_pending = repository
+            .get_for("user@example.com".to_string(), "registration".to_string())
+            .await
+            .expect("lookup should not error");
+        assert!(
+            still_pending.is_none(),
+            "a verified code must no longer be returned as pending"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_verify_code_tracks_remaining_attempts_then_blocks() {
+        let repository = setup_test_repository().await;
+        insert_code_with_expiry(&repository, "user@example.com", "registration", "123456", 5).await;
+
+        for expected_remaining in (0..VERIFICATION_CODE_MAX_ATTEMPTS).rev() {
+            let result = repository
+                .verify_code(
+                    "000000".to_string(),
+                    "user@example.com".to_string(),
+                    "registration".to_string(),
+                )
+                .await
+                .expect("verification should not error");
+            match result {
+                VerificationResult::Invalid { attempts_remaining } => {
+                    assert_eq!(
+                        attempts_remaining, expected_remaining,
+                        "remaining attempts must count down on each wrong guess"
+                    );
+                }
+                other => panic!("expected Invalid, got a different result variant: {other:?}"),
+            }
+        }
+
+        let result = repository
+            .verify_code(
+                "000000".to_string(),
+                "user@example.com".to_string(),
+                "registration".to_string(),
+            )
+            .await
+            .expect("verification should not error");
+        assert!(
+            matches!(result, VerificationResult::TooManyAttempts),
+            "once the attempt limit is reached the code must be locked out"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_count_active_codes_excludes_expired() {
+        let repository = setup_test_repository().await;
+        insert_code_with_expiry(&repository, "user@example.com", "registration", "111111", 5).await;
+        insert_code_with_expiry(&repository, "user@example.com", "registration", "222222", 5).await;
+        insert_code_with_expiry(
+            &repository,
+            "user@example.com",
+            "registration",
+            "333333",
+            -1,
+        )
+        .await;
+        insert_code_with_expiry(
+            &repository,
+            "other@example.com",
+            "registration",
+            "444444",
+            5,
+        )
+        .await;
+        insert_code_with_expiry(
+            &repository,
+            "user@example.com",
+            "password_reset",
+            "555555",
+            5,
+        )
+        .await;
+
+        let active = repository
+            .count_active_codes("user@example.com".to_string(), "registration".to_string())
+            .await
+            .expect("counting active codes should succeed");
+
+        assert_eq!(
+            active, 2,
+            "only non-expired codes for the matching email and purpose must be counted"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_count_active_codes_reaches_rate_limit_threshold() {
+        let repository = setup_test_repository().await;
+        for index in 0..VERIFICATION_CODE_MAX_ATTEMPTS {
+            insert_code_with_expiry(
+                &repository,
+                "user@example.com",
+                "registration",
+                &format!("10000{index}"),
+                5,
+            )
+            .await;
+        }
+
+        let active = repository
+            .count_active_codes("user@example.com".to_string(), "registration".to_string())
+            .await
+            .expect("counting active codes should succeed");
+
+        assert!(
+            active >= VERIFICATION_CODE_MAX_ATTEMPTS,
+            "the active-code count must reach the rate-limit threshold once the cap is filled"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_expired_only_removes_expired_codes() {
+        let repository = setup_test_repository().await;
+        insert_code_with_expiry(&repository, "user@example.com", "registration", "111111", 5).await;
+        insert_code_with_expiry(
+            &repository,
+            "user@example.com",
+            "registration",
+            "222222",
+            -1,
+        )
+        .await;
+
+        let deleted = repository
+            .delete_expired()
+            .await
+            .expect("deleting expired codes should succeed");
+        assert_eq!(deleted, 1, "only the expired code must be deleted");
+
+        let remaining = repository
+            .get_for("user@example.com".to_string(), "registration".to_string())
+            .await
+            .expect("lookup should not error");
+        assert!(
+            remaining.is_some(),
+            "the still-valid code must survive the cleanup"
+        );
     }
 }
