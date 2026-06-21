@@ -89,6 +89,49 @@ async fn test_ping_expired_token() {
 }
 
 #[tokio::test]
+async fn test_ping_malformed_token() {
+    let app = TestApp::new().await;
+
+    let response = app
+        .server
+        .get("/api/ping")
+        .add_header(AUTHORIZATION, bearer("not-a-jwt"))
+        .expect_failure()
+        .await;
+
+    response.assert_status_unauthorized();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("Invalid access token"));
+}
+
+#[tokio::test]
+async fn test_ping_wrong_secret_token() {
+    let app = TestApp::new().await;
+    let (user_id, device_id, _jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    // Generate a structurally valid, unexpired token signed with a different secret.
+    let foreign_jwt = access_token::generate_access_token(
+        user_id,
+        device_id,
+        "Test Device".to_string(),
+        "a-different-secret-that-is-at-least-32-bytes-long",
+        900,
+    )
+    .unwrap();
+
+    let response = app
+        .server
+        .get("/api/ping")
+        .add_header(AUTHORIZATION, bearer(&foreign_jwt))
+        .expect_failure()
+        .await;
+
+    response.assert_status_unauthorized();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("Invalid access token"));
+}
+
+#[tokio::test]
 async fn test_ping_deleted_device_rejected() {
     let app = TestApp::new().await;
     let (_user_id, device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
