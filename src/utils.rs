@@ -39,6 +39,23 @@ pub fn is_password_valid(password: &str) -> bool {
     true
 }
 
+/// Normalize a submitted password before validation, hashing, or verification.
+///
+/// Trimming surrounding whitespace must happen identically on every
+/// password-accepting path (login, registration, password reset, forced update)
+/// so that a password set through one flow can always be verified through
+/// another. Inconsistent trimming would otherwise store a hash that the trimming
+/// login can never match, locking the user out permanently.
+///
+/// ### Arguments
+/// - `password`: The raw password as submitted by the user
+///
+/// ### Returns
+/// - The password with leading and trailing whitespace removed
+pub fn normalize_password(password: &str) -> &str {
+    password.trim()
+}
+
 /// Generate a random password that meets validation requirements
 ///
 /// ### Returns
