@@ -17,6 +17,7 @@ use crate::{
 };
 
 const MIN_MAX_FILE_SIZE_BYTES: u64 = 1_024; // 1 KB
+const MAX_MAX_FILE_SIZE_BYTES: u64 = 10 * 1024 * 1024 * 1024; // 10 GB
 
 #[derive(Deserialize)]
 pub struct UserSearchParams {
@@ -482,7 +483,10 @@ pub async fn update_max_file_size(
         None
     } else {
         let kb = request.max_file_size_kb.unwrap_or(1024);
-        let kb = kb.max(MIN_MAX_FILE_SIZE_BYTES / 1024);
+        let kb = kb.clamp(
+            MIN_MAX_FILE_SIZE_BYTES / 1024,
+            MAX_MAX_FILE_SIZE_BYTES / 1024,
+        );
         Some(kb * 1024)
     };
     state
