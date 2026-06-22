@@ -113,22 +113,41 @@ impl VerificationCodeRepository {
     ) -> anyhow::Result<VerificationCode> {
         let code_hash = hash_code(&code)?;
         let id = Uuid::new_v4().to_string();
-        let expires_at =
-            OffsetDateTime::now_utc() + Duration::minutes(VERIFICATION_CODE_EXPIRATION_MINUTES);
+        let now = OffsetDateTime::now_utc();
+        let expires_at = now + Duration::minutes(VERIFICATION_CODE_EXPIRATION_MINUTES);
         db_execute_dual!(
             self.pool,
-            sqlite: "INSERT INTO verification_codes (id, email, code_hash, expires_at, purpose) VALUES (?, ?, ?, ?, ?)",
-            postgres: "INSERT INTO verification_codes (id, email, code_hash, expires_at, purpose) VALUES ($1, $2, $3, to_timestamp($4), $5)",
+            sqlite: "INSERT INTO verification_codes (id, email, code_hash, created_at, expires_at, purpose) VALUES (?, ?, ?, ?, ?, ?)",
+            postgres: "INSERT INTO verification_codes (id, email, code_hash, created_at, expires_at, purpose) VALUES ($1, $2, $3, to_timestamp($4), to_timestamp($5), $6)",
             id.clone(),
-            email.clone(),
+            email,
             code_hash,
+            now.unix_timestamp(),
             expires_at.unix_timestamp(),
-            purpose.clone()
+            purpose
         )?;
-        let verification_code = self.get_for(email, purpose).await?;
+        let verification_code = self.get_by_id(id).await?;
         let Some(verification_code) = verification_code else {
             return Err(anyhow::anyhow!("Failed to create verification code"));
         };
+        Ok(verification_code)
+    }
+
+    /// Get a verification code by its unique ID
+    ///
+    /// ### Arguments
+    /// - `id`: The ID of the verification code
+    ///
+    /// ### Returns
+    /// - `Ok(Option<VerificationCode>)`: The verification code if found, otherwise None
+    /// - `Err(anyhow::Error)`: The error if the operation fails
+    async fn get_by_id(&self, id: String) -> anyhow::Result<Option<VerificationCode>> {
+        let verification_code = db_fetch_optional!(
+            self.pool,
+            "SELECT * FROM verification_codes WHERE id = ?",
+            VerificationCode,
+            id
+        )?;
         Ok(verification_code)
     }
 
@@ -151,14 +170,19 @@ impl VerificationCodeRepository {
         Ok(())
     }
 
-    /// Get a verification code for an email and purpose
+    /// Get the most recent active verification code for an email and purpose
+    ///
+    /// Up to `VERIFICATION_CODE_MAX_ATTEMPTS` unverified codes can coexist for a
+    /// given (email, purpose) because of the resend rate limit. The newest one
+    /// (highest `created_at`) is always returned so that a freshly resent code is
+    /// the one verified against, rather than a backend-dependent arbitrary row.
     ///
     /// ### Arguments
     /// - `email`: The email of the user
     /// - `purpose`: The purpose of the code
     ///
     /// ### Returns
-    /// - `Ok(Option<VerificationCode>)`: The verification code if found, otherwise None
+    /// - `Ok(Option<VerificationCode>)`: The most recent unverified code if any, otherwise None
     /// - `Err(anyhow::Error)`: The error if the operation fails
     pub async fn get_for(
         &self,
@@ -167,7 +191,7 @@ impl VerificationCodeRepository {
     ) -> anyhow::Result<Option<VerificationCode>> {
         let verification_code = db_fetch_optional!(
             self.pool,
-            "SELECT * FROM verification_codes WHERE email = ? AND purpose = ? AND verified_at IS NULL",
+            "SELECT * FROM verification_codes WHERE email = ? AND purpose = ? AND verified_at IS NULL ORDER BY created_at DESC LIMIT 1",
             VerificationCode,
             email,
             purpose
@@ -350,6 +374,127 @@ mod tests {
             purpose.to_string()
         )
         .expect("inserting a verification code should succeed");
+    }
+
+    /// Insert a verification code with explicit creation and expiry timestamps,
+    /// used to exercise the "most recent code wins" ordering of `get_for`.
+    ///
+    /// ### Arguments
+    /// - `repository`: The repository whose pool receives the row
+    /// - `email`: The owning email
+    /// - `purpose`: The code purpose
+    /// - `code`: The plaintext code to hash and store
+    /// - `created_minutes_ago`: Minutes in the past for `created_at`
+    async fn insert_code_with_creation_time(
+        repository: &VerificationCodeRepository,
+        email: &str,
+        purpose: &str,
+        code: &str,
+        created_minutes_ago: i64,
+    ) {
+        let code_hash = hash_code(code).expect("hashing the code should succeed");
+        let id = Uuid::new_v4().to_string();
+        let now = OffsetDateTime::now_utc();
+        let created_at = now - Duration::minutes(created_minutes_ago);
+        let expires_at = created_at + Duration::minutes(VERIFICATION_CODE_EXPIRATION_MINUTES);
+        db_execute_dual!(
+            repository.pool,
+            sqlite: "INSERT INTO verification_codes (id, email, code_hash, created_at, expires_at, purpose) VALUES (?, ?, ?, ?, ?, ?)",
+            postgres: "INSERT INTO verification_codes (id, email, code_hash, created_at, expires_at, purpose) VALUES ($1, $2, $3, to_timestamp($4), to_timestamp($5), $6)",
+            id,
+            email.to_string(),
+            code_hash,
+            created_at.unix_timestamp(),
+            expires_at.unix_timestamp(),
+            purpose.to_string()
+        )
+        .expect("inserting a verification code should succeed");
+    }
+
+    #[tokio::test]
+    async fn test_get_for_returns_most_recent_code() {
+        let repository = setup_test_repository().await;
+        insert_code_with_creation_time(
+            &repository,
+            "user@example.com",
+            "registration",
+            "111111",
+            3,
+        )
+        .await;
+        insert_code_with_creation_time(
+            &repository,
+            "user@example.com",
+            "registration",
+            "222222",
+            1,
+        )
+        .await;
+
+        let returned = repository
+            .get_for("user@example.com".to_string(), "registration".to_string())
+            .await
+            .expect("lookup should not error")
+            .expect("a code must be returned");
+
+        assert!(
+            verify_code("222222", &returned.code_hash),
+            "get_for must return the most recently created code"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_verify_code_uses_latest_after_resend() {
+        let repository = setup_test_repository().await;
+        insert_code_with_creation_time(
+            &repository,
+            "user@example.com",
+            "registration",
+            "111111",
+            3,
+        )
+        .await;
+        insert_code_with_creation_time(
+            &repository,
+            "user@example.com",
+            "registration",
+            "222222",
+            1,
+        )
+        .await;
+
+        let result = repository
+            .verify_code(
+                "222222".to_string(),
+                "user@example.com".to_string(),
+                "registration".to_string(),
+            )
+            .await
+            .expect("verification should not error");
+
+        assert!(
+            matches!(result, VerificationResult::Verified),
+            "the freshly resent code must verify against the latest row"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_populates_created_at() {
+        let repository = setup_test_repository().await;
+        let created = repository
+            .create(
+                "user@example.com".to_string(),
+                "123456".to_string(),
+                "registration".to_string(),
+            )
+            .await
+            .expect("creating a verification code should succeed");
+
+        let one_minute_ago = OffsetDateTime::now_utc() - Duration::minutes(1);
+        assert!(
+            created.created_at > one_minute_ago,
+            "create must persist a recent created_at, not a null/epoch value"
+        );
     }
 
     #[test]
