@@ -590,15 +590,12 @@ pub async fn forgot_password_step_1(
     State(state): State<AppState>,
     Form(request): Form<ForgotPasswordStep1Request>,
 ) -> Result<Html<String>, AppError> {
-    let user = match state
-        .user_repository
-        .get_by_email(request.email.clone())
-        .await
-    {
+    let email = request.email.trim().to_lowercase();
+    let user = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(user)) => user,
         Ok(None) => {
             let template = templates::ForgotPasswordStep2Template {
-                email: request.email,
+                email,
                 error_message: String::new(),
                 success_message: String::new(),
             };
@@ -619,7 +616,7 @@ pub async fn forgot_password_step_1(
         create_and_spawn_verification_code(&state, &user.email, "password_reset").await?;
     }
     let template = templates::ForgotPasswordStep2Template {
-        email: request.email,
+        email,
         error_message: String::new(),
         success_message: String::new(),
     };
@@ -646,11 +643,12 @@ pub async fn forgot_password_step_2(
     session: Session,
     Form(request): Form<ForgotPasswordStep2Request>,
 ) -> Result<Html<String>, AppError> {
+    let email = request.email.trim().to_lowercase();
     let result = state
         .verification_code_repository
         .verify_code(
             request.code.clone(),
-            request.email.clone(),
+            email.clone(),
             "password_reset".to_string(),
         )
         .await
@@ -658,11 +656,11 @@ pub async fn forgot_password_step_2(
     if let VerificationResult::Verified = result {
         let _ = state
             .verification_code_repository
-            .delete_for(request.email.clone(), "password_reset".to_string())
+            .delete_for(email.clone(), "password_reset".to_string())
             .await;
-        session::authorize_password_reset(&session, &request.email).await?;
+        session::authorize_password_reset(&session, &email).await?;
         let template = templates::ForgotPasswordStep3Template {
-            email: request.email,
+            email,
             error_message: String::new(),
         };
         Ok(Html(template.render().map_err(|e| {
@@ -670,7 +668,7 @@ pub async fn forgot_password_step_2(
         })?))
     } else {
         let template = templates::ForgotPasswordStep2Template {
-            email: request.email,
+            email,
             error_message: format_verification_error(&result),
             success_message: String::new(),
         };
@@ -700,21 +698,22 @@ pub async fn forgot_password_step_3(
     session: Session,
     Form(request): Form<ForgotPasswordStep3Request>,
 ) -> Result<Html<String>, AppError> {
+    let email = request.email.trim().to_lowercase();
     if !is_password_valid(&request.password) {
         let template = templates::ForgotPasswordStep3Template {
-            email: request.email,
+            email,
             error_message: "Password must be 8-64 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.".to_string(),
         };
         return Ok(Html(template.render().map_err(|e| {
             AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
         })?));
     }
-    if !session::consume_password_reset_authorization(&session, &request.email).await? {
+    if !session::consume_password_reset_authorization(&session, &email).await? {
         tracing::warn!(
             "Rejected forgot-password reset without a valid step-2 authorization for the submitted email"
         );
         let template = templates::ForgotPasswordStep3Template {
-            email: request.email,
+            email,
             error_message:
                 "Your password reset session has expired or is invalid. Please restart the process."
                     .to_string(),
@@ -723,11 +722,7 @@ pub async fn forgot_password_step_3(
             AppError::InternalError(anyhow::anyhow!("Template error: {e}"))
         })?));
     }
-    let user = match state
-        .user_repository
-        .get_by_email(request.email.clone())
-        .await
-    {
+    let user = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(user)) => user,
         Ok(None) => {
             return Err(AppError::InternalError(anyhow::anyhow!("User not found")));
