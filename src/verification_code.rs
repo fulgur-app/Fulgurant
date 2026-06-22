@@ -175,21 +175,22 @@ impl VerificationCodeRepository {
         Ok(verification_code)
     }
 
-    /// Update the attempts for a verification code
+    /// Atomically claim a verification attempt for a code
     ///
     /// ### Arguments
     /// - `id`: The ID of the verification code
     ///
     /// ### Returns
-    /// - `Ok(())`: The result of the operation if the attempts were updated successfully
+    /// - `Ok(true)`: An attempt was claimed; the caller may run the comparison
+    /// - `Ok(false)`: The attempt cap was already reached; no attempt claimed
     /// - `Err(anyhow::Error)`: The error if the operation fails
-    pub async fn update_attempts(&self, id: String) -> anyhow::Result<()> {
-        db_execute!(
+    pub async fn claim_attempt(&self, id: String) -> anyhow::Result<bool> {
+        let rows_affected = db_execute!(
             self.pool,
-            "UPDATE verification_codes SET attempts = attempts + 1 WHERE id = ?",
+            "UPDATE verification_codes SET attempts = attempts + 1 WHERE id = ? AND attempts < max_attempts",
             id
         )?;
-        Ok(())
+        Ok(rows_affected == 1)
     }
 
     /// Mark a verification code as verified
@@ -237,14 +238,14 @@ impl VerificationCodeRepository {
             return Ok(VerificationResult::Expired);
         }
 
-        if verification_code.attempts >= verification_code.max_attempts {
+        if !self.claim_attempt(verification_code.id.clone()).await? {
             return Ok(VerificationResult::TooManyAttempts);
         }
 
         let is_valid = verify_code(&code, &verification_code.code_hash);
         if !is_valid {
-            let remaining = verification_code.max_attempts - verification_code.attempts - 1;
-            self.update_attempts(verification_code.id).await?;
+            let remaining =
+                (verification_code.max_attempts - verification_code.attempts - 1).max(0);
             return Ok(VerificationResult::Invalid {
                 attempts_remaining: remaining,
             });
@@ -479,6 +480,45 @@ mod tests {
         assert!(
             matches!(result, VerificationResult::TooManyAttempts),
             "once the attempt limit is reached the code must be locked out"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_claim_attempt_enforces_cap_atomically() {
+        let repository = setup_test_repository().await;
+        insert_code_with_expiry(&repository, "user@example.com", "registration", "123456", 5).await;
+        let code = repository
+            .get_for("user@example.com".to_string(), "registration".to_string())
+            .await
+            .expect("lookup should not error")
+            .expect("the inserted code must be present");
+
+        for _ in 0..code.max_attempts {
+            assert!(
+                repository
+                    .claim_attempt(code.id.clone())
+                    .await
+                    .expect("claiming an attempt should not error"),
+                "each attempt under the cap must be claimable"
+            );
+        }
+
+        assert!(
+            !repository
+                .claim_attempt(code.id.clone())
+                .await
+                .expect("claiming an attempt should not error"),
+            "the guarded UPDATE must refuse the claim once the cap is reached"
+        );
+
+        let after = repository
+            .get_for("user@example.com".to_string(), "registration".to_string())
+            .await
+            .expect("lookup should not error")
+            .expect("the code must still be present");
+        assert_eq!(
+            after.attempts, after.max_attempts,
+            "the attempt counter must never exceed max_attempts"
         );
     }
 
