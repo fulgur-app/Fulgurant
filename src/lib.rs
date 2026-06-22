@@ -39,8 +39,36 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Minimum recommended Fulgur client version advertised to devices on connect.
 pub const MIN_FULGUR_VERSION: &str = "0.9.0";
 
+/// Maximum request-body size for the small API endpoints.
+const API_SMALL_BODY_LIMIT_BYTES: usize = 16 * 1024;
+
+/// Extra request-body headroom for `/api/share` on top of the configured share
+/// content size, covering the surrounding JSON fields and protocol overhead.
+const SHARE_BODY_OVERHEAD_BYTES: u64 = 4096;
+
+/// Build the request-body limit layer for the `/api/share` endpoint.
+///
+/// ### Arguments
+/// - `max_content_bytes`: The configured share content limit, or `None` for "no limit"
+///
+/// ### Returns
+/// - `DefaultBodyLimit`: The body-limit layer (a concrete cap, or disabled)
+fn share_body_limit(max_content_bytes: Option<u64>) -> DefaultBodyLimit {
+    match max_content_bytes {
+        Some(content) => {
+            let with_margin = content
+                .saturating_mul(4)
+                .saturating_div(3)
+                .saturating_add(SHARE_BODY_OVERHEAD_BYTES);
+            DefaultBodyLimit::max(usize::try_from(with_margin).unwrap_or(usize::MAX))
+        }
+        None => DefaultBodyLimit::disable(),
+    }
+}
+
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     http::{HeaderValue, header},
     middleware as axum_mw,
     routing::{delete, get, post, put},
@@ -216,10 +244,20 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
             .finish()
             .expect("Failed to build governor config"),
     );
+
+    let max_content_bytes = app_state
+        .max_file_size_bytes
+        .try_read()
+        .ok()
+        .and_then(|guard| *guard);
     let token_route = Router::new()
         .route("/api/token", post(api::handlers::obtain_access_token))
+        .layer(DefaultBodyLimit::max(API_SMALL_BODY_LIMIT_BYTES))
         .layer(tower_governor::GovernorLayer::new(governor_conf.clone()))
         .with_state(app_state.clone());
+    let share_route = Router::new()
+        .route("/api/share", post(api::handlers::share_file))
+        .layer(share_body_limit(max_content_bytes));
     let authenticated_routes = Router::new()
         .route("/api/ping", get(api::handlers::ping))
         .route(
@@ -229,7 +267,6 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
         )
         .route("/api/v2/begin", post(api::handlers::begin_v2))
         .route("/api/devices", get(api::handlers::get_devices))
-        .route("/api/share", post(api::handlers::share_file))
         .route("/api/shares", get(api::handlers::get_shares))
         .route("/api/shares/{id}", get(api::handlers::get_share))
         .route("/api/v2/shares/{id}", get(api::handlers::get_share_v2))
@@ -238,6 +275,8 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
             post(api::handlers::share_successful),
         )
         .route("/api/sse", get(api::sse::handle_sse_connection))
+        .layer(DefaultBodyLimit::max(API_SMALL_BODY_LIMIT_BYTES))
+        .merge(share_route)
         .layer(axum_mw::from_fn_with_state(
             app_state.clone(),
             api::middleware::require_api_auth,
