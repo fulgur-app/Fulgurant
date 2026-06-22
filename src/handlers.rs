@@ -178,6 +178,11 @@ pub async fn create_device(
             "Device type cannot exceed {MAX_DEVICE_TYPE_LEN} characters"
         )));
     }
+    if !devices::is_valid_api_key_lifetime(request.api_key_lifetime) {
+        return Err(AppError::ValidationError(
+            "Invalid API key lifetime".to_string(),
+        ));
+    }
     request.name = name;
     request.device_type = device_type;
     let api_key = api_key::generate_api_key();
@@ -364,6 +369,11 @@ pub async fn renew_device(
     Form(request): Form<devices::RenewDevice>,
 ) -> Result<Html<String>, AppError> {
     let session_user_id = session::get_session_user_id(&session).await?;
+    if !devices::is_valid_api_key_lifetime(request.api_key_lifetime) {
+        return Err(AppError::ValidationError(
+            "Invalid API key lifetime".to_string(),
+        ));
+    }
     let existing_device = state.device_repository.get_by_id(id).await?;
     if existing_device.user_id != session_user_id {
         return Err(AppError::Forbidden);
