@@ -279,7 +279,7 @@ impl VerificationCodeRepository {
         Ok(VerificationResult::Verified)
     }
 
-    /// Count active (non-expired) verification codes for an email and purpose
+    /// Count active (non-expired, unverified) verification codes for an email and purpose
     ///
     /// ### Arguments
     /// - `email`: The email of the user
@@ -296,8 +296,8 @@ impl VerificationCodeRepository {
         let now = OffsetDateTime::now_utc();
         let count: (i64,) = db_fetch_one_dual!(
             self.pool,
-            sqlite: "SELECT COUNT(*) FROM verification_codes WHERE email = ? AND purpose = ? AND expires_at > ?",
-            postgres: "SELECT COUNT(*) FROM verification_codes WHERE email = $1 AND purpose = $2 AND expires_at > to_timestamp($3)",
+            sqlite: "SELECT COUNT(*) FROM verification_codes WHERE email = ? AND purpose = ? AND expires_at > ? AND verified_at IS NULL",
+            postgres: "SELECT COUNT(*) FROM verification_codes WHERE email = $1 AND purpose = $2 AND expires_at > to_timestamp($3) AND verified_at IS NULL",
             (i64,),
             email,
             purpose,
