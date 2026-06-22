@@ -1,4 +1,4 @@
-use crate::utils::{is_password_valid, is_valid_email};
+use crate::utils::{is_password_valid, is_valid_email, normalize_password};
 use argon2::{
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
     password_hash::{SaltString, rand_core::OsRng},
@@ -82,7 +82,7 @@ pub async fn login(
     Form(request): Form<LoginRequest>,
 ) -> Result<Response, AppError> {
     let email = request.email.trim().to_lowercase();
-    let password = request.password.trim();
+    let password = normalize_password(&request.password);
     let user = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(user)) => user,
         Ok(None) => {
@@ -210,7 +210,8 @@ pub async fn force_password_update(
     let Some(user_id) = user_id else {
         return Err(AppError::Unauthorized);
     };
-    if !is_password_valid(&request.password) {
+    let password = normalize_password(&request.password);
+    if !is_password_valid(password) {
         let template = templates::ForcePasswordUpdateFormTemplate {
             error_message: "Password must be 8-64 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.".to_string(),
         };
@@ -227,7 +228,7 @@ pub async fn force_password_update(
         .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Database error: {e}")))?
         .ok_or(AppError::Unauthorized)?;
-    if verify_password(&request.password, user.password_hash.as_str()) {
+    if verify_password(password, user.password_hash.as_str()) {
         let template = templates::ForcePasswordUpdateFormTemplate {
             error_message: "New password must be different from your current password.".to_string(),
         };
@@ -238,7 +239,7 @@ pub async fn force_password_update(
         )
         .into_response());
     }
-    let password_hash = hash_password(&request.password)
+    let password_hash = hash_password(password)
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     state
         .user_repository
@@ -384,7 +385,7 @@ pub async fn register_step_1(
 ) -> Result<Html<String>, AppError> {
     let first_name = request.first_name.trim();
     let last_name = request.last_name.trim();
-    let password = request.password.trim();
+    let password = normalize_password(&request.password);
     let email = request.email.trim().to_lowercase();
     if first_name.is_empty()
         || last_name.is_empty()
@@ -699,7 +700,8 @@ pub async fn forgot_password_step_3(
     Form(request): Form<ForgotPasswordStep3Request>,
 ) -> Result<Html<String>, AppError> {
     let email = request.email.trim().to_lowercase();
-    if !is_password_valid(&request.password) {
+    let password = normalize_password(&request.password);
+    if !is_password_valid(password) {
         let template = templates::ForgotPasswordStep3Template {
             email,
             error_message: "Password must be 8-64 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character.".to_string(),
@@ -732,7 +734,7 @@ pub async fn forgot_password_step_3(
             return Err(AppError::InternalError(anyhow::anyhow!("Database error")));
         }
     };
-    let password_hash = hash_password(&request.password)
+    let password_hash = hash_password(password)
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     match state
         .user_repository
