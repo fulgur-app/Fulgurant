@@ -9,6 +9,20 @@ pub const MAX_DEVICES_PER_USER: i32 = 99;
 pub const MAX_DEVICE_NAME_LEN: usize = 50;
 pub const MAX_DEVICE_TYPE_LEN: usize = 20;
 
+/// Allowed API key lifetimes in days, matching the values offered by the UI
+pub const VALID_API_KEY_LIFETIMES: [i64; 5] = [30, 90, 180, 365, 36500];
+
+/// Checks whether an API key lifetime (in days) is one of the allowed values
+///
+/// ### Arguments
+/// - `lifetime`: The lifetime in days to validate
+///
+/// ### Returns
+/// - `bool`: `true` if the lifetime is allowed, `false` otherwise
+pub fn is_valid_api_key_lifetime(lifetime: i64) -> bool {
+    VALID_API_KEY_LIFETIMES.contains(&lifetime)
+}
+
 /// Get the maximum number of devices per user from the environment variable, defaults to 99
 ///
 /// ### Returns
@@ -444,6 +458,17 @@ mod tests {
     use crate::db::DbPool;
     use crate::users::UserRepository;
     use sqlx::sqlite::SqlitePoolOptions;
+
+    #[test]
+    fn test_is_valid_api_key_lifetime() {
+        for lifetime in VALID_API_KEY_LIFETIMES {
+            assert!(is_valid_api_key_lifetime(lifetime));
+        }
+        assert!(!is_valid_api_key_lifetime(0));
+        assert!(!is_valid_api_key_lifetime(-1));
+        assert!(!is_valid_api_key_lifetime(31));
+        assert!(!is_valid_api_key_lifetime(i64::MAX));
+    }
 
     /// Build an in-memory `SQLite`-backed device repository and seed one owning user.
     ///
