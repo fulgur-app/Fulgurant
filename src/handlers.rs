@@ -24,6 +24,7 @@ use crate::{
     shares::{DisplayShare, ShareRepository},
     templates::{self},
     users::{MAX_NAME_LEN, UserRepository},
+    utils::is_valid_email,
     verification_code::{self, VerificationCodeRepository},
 };
 
@@ -538,21 +539,17 @@ pub async fn update_email_step_1(
     Form(request): Form<UpdateEmailRequest>,
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
-    if !request.email.contains('@') || !request.email.contains('.') {
-        //TODO: improve email validation
+    let email = request.email.trim().to_lowercase();
+    if !is_valid_email(&email) {
         let template = templates::EmailChangeStep2Template {
-            new_email: request.email,
+            new_email: email,
             error_message: "Invalid email format".to_string(),
         };
         return Ok(Html(template.render()?));
     }
-    if let Ok(Some(_)) = state
-        .user_repository
-        .get_by_email(request.email.clone())
-        .await
-    {
+    if let Ok(Some(_)) = state.user_repository.get_by_email(email.clone()).await {
         let template = templates::EmailChangeStep2Template {
-            new_email: request.email,
+            new_email: email,
             error_message: "This email is already registered".to_string(),
         };
         return Ok(Html(template.render()?));
@@ -560,11 +557,7 @@ pub async fn update_email_step_1(
     let code = verification_code::generate_code();
     state
         .verification_code_repository
-        .create(
-            request.email.clone(),
-            code.clone(),
-            "email_change".to_string(),
-        )
+        .create(email.clone(), code.clone(), "email_change".to_string())
         .await
         .map_err(|e| {
             AppError::InternalError(anyhow::anyhow!("Failed to create verification code: {e}"))
@@ -572,7 +565,7 @@ pub async fn update_email_step_1(
     if state.is_prod {
         state
             .mailer
-            .send_verification_email(request.email.clone(), code.clone())
+            .send_verification_email(email.clone(), code.clone())
             .await
             .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to send email: {e}")))?;
         tracing::info!("Verification email sent for user {}", user_id);
@@ -583,7 +576,7 @@ pub async fn update_email_step_1(
         );
     }
     let template = templates::EmailChangeStep2Template {
-        new_email: request.email,
+        new_email: email,
         error_message: String::new(),
     };
     Ok(Html(template.render()?))
@@ -611,25 +604,31 @@ pub async fn update_email_step_2(
     Form(request): Form<VerifyEmailChangeRequest>,
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
+    let email = request.email.trim().to_lowercase();
     let result = state
         .verification_code_repository
         .verify_code(
             request.code.clone(),
-            request.email.clone(),
+            email.clone(),
             "email_change".to_string(),
         )
         .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to verify code: {e}")))?;
     match result {
         verification_code::VerificationResult::Verified => {
+            if let Ok(Some(_)) = state.user_repository.get_by_email(email.clone()).await {
+                let template = templates::EmailChangeStep2Template {
+                    new_email: email,
+                    error_message: "This email is already registered".to_string(),
+                };
+                return Ok(Html(template.render()?));
+            }
             state
                 .user_repository
-                .update_email(user_id, request.email.clone())
+                .update_email(user_id, email.clone())
                 .await?;
             tracing::info!("User {} changed their email", user_id);
-            let template = templates::EmailChangeSuccessTemplate {
-                email: request.email,
-            };
+            let template = templates::EmailChangeSuccessTemplate { email };
             Ok(Html(template.render()?))
         }
         verification_code::VerificationResult::Invalid { attempts_remaining } => {
@@ -639,21 +638,21 @@ pub async fn update_email_step_2(
                 "Too many failed attempts. Please request a new code.".to_string()
             };
             let template = templates::EmailChangeStep2Template {
-                new_email: request.email,
+                new_email: email,
                 error_message: error_msg,
             };
             Ok(Html(template.render()?))
         }
         verification_code::VerificationResult::TooManyAttempts => {
             let template = templates::EmailChangeStep2Template {
-                new_email: request.email,
+                new_email: email,
                 error_message: "Too many failed attempts. Please request a new code.".to_string(),
             };
             Ok(Html(template.render()?))
         }
         verification_code::VerificationResult::Expired => {
             let template = templates::EmailChangeStep2Template {
-                new_email: request.email,
+                new_email: email,
                 error_message: "Verification code has expired. Please request a new code."
                     .to_string(),
             };
@@ -661,7 +660,7 @@ pub async fn update_email_step_2(
         }
         verification_code::VerificationResult::NotFound => {
             let template = templates::EmailChangeStep2Template {
-                new_email: request.email,
+                new_email: email,
                 error_message: "No verification code found. Please request a new code.".to_string(),
             };
             Ok(Html(template.render()?))
