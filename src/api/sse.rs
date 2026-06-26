@@ -18,7 +18,20 @@ use tagged_channels::TaggedChannels;
 use time::OffsetDateTime;
 
 /// Maximum number of concurrent SSE connections allowed per device.
-pub const MAX_SSE_CONNECTIONS_PER_DEVICE: u32 = 2;
+pub const MAX_SSE_CONNECTIONS_PER_DEVICE: u32 = 1;
+
+/// Convert a JWT expiry (Unix epoch seconds) into a monotonic deadline for stopping the stream.
+///
+/// ### Arguments:
+/// - `token_exp`: the JWT `exp` claim as a Unix timestamp in seconds
+/// - `now_unix`: the current time as a Unix timestamp in seconds
+///
+/// ### Returns:
+/// - `tokio::time::Instant`: the monotonic instant at which the stream should close
+fn token_deadline(token_exp: i64, now_unix: i64) -> tokio::time::Instant {
+    let remaining_seconds = token_exp.saturating_sub(now_unix).max(0) as u64;
+    tokio::time::Instant::now() + Duration::from_secs(remaining_seconds)
+}
 
 /// Tag enum for identifying SSE channels by device ID
 #[derive(Clone, Eq, Hash, PartialEq, Debug)]
@@ -142,6 +155,10 @@ pub async fn handle_sse_connection(
         user_id = auth_user.user.id,
         "SSE connection established"
     );
+    let stream_deadline = token_deadline(
+        auth_user.token_exp,
+        OffsetDateTime::now_utc().unix_timestamp(),
+    );
     let mut channel = state
         .sse_manager
         .create_channel([ChannelTag::DeviceId(device_id.clone())]);
@@ -187,8 +204,17 @@ pub async fn handle_sse_connection(
             }
         }
         let mut interval = tokio::time::interval(heartbeat_interval);
+        let token_expiry = tokio::time::sleep_until(stream_deadline);
+        tokio::pin!(token_expiry);
         loop {
             tokio::select! {
+                () = &mut token_expiry => {
+                    tracing::info!(
+                        device_id = ?device_id,
+                        "Closing SSE stream: access token expired"
+                    );
+                    break;
+                }
                 _ = interval.tick() => {
                     let timestamp = OffsetDateTime::now_utc()
                         .format(&time::format_description::well_known::Rfc3339)
@@ -267,6 +293,30 @@ mod tests {
             "a different device must not be affected by another device's cap"
         );
         assert!(limiter.try_acquire("device-a").is_none());
+    }
+
+    #[test]
+    fn token_deadline_reflects_remaining_lifetime() {
+        let before = tokio::time::Instant::now();
+        let now_unix = 1_000;
+        let deadline = token_deadline(now_unix + 900, now_unix);
+        let remaining = deadline.saturating_duration_since(before);
+        assert!(
+            remaining >= Duration::from_secs(899) && remaining <= Duration::from_secs(901),
+            "deadline should sit roughly 900s out, got {remaining:?}"
+        );
+    }
+
+    #[test]
+    fn token_deadline_is_immediate_for_expired_token() {
+        let now = tokio::time::Instant::now();
+        let now_unix = 1_000;
+        // An already-expired token must not panic and must not push the deadline into the future.
+        let deadline = token_deadline(now_unix - 60, now_unix);
+        assert!(
+            deadline <= now + Duration::from_millis(1),
+            "an expired token must yield an immediate deadline"
+        );
     }
 
     #[test]
