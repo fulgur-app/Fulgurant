@@ -24,6 +24,8 @@ pub struct AuthenticatedUser {
     pub user: AuthenticatedApiUser,
     pub device_id: String,
     pub device_name: String,
+    /// Expiration timestamp (Unix epoch) of the JWT that authenticated this request.
+    pub token_exp: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -252,6 +254,7 @@ pub async fn require_api_auth(
         },
         device_id: claims.device_id,
         device_name: claims.device_name,
+        token_exp: claims.exp,
     });
     Ok(next.run(request).await)
 }
