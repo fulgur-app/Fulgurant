@@ -528,6 +528,56 @@ async fn test_share_file_empty_file_name() {
 }
 
 #[tokio::test]
+async fn test_share_file_rejects_traversal_file_name() {
+    let app = TestApp::new().await;
+    let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    let payload = ShareFilePayload {
+        content: "some content".to_string(),
+        file_name: "../../.bashrc".to_string(),
+        device_id: "some-device-id".to_string(),
+        deduplication_hash: None,
+    };
+
+    let response = app
+        .server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&payload)
+        .expect_failure()
+        .await;
+
+    response.assert_status_bad_request();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("File name"));
+}
+
+#[tokio::test]
+async fn test_share_file_rejects_invalid_deduplication_hash() {
+    let app = TestApp::new().await;
+    let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    let payload = ShareFilePayload {
+        content: "some content".to_string(),
+        file_name: "test.txt".to_string(),
+        device_id: "some-device-id".to_string(),
+        deduplication_hash: Some("not a hex hash".to_string()),
+    };
+
+    let response = app
+        .server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&payload)
+        .expect_failure()
+        .await;
+
+    response.assert_status_bad_request();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("Deduplication hash"));
+}
+
+#[tokio::test]
 async fn test_share_file_empty_device_id() {
     let app = TestApp::new().await;
     let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
@@ -569,7 +619,8 @@ async fn test_share_file_deduplication() {
     )
     .unwrap();
 
-    let dedup_hash = "unique_hash_123".to_string();
+    // Mirrors the client: SHA256 of the file path, hex-encoded
+    let dedup_hash = "a".repeat(64);
 
     // First share
     let payload = ShareFilePayload {
