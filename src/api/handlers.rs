@@ -119,11 +119,21 @@ pub async fn share_file(
             }),
         ));
     }
-    if payload.file_name.is_empty() {
+    if !crate::utils::is_valid_file_name(&payload.file_name) {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: "File name cannot be empty".to_string(),
+                error: "File name is empty, too long, or contains invalid characters".to_string(),
+            }),
+        ));
+    }
+    if let Some(ref deduplication_hash) = payload.deduplication_hash
+        && !crate::utils::is_valid_deduplication_hash(deduplication_hash)
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "Deduplication hash is empty, too long, or not hexadecimal".to_string(),
             }),
         ));
     }

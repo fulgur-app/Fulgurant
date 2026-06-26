@@ -101,6 +101,42 @@ pub fn generate_valid_password() -> String {
     password.into_iter().collect()
 }
 
+/// Checks if a share file name is safe to store and relay to other devices
+///
+/// ### Arguments
+/// - `name`: The file name to check
+///
+/// ### Returns
+/// - `true` if the name is non-empty, at most 255 bytes, free of path
+///   separators, control characters, and `.`/`..` components; `false` otherwise
+pub fn is_valid_file_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 255 {
+        return false;
+    }
+    if name.contains('/') || name.contains('\\') {
+        return false;
+    }
+    if name.chars().any(char::is_control) {
+        return false;
+    }
+    if name == "." || name == ".." {
+        return false;
+    }
+    true
+}
+
+/// Checks if a share deduplication hash has an acceptable format
+///
+/// ### Arguments
+/// - `hash`: The deduplication hash to check
+///
+/// ### Returns
+/// - `true` if the hash is non-empty, at most 128 characters, and contains only
+///   `[0-9a-fA-F]`; `false` otherwise
+pub fn is_valid_deduplication_hash(hash: &str) -> bool {
+    !hash.is_empty() && hash.len() <= 128 && hash.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 /// Format timestamp as YYYY-MM-DD HH:MM:SS UTC
 ///
 /// ### Arguments
@@ -270,6 +306,44 @@ mod tests {
         assert!(!is_password_valid("PASSWORD"));
         assert!(!is_password_valid("12345678"));
         assert!(!is_password_valid("Pass"));
+    }
+
+    #[test]
+    fn test_is_valid_file_name_accepts_normal_names() {
+        assert!(is_valid_file_name("notes.txt"));
+        assert!(is_valid_file_name("My Document 2026.md"));
+        assert!(is_valid_file_name("archive.tar.gz"));
+        assert!(is_valid_file_name("a..b.txt")); // dots inside a name are fine
+        assert!(is_valid_file_name(&"a".repeat(255)));
+    }
+
+    #[test]
+    fn test_is_valid_file_name_rejects_unsafe_names() {
+        assert!(!is_valid_file_name("")); // empty
+        assert!(!is_valid_file_name(&"a".repeat(256))); // too long
+        assert!(!is_valid_file_name("../../.bashrc")); // path traversal
+        assert!(!is_valid_file_name("dir/file.txt")); // unix separator
+        assert!(!is_valid_file_name("dir\\file.txt")); // windows separator
+        assert!(!is_valid_file_name("..")); // parent dir component
+        assert!(!is_valid_file_name(".")); // current dir component
+        assert!(!is_valid_file_name("file\0.txt")); // null byte
+        assert!(!is_valid_file_name("file\n.txt")); // control character
+    }
+
+    #[test]
+    fn test_is_valid_deduplication_hash_accepts_hex() {
+        assert!(is_valid_deduplication_hash("abc123"));
+        assert!(is_valid_deduplication_hash("ABCDEF0123456789"));
+        assert!(is_valid_deduplication_hash(&"a".repeat(128)));
+    }
+
+    #[test]
+    fn test_is_valid_deduplication_hash_rejects_invalid() {
+        assert!(!is_valid_deduplication_hash("")); // empty
+        assert!(!is_valid_deduplication_hash(&"a".repeat(129))); // too long
+        assert!(!is_valid_deduplication_hash("xyz")); // non-hex
+        assert!(!is_valid_deduplication_hash("abc 123")); // space
+        assert!(!is_valid_deduplication_hash("../../etc")); // separators/dots
     }
 
     #[test]
