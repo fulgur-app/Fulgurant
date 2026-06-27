@@ -79,6 +79,10 @@ use tower_sessions::SessionManagerLayer;
 
 use crate::session::FulgurSessionStore;
 
+/// Type-erased handle that prunes stale entries from a rate limiter's in-memory
+/// key map.
+pub type RateLimitPruner = Box<dyn Fn() + Send + Sync>;
+
 /// Build the complete application router
 ///
 /// ### Arguments
@@ -86,21 +90,24 @@ use crate::session::FulgurSessionStore;
 /// - `session_layer`: The session management layer
 ///
 /// ### Returns
-/// - `Router`: The fully assembled router with all routes and middleware
+/// - `(Router, Vec<RateLimitPruner>)`: The fully assembled router and the pruners
+///   for each rate limiter
 pub fn build_app(
     app_state: &handlers::AppState,
     session_layer: SessionManagerLayer<FulgurSessionStore>,
-) -> Router {
-    let auth_routes = make_auth_routes(app_state, session_layer.clone());
-    let api_routes = make_api_routes(app_state);
+) -> (Router, Vec<RateLimitPruner>) {
+    let (auth_routes, auth_pruner) = make_auth_routes(app_state, session_layer.clone());
+    let (api_routes, api_pruner) = make_api_routes(app_state);
     let web_routes = make_web_routes(app_state, session_layer);
 
-    Router::new()
+    let router = Router::new()
         .route("/healthz", get(handlers::health_check))
         .merge(auth_routes)
         .merge(web_routes)
         .merge(api_routes)
-        .fallback(handlers::not_found)
+        .fallback(handlers::not_found);
+
+    (router, vec![auth_pruner, api_pruner])
 }
 
 /// Make the auth routes
@@ -110,11 +117,11 @@ pub fn build_app(
 /// - `session_layer`: The session layer
 ///
 /// ### Returns
-/// - `Router`: The router that handles the auth routes
+/// - `(Router, RateLimitPruner)`: The auth router and the pruner for its rate limiter
 fn make_auth_routes(
     app_state: &handlers::AppState,
     session_layer: SessionManagerLayer<FulgurSessionStore>,
-) -> Router {
+) -> (Router, RateLimitPruner) {
     let auth_governor_conf = Arc::new(
         tower_governor::governor::GovernorConfigBuilder::default()
             .period(std::time::Duration::from_secs(6)) // 10 requests/min = 1 per 6s
@@ -123,7 +130,9 @@ fn make_auth_routes(
             .finish()
             .expect("Failed to build auth governor config"),
     );
-    Router::new()
+    let auth_limiter = auth_governor_conf.limiter().clone();
+    let auth_pruner: RateLimitPruner = Box::new(move || auth_limiter.retain_recent());
+    let router = Router::new()
         .route("/auth/register", post(auth::handlers::register_step_1))
         .route(
             "/auth/register/step2",
@@ -160,7 +169,8 @@ fn make_auth_routes(
             axum_tower_sessions_csrf::CsrfMiddleware::middleware,
         ))
         .layer(session_layer)
-        .layer(tower_governor::GovernorLayer::new(auth_governor_conf))
+        .layer(tower_governor::GovernorLayer::new(auth_governor_conf));
+    (router, auth_pruner)
 }
 
 /// Make the public routes
@@ -234,8 +244,8 @@ fn make_admin_routes(app_state: &handlers::AppState) -> Router<handlers::AppStat
 /// - `app_state`: The state of the application
 ///
 /// ### Returns
-/// - `Router`: The router that handles the api routes
-fn make_api_routes(app_state: &handlers::AppState) -> Router {
+/// - `(Router, RateLimitPruner)`: The api router and the pruner for its rate limiter
+fn make_api_routes(app_state: &handlers::AppState) -> (Router, RateLimitPruner) {
     let governor_conf = Arc::new(
         tower_governor::governor::GovernorConfigBuilder::default()
             .period(std::time::Duration::from_millis(600)) // 100 requests/min = 1 per 600ms
@@ -244,6 +254,8 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
             .finish()
             .expect("Failed to build governor config"),
     );
+    let api_limiter = governor_conf.limiter().clone();
+    let api_pruner: RateLimitPruner = Box::new(move || api_limiter.retain_recent());
 
     let max_content_bytes = app_state
         .max_file_size_bytes
@@ -283,12 +295,13 @@ fn make_api_routes(app_state: &handlers::AppState) -> Router {
         ))
         .layer(tower_governor::GovernorLayer::new(governor_conf))
         .with_state(app_state.clone());
-    token_route
+    let router = token_route
         .merge(authenticated_routes)
         .layer(SetResponseHeaderLayer::overriding(
             header::HeaderName::from_static("x-fulgurant-version"),
             HeaderValue::from_static(VERSION),
-        ))
+        ));
+    (router, api_pruner)
 }
 
 /// Make the web routes

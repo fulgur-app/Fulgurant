@@ -118,7 +118,7 @@ impl TestApp {
             .with_secure(false)
             .with_expiry(Expiry::OnInactivity(CookieDuration::hours(1)));
 
-        let app = fulgurant::build_app(&app_state, session_layer);
+        let (app, _rate_limit_pruners) = fulgurant::build_app(&app_state, session_layer);
 
         let server = TestServer::builder()
             .save_cookies()
