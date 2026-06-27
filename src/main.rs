@@ -331,10 +331,11 @@ async fn main() -> anyhow::Result<()> {
     } else {
         tracing::info!("Session cookies configured without secure flag (development mode)");
     }
-    let app = fulgurant::build_app(&app_state, session_layer);
+    let (app, rate_limit_pruners) = fulgurant::build_app(&app_state, session_layer);
     let assets_service = ServeDir::new("assets");
     let app = app.nest_service("/assets", assets_service);
     let shutdown_token = CancellationToken::new();
+    make_rate_limit_pruning_task(rate_limit_pruners, shutdown_token.clone());
     let cleanup_share_repo = app_state.share_repository.clone();
     make_share_cleanup_task(cleanup_share_repo, shutdown_token.clone());
     let cleanup_verification_repo = app_state.verification_code_repository.clone();
@@ -407,6 +408,35 @@ async fn shutdown_signal() {
     }
 
     tracing::info!("Starting graceful shutdown...");
+}
+
+/// Make the rate-limit pruning task. Runs every minute.
+///
+/// ### Arguments
+/// - `pruners`: The pruners returned by `build_app`, one per rate limiter
+/// - `shutdown_token`: Token to signal graceful shutdown
+fn make_rate_limit_pruning_task(
+    pruners: Vec<fulgurant::RateLimitPruner>,
+    shutdown_token: CancellationToken,
+) {
+    tracing::info!("Starting rate-limit pruning task (runs every 1 minute)");
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    for prune in &pruners {
+                        prune();
+                    }
+                    tracing::debug!("Rate-limit pruning complete");
+                },
+                () = shutdown_token.cancelled() => {
+                    tracing::info!("Rate-limit pruning task shutting down gracefully");
+                    break;
+                }
+            }
+        }
+    });
 }
 
 /// Make the share cleanup task. Runs every hour.
