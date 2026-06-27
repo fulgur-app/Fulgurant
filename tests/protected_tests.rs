@@ -9,7 +9,7 @@ use common::{
 };
 use fulgurant::{
     devices::DeviceRepository,
-    shares::{CreateShare, ShareRepository},
+    shares::{CreateShare, SHARE_VALIDITY_DAYS, ShareRepository},
 };
 use serde::Serialize;
 
@@ -408,6 +408,7 @@ async fn test_delete_share_success() {
                 content: "test content".to_string(),
                 deduplication_hash: None,
             },
+            SHARE_VALIDITY_DAYS,
         )
         .await
         .unwrap();
@@ -450,6 +451,7 @@ async fn test_delete_other_users_share_forbidden() {
                 content: "confidential".to_string(),
                 deduplication_hash: None,
             },
+            SHARE_VALIDITY_DAYS,
         )
         .await
         .unwrap();

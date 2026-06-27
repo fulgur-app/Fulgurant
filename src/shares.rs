@@ -148,16 +148,22 @@ impl ShareRepository {
     /// ### Arguments
     /// - `user_id`: The ID of the user
     /// - `data`: The data for the share
+    /// - `validity_days`: Number of days before the share expires
     ///
     /// ### Returns
     /// - `Ok(Share)`: The created or updated share
     /// - `Err(sqlx::Error)`: The error that occurred while creating the share
-    pub async fn create(&self, user_id: i32, data: CreateShare) -> Result<Share, sqlx::Error> {
+    pub async fn create(
+        &self,
+        user_id: i32,
+        data: CreateShare,
+        validity_days: i64,
+    ) -> Result<Share, sqlx::Error> {
         let id = Uuid::new_v4().to_string();
         let file_hash = calculate_file_hash(&data.content);
         let file_size = data.content.len() as i32;
         let now = OffsetDateTime::now_utc();
-        let expires_at = now + Duration::days(SHARE_VALIDITY_DAYS);
+        let expires_at = now + Duration::days(validity_days);
 
         if data.deduplication_hash.is_some() {
             let share = db_fetch_one_dual!(
@@ -634,6 +640,7 @@ mod tests {
             .create(
                 user_id,
                 sample_share(&source_device_id, "dest-available", None),
+                SHARE_VALIDITY_DAYS,
             )
             .await
             .expect("create available share");
@@ -641,6 +648,7 @@ mod tests {
             .create(
                 user_id,
                 sample_share(&source_device_id, "dest-downloaded", None),
+                SHARE_VALIDITY_DAYS,
             )
             .await
             .expect("create downloaded share");
@@ -648,6 +656,7 @@ mod tests {
             .create(
                 user_id,
                 sample_share(&source_device_id, "dest-deleted", None),
+                SHARE_VALIDITY_DAYS,
             )
             .await
             .expect("create deleted share");
@@ -697,7 +706,11 @@ mod tests {
         let dedup = Some("dedup-tuple");
 
         let first = repository
-            .create(user_id, sample_share(&source_device_id, "dest-1", dedup))
+            .create(
+                user_id,
+                sample_share(&source_device_id, "dest-1", dedup),
+                SHARE_VALIDITY_DAYS,
+            )
             .await
             .expect("create initial share");
 
@@ -720,7 +733,7 @@ mod tests {
         let mut reshare = sample_share(&source_device_id, "dest-1", dedup);
         reshare.content = "fresh content".to_string();
         let second = repository
-            .create(user_id, reshare)
+            .create(user_id, reshare, SHARE_VALIDITY_DAYS)
             .await
             .expect("re-create succeeds");
 
@@ -737,7 +750,11 @@ mod tests {
     async fn test_peek_returns_content_without_mutating_status() {
         let (repository, _pool, user_id, source_device_id) = setup_test_repository().await;
         let share = repository
-            .create(user_id, sample_share(&source_device_id, "dest-1", None))
+            .create(
+                user_id,
+                sample_share(&source_device_id, "dest-1", None),
+                SHARE_VALIDITY_DAYS,
+            )
             .await
             .expect("create share");
 
