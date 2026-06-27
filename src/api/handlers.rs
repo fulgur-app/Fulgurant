@@ -190,7 +190,6 @@ pub async fn share_file(
         ));
     }
 
-    let expiration_date = OffsetDateTime::now_utc() + Duration::days(state.share_validity_days);
     let create_share = CreateShare {
         source_device_id: auth_user.device_id.clone(),
         destination_device_id: payload.device_id.clone(),
@@ -200,7 +199,7 @@ pub async fn share_file(
     };
     let share = match state
         .share_repository
-        .create(auth_user.user.id, create_share)
+        .create(auth_user.user.id, create_share, state.share_validity_days)
         .await
     {
         Ok(share) => {
@@ -242,7 +241,7 @@ pub async fn share_file(
     let date_format = time::format_description::parse("[year]-[month]-[day]").unwrap();
     Ok(Json(ShareFileResponse {
         message: "Share created successfully".to_string(),
-        expiration_date: expiration_date.format(&date_format).unwrap_or_default(),
+        expiration_date: share.expires_at.format(&date_format).unwrap_or_default(),
     }))
 }
 
