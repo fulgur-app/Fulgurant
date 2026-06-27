@@ -1,7 +1,7 @@
 use dotenvy::dotenv;
 use fulgurant::{
     api, database_backup, db, devices, handlers, logging, mail, session, settings, shares, users,
-    users::UserRepository, verification_code,
+    verification_code,
 };
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::{
@@ -12,10 +12,6 @@ use std::{
 use tokio_util::sync::CancellationToken;
 use tower_http::services::ServeDir;
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::time::Duration as CookieDuration};
-
-use session::SessionRepository;
-use shares::ShareRepository;
-use verification_code::VerificationCodeRepository;
 
 static SQLITE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./data/migrations");
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./data/migrations_postgres");
@@ -336,14 +332,46 @@ async fn main() -> anyhow::Result<()> {
     let app = app.nest_service("/assets", assets_service);
     let shutdown_token = CancellationToken::new();
     make_rate_limit_pruning_task(rate_limit_pruners, shutdown_token.clone());
-    let cleanup_share_repo = app_state.share_repository.clone();
-    make_share_cleanup_task(cleanup_share_repo, shutdown_token.clone());
-    let cleanup_verification_repo = app_state.verification_code_repository.clone();
-    make_verification_code_cleanup_task(cleanup_verification_repo, shutdown_token.clone());
-    let cleanup_user_repo = app_state.user_repository.clone();
-    make_unverified_user_cleanup_task(cleanup_user_repo, shutdown_token.clone());
-    let cleanup_session_repo = app_state.session_repository.clone();
-    make_session_cleanup_task(cleanup_session_repo, shutdown_token.clone());
+    let share_repo = app_state.share_repository.clone();
+    spawn_periodic_task(
+        "share cleanup",
+        tokio::time::Duration::from_secs(3600),
+        shutdown_token.clone(),
+        move || {
+            let repo = share_repo.clone();
+            async move { repo.mark_expired().await }
+        },
+    );
+    let verification_repo = app_state.verification_code_repository.clone();
+    spawn_periodic_task(
+        "verification code cleanup",
+        tokio::time::Duration::from_secs(60),
+        shutdown_token.clone(),
+        move || {
+            let repo = verification_repo.clone();
+            async move { repo.delete_expired().await }
+        },
+    );
+    let user_repo = app_state.user_repository.clone();
+    spawn_periodic_task(
+        "unverified user cleanup (24h retention)",
+        tokio::time::Duration::from_secs(3600),
+        shutdown_token.clone(),
+        move || {
+            let repo = user_repo.clone();
+            async move { repo.delete_unverified_older_than(24).await }
+        },
+    );
+    let session_repo = app_state.session_repository.clone();
+    spawn_periodic_task(
+        "session cleanup",
+        tokio::time::Duration::from_secs(3600),
+        shutdown_token.clone(),
+        move || {
+            let repo = session_repo.clone();
+            async move { repo.delete_expired().await }
+        },
+    );
     database_backup::make_daily_backup_task(pool.clone(), shutdown_token.clone(), is_prod);
     let bind_host = config.bind_host.clone();
     let bind_port = config.bind_port;
@@ -439,151 +467,46 @@ fn make_rate_limit_pruning_task(
     });
 }
 
-/// Make the share cleanup task. Runs every hour.
+/// Spawn a background task that runs `job` on a fixed interval until shutdown.
 ///
 /// ### Arguments
-/// - `share_repository`: The share repository
+/// - `name`: Human-readable task name used in all log messages
+/// - `period`: Interval between successive runs of `job`
 /// - `shutdown_token`: Token to signal graceful shutdown
-fn make_share_cleanup_task(share_repository: ShareRepository, shutdown_token: CancellationToken) {
-    tracing::info!("Starting share cleanup task (runs every 1 hour)");
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // 1 hour
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    match share_repository.mark_expired().await {
-                        Ok(count) => {
-                            if count > 0 {
-                                tracing::info!("Marked {} share(s) as expired", count);
-                            } else {
-                                tracing::debug!("Share cleanup check complete - no expired shares found");
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("Error marking expired shares: {:?}", e);
-                        }
-                    }
-                },
-                () = shutdown_token.cancelled() => {
-                    tracing::info!("Share cleanup task shutting down gracefully");
-                    break;
-                }
-            }
-        }
-    });
-}
-
-/// Make the unverified user cleanup task. Runs every hour. Deletes users who registered but never completed email verification within 24 hours.
-///
-/// ### Arguments
-/// - `user_repository`: The user repository
-/// - `shutdown_token`: Token to signal graceful shutdown
-fn make_unverified_user_cleanup_task(
-    user_repository: UserRepository,
+/// - `job`: Closure producing the work future, yielding the processed row count
+fn spawn_periodic_task<F, Fut>(
+    name: &'static str,
+    period: tokio::time::Duration,
     shutdown_token: CancellationToken,
-) {
-    tracing::info!("Starting unverified user cleanup task (runs every 1 hour, 24h retention)");
+    job: F,
+) where
+    F: Fn() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<u64, sqlx::Error>> + Send,
+{
+    tracing::info!(
+        "Starting {name} task (runs every {} seconds)",
+        period.as_secs()
+    );
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600)); // 1 hour
+        let mut interval = tokio::time::interval(period);
         loop {
             tokio::select! {
                 _ = interval.tick() => {
-                    match user_repository.delete_unverified_older_than(24).await {
+                    match job().await {
                         Ok(count) => {
                             if count > 0 {
-                                tracing::info!("Cleaned up {} unverified user(s)", count);
+                                tracing::info!("{name} processed {count} row(s)");
                             } else {
-                                tracing::debug!(
-                                    "Unverified user cleanup check complete - no stale unverified users found"
-                                );
+                                tracing::debug!("{name} check complete - nothing to do");
                             }
                         }
                         Err(e) => {
-                            tracing::error!("Error cleaning up unverified users: {:?}", e);
+                            tracing::error!("Error in {name} task: {e:?}");
                         }
                     }
                 },
                 () = shutdown_token.cancelled() => {
-                    tracing::info!("Unverified user cleanup task shutting down gracefully");
-                    break;
-                }
-            }
-        }
-    });
-}
-
-/// Make the verification code cleanup task. Runs every minute.
-///
-/// ### Arguments
-/// - `verification_code_repository`: The verification code repository
-/// - `shutdown_token`: Token to signal graceful shutdown
-fn make_verification_code_cleanup_task(
-    verification_code_repository: VerificationCodeRepository,
-    shutdown_token: CancellationToken,
-) {
-    tracing::info!("Starting verification code cleanup task (runs every 1 minute)");
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60)); // 1 minute
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    match verification_code_repository.delete_expired().await {
-                        Ok(count) => {
-                            if count > 0 {
-                                tracing::info!("Cleaned up {} expired verification code(s)", count);
-                            } else {
-                                tracing::debug!(
-                                    "Verification code cleanup check complete - no expired codes found"
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("Error cleaning up expired verification codes: {:?}", e);
-                        }
-                    }
-                },
-                () = shutdown_token.cancelled() => {
-                    tracing::info!("Verification code cleanup task shutting down gracefully");
-                    break;
-                }
-            }
-        }
-    });
-}
-
-/// Make the session cleanup task. Runs every hour. Deletes expired rows from
-/// the `sessions` table so the persistent store does not grow without bound.
-///
-/// ### Arguments
-/// - `session_repository`: The session repository
-/// - `shutdown_token`: Token to signal graceful shutdown
-fn make_session_cleanup_task(
-    session_repository: SessionRepository,
-    shutdown_token: CancellationToken,
-) {
-    tracing::info!("Starting session cleanup task (runs every 1 hour)");
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    match session_repository.delete_expired().await {
-                        Ok(count) => {
-                            if count > 0 {
-                                tracing::info!("Cleaned up {} expired session(s)", count);
-                            } else {
-                                tracing::debug!(
-                                    "Session cleanup check complete - no expired sessions found"
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("Error cleaning up expired sessions: {:?}", e);
-                        }
-                    }
-                },
-                () = shutdown_token.cancelled() => {
-                    tracing::info!("Session cleanup task shutting down gracefully");
+                    tracing::info!("{name} task shutting down gracefully");
                     break;
                 }
             }
