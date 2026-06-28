@@ -40,7 +40,7 @@ Version 0.7.0 brings a faster, more secure and more resilient communication with
 
 ## Requirements
 
-- Rust 1.95 or later
+- Rust 1.96 or later
 
 ## Build and Run
 
