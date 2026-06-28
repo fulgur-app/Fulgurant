@@ -563,13 +563,14 @@ impl UserRepository {
         // Build and execute with the correct pool type
         let (total_count, users) = match &self.pool {
             DbPool::Sqlite(pool) => {
-                let mut cq = sqlx::query_as::<_, (i64,)>(&count_sql);
+                let mut cq = sqlx::query_as::<_, (i64,)>(sqlx::AssertSqlSafe(count_sql.as_str()));
                 for param in &params {
                     cq = cq.bind(param);
                 }
                 let count = cq.fetch_one(pool).await?.0 as i32;
 
-                let mut dq = sqlx::query_as::<_, DisplayUser>(&data_sql);
+                let mut dq =
+                    sqlx::query_as::<_, DisplayUser>(sqlx::AssertSqlSafe(data_sql.as_str()));
                 for param in &params {
                     dq = dq.bind(param);
                 }
@@ -579,14 +580,16 @@ impl UserRepository {
             }
             DbPool::Postgres(pool) => {
                 let pg_count_sql = pg_params(&count_sql);
-                let mut cq = sqlx::query_as::<_, (i64,)>(&pg_count_sql);
+                let mut cq =
+                    sqlx::query_as::<_, (i64,)>(sqlx::AssertSqlSafe(pg_count_sql.as_str()));
                 for param in &params {
                     cq = cq.bind(param);
                 }
                 let count = cq.fetch_one(pool).await?.0 as i32;
 
                 let pg_data_sql = pg_params(&data_sql);
-                let mut dq = sqlx::query_as::<_, DisplayUser>(&pg_data_sql);
+                let mut dq =
+                    sqlx::query_as::<_, DisplayUser>(sqlx::AssertSqlSafe(pg_data_sql.as_str()));
                 for param in &params {
                     dq = dq.bind(param);
                 }

@@ -53,7 +53,7 @@ pub async fn perform_backup(pool: &SqlitePool) -> anyhow::Result<PathBuf> {
     let backup_folder = get_backup_folder();
     std::fs::create_dir_all(&backup_folder)?;
     let now = OffsetDateTime::now_utc();
-    let timestamp = now.format(&time::format_description::parse(
+    let timestamp = now.format(&time::format_description::parse_borrowed::<2>(
         "[year]-[month]-[day]_[hour]-[minute]-[second]",
     )?)?;
     let backup_filename = format!("fulgurant_backup_{timestamp}.db");
@@ -64,7 +64,9 @@ pub async fn perform_backup(pool: &SqlitePool) -> anyhow::Result<PathBuf> {
         .ok_or_else(|| anyhow::anyhow!("Invalid backup path"))?;
     validate_backup_path(backup_path_str)?;
     let query = format!("VACUUM INTO '{backup_path_str}'");
-    sqlx::query(&query).execute(pool).await?;
+    sqlx::query(sqlx::AssertSqlSafe(query))
+        .execute(pool)
+        .await?;
     tracing::info!(
         "Database backup completed successfully: {}",
         backup_path.display()

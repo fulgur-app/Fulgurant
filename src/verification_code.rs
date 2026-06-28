@@ -1,9 +1,6 @@
 use crate::db::DbPool;
 use crate::{db_execute, db_execute_dual, db_fetch_one_dual, db_fetch_optional};
-use argon2::{
-    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
-    password_hash::{SaltString, rand_core::OsRng},
-};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
@@ -30,7 +27,10 @@ pub fn generate_code() -> String {
 /// - `Ok(String)`: The hashed code
 /// - `Err(anyhow::Error)`: If hashing fails
 pub fn hash_code(code: &str) -> anyhow::Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
+    let mut salt_bytes = [0u8; 16];
+    rand::rng().fill(&mut salt_bytes);
+    let salt = SaltString::encode_b64(&salt_bytes)
+        .map_err(|e| anyhow::anyhow!("Failed to encode verification code salt: {e}"))?;
     let hash = Argon2::default()
         .hash_password(code.as_bytes(), &salt)
         .map_err(|e| anyhow::anyhow!("Failed to hash verification code: {e}"))?

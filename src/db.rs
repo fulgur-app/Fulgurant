@@ -67,7 +67,7 @@ macro_rules! db_execute {
             }
             $crate::db::DbPool::Postgres(pool) => {
                 let __pg_sql = $crate::db::pg_params($sql);
-                sqlx::query(&__pg_sql)
+                sqlx::query(sqlx::AssertSqlSafe(__pg_sql))
                     $(.bind($bind))*
                     .execute(pool).await
                     .map(|r| r.rows_affected())
@@ -109,7 +109,7 @@ macro_rules! db_fetch_optional {
             }
             $crate::db::DbPool::Postgres(pool) => {
                 let __pg_sql = $crate::db::pg_params($sql);
-                sqlx::query_as::<_, $type>(&__pg_sql)
+                sqlx::query_as::<_, $type>(sqlx::AssertSqlSafe(__pg_sql))
                     $(.bind($bind))*
                     .fetch_optional(pool).await
             }
@@ -148,7 +148,7 @@ macro_rules! db_fetch_one {
             }
             $crate::db::DbPool::Postgres(pool) => {
                 let __pg_sql = $crate::db::pg_params($sql);
-                sqlx::query_as::<_, $type>(&__pg_sql)
+                sqlx::query_as::<_, $type>(sqlx::AssertSqlSafe(__pg_sql))
                     $(.bind($bind))*
                     .fetch_one(pool).await
             }
@@ -187,7 +187,7 @@ macro_rules! db_fetch_all {
             }
             $crate::db::DbPool::Postgres(pool) => {
                 let __pg_sql = $crate::db::pg_params($sql);
-                sqlx::query_as::<_, $type>(&__pg_sql)
+                sqlx::query_as::<_, $type>(sqlx::AssertSqlSafe(__pg_sql))
                     $(.bind($bind))*
                     .fetch_all(pool).await
             }

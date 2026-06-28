@@ -1,8 +1,5 @@
 use crate::utils::{is_password_valid, is_valid_email, normalize_password};
-use argon2::{
-    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
-    password_hash::{SaltString, rand_core::OsRng},
-};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use askama::Template;
 use axum::{
     Form,
@@ -10,6 +7,7 @@ use axum::{
     http::HeaderValue,
     response::{Html, IntoResponse, Response},
 };
+use rand::RngExt;
 use serde::Deserialize;
 use std::sync::LazyLock;
 use tower_sessions::{Expiry, Session, cookie::time::Duration as CookieDuration};
@@ -967,7 +965,9 @@ fn format_verification_error(result: &VerificationResult) -> String {
 /// - `Ok(String)`: The hashed password
 /// - `Err(argon2::password_hash::Error)`: The error if the password cannot be hashed
 pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
-    let salt = SaltString::generate(&mut OsRng);
+    let mut salt_bytes = [0u8; 16];
+    rand::rng().fill(&mut salt_bytes);
+    let salt = SaltString::encode_b64(&salt_bytes)?;
     let argon2 = Argon2::default();
     let hash = argon2.hash_password(password.as_bytes(), &salt)?;
     Ok(hash.to_string())
