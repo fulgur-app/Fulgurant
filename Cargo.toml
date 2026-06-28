@@ -22,7 +22,7 @@ axum = { version = "0.8.9", features = ["macros"] }
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-util = "0.7.18"
 tower = "0.5.3"
-tower-http = { version = "0.6.11", features = ["fs", "trace", "set-header"] }
+tower-http = { version = "0.7.0", features = ["fs", "trace", "set-header"] }
 tower_governor = "0.8.0"
 tower-sessions = "0.15.0"
 axum-tower-sessions-csrf = "0.1.3"
@@ -37,7 +37,7 @@ hex = "0.4.3"
 fulgur-common = { git = "https://github.com/fulgur-app/Fulgur-common.git", tag = "v0.6.0" }
 
 # Database
-sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite", "postgres", "migrate", "time", "macros"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls", "sqlite", "postgres", "migrate", "time", "macros"] }
 
 # Templating
 askama = "0.16.0"

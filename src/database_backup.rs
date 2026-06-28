@@ -64,7 +64,9 @@ pub async fn perform_backup(pool: &SqlitePool) -> anyhow::Result<PathBuf> {
         .ok_or_else(|| anyhow::anyhow!("Invalid backup path"))?;
     validate_backup_path(backup_path_str)?;
     let query = format!("VACUUM INTO '{backup_path_str}'");
-    sqlx::query(&query).execute(pool).await?;
+    sqlx::query(sqlx::AssertSqlSafe(query))
+        .execute(pool)
+        .await?;
     tracing::info!(
         "Database backup completed successfully: {}",
         backup_path.display()
