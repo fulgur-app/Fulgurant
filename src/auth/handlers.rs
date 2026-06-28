@@ -878,6 +878,7 @@ async fn create_and_send_verification_code(
         tracing::info!("Verification email sent");
     } else {
         tracing::info!(
+            target: crate::logging::DEV_CONSOLE_TARGET,
             "Development mode - verification email not sent\nVerification code: {}",
             &code
         );
@@ -920,6 +921,7 @@ async fn create_and_spawn_verification_code(
         });
     } else {
         tracing::info!(
+            target: crate::logging::DEV_CONSOLE_TARGET,
             "Development mode - verification email not sent\nVerification code: {}",
             &code
         );

@@ -445,6 +445,7 @@ pub async fn create_user_from_admin(
         tracing::info!("Account creation email sent for user {}", new_user.id);
     } else {
         tracing::info!(
+            target: crate::logging::DEV_CONSOLE_TARGET,
             "Development mode - account creation email not sent\nPassword for user {}: {}",
             new_user.id,
             &password

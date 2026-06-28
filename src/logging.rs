@@ -1,6 +1,11 @@
 use std::path::PathBuf;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    EnvFilter, Layer, filter::filter_fn, fmt, layer::SubscriberExt, util::SubscriberInitExt,
+};
+
+/// Tracing target reserved for development-only secrets (verification codes, admin-generated passwords)
+pub const DEV_CONSOLE_TARGET: &str = "dev_console";
 
 /// Gets the log folder path from environment variable or uses default
 ///
@@ -57,7 +62,10 @@ pub fn init_logging(log_folder: PathBuf, is_prod: bool) -> anyhow::Result<Worker
     let file_layer = fmt::layer()
         .with_writer(non_blocking)
         .with_ansi(false)
-        .with_target(true);
+        .with_target(true)
+        .with_filter(filter_fn(|metadata| {
+            metadata.target() != DEV_CONSOLE_TARGET
+        }));
 
     if is_prod {
         // Production: Only log to file
