@@ -1,6 +1,6 @@
 [package]
 name = "Fulgurant"
-version = "0.7.0"
+version = "0.8.0"
 description = "The Fulgur synchronization server"
 authors = ["Fulgur Team <contact@fulgur.app>"]
 repository = "https://github.com/fulgur-app/Fulgurant"
