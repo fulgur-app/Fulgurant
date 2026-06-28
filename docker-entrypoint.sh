@@ -3,7 +3,7 @@ set -e
 
 # Display startup information
 echo "Starting Fulgurant..."
-echo "Database: ${DATABASE_URL}"
+echo "Database: $(echo "${DATABASE_URL}" | sed -E 's#://[^@/]+@#://***@#')"
 echo "Bind address: ${BIND_HOST}:${BIND_PORT}"
 echo "Production mode: ${IS_PROD}"
 echo "Log folder: ${LOG_FOLDER}"
