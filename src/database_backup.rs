@@ -53,7 +53,7 @@ pub async fn perform_backup(pool: &SqlitePool) -> anyhow::Result<PathBuf> {
     let backup_folder = get_backup_folder();
     std::fs::create_dir_all(&backup_folder)?;
     let now = OffsetDateTime::now_utc();
-    let timestamp = now.format(&time::format_description::parse(
+    let timestamp = now.format(&time::format_description::parse_borrowed::<2>(
         "[year]-[month]-[day]_[hour]-[minute]-[second]",
     )?)?;
     let backup_filename = format!("fulgurant_backup_{timestamp}.db");

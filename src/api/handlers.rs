@@ -238,7 +238,8 @@ pub async fn share_file(
     {
         tracing::error!("Failed to increment shares count: {}", e);
     }
-    let date_format = time::format_description::parse("[year]-[month]-[day]").unwrap();
+    let date_format =
+        time::format_description::parse_borrowed::<2>("[year]-[month]-[day]").unwrap();
     Ok(Json(ShareFileResponse {
         message: "Share created successfully".to_string(),
         expiration_date: share.expires_at.format(&date_format).unwrap_or_default(),
