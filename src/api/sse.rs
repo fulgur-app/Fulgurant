@@ -18,7 +18,10 @@ use tagged_channels::TaggedChannels;
 use time::OffsetDateTime;
 
 /// Maximum number of concurrent SSE connections allowed per device.
-pub const MAX_SSE_CONNECTIONS_PER_DEVICE: u32 = 1;
+///
+/// On lost SSE connection having only 1 SSE connection per device generates a 429 error
+/// until the original connection is terminated.
+pub const MAX_SSE_CONNECTIONS_PER_DEVICE: u32 = 2;
 
 /// Convert a JWT expiry (Unix epoch seconds) into a monotonic deadline for stopping the stream.
 ///
