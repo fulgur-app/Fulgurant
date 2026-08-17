@@ -19,14 +19,14 @@ path = "src/lib.rs"
 [dependencies]
 # Web framework
 axum = { version = "0.8.9", features = ["macros"] }
-tokio = { version = "1.52.3", features = ["full"] }
+tokio = { version = "1.53.1", features = ["full"] }
 tokio-util = "0.7.19"
 tower = "0.5.3"
 tower-http = { version = "0.7.0", features = ["fs", "trace", "set-header"] }
 tower_governor = "0.8.0"
 tower-sessions = "0.15.0"
 axum-tower-sessions-csrf = "0.1.4"
-jsonwebtoken = { version = "10.4.0", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "11.0.0", features = ["aws_lc_rs"] }
 
 # Crypto
 argon2 = "0.5.3"
@@ -63,13 +63,13 @@ async-stream = "0.3.6"
 futures = "0.3.34"
 
 # Utilities
-uuid = { version = "1.23.4", features = ["v4", "serde"] }
+uuid = { version = "1.24.1", features = ["v4", "serde"] }
 dotenvy = "0.15.7"
 rand = "0.10.2"
 rand_core = "0.10.1"
-base64 = "0.22.1"
+base64 = "0.23.1"
 lettre = "0.11.23"
-regex = "1.12.4"
+regex = "1.13.1"
 time = { version = "0.3.55", features = ["serde", "formatting", "macros"] }
 
 # [target.'cfg(not(target_env = "msvc"))'.dependencies]
