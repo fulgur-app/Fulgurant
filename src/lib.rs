@@ -37,7 +37,7 @@ pub mod verification_code;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Minimum recommended Fulgur client version advertised to devices on connect.
-pub const MIN_FULGUR_VERSION: &str = "0.9.0";
+pub const MIN_FULGUR_VERSION: &str = "0.11.0";
 
 /// Maximum request-body size for the small API endpoints.
 const API_SMALL_BODY_LIMIT_BYTES: usize = 16 * 1024;
