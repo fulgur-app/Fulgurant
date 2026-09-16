@@ -135,10 +135,14 @@ impl Mailer {
                     ),
             )?;
 
-        transport.send(&email).map_err(|e| {
-            tracing::error!("Failed to send email: {}", e);
-            anyhow::anyhow!("Failed to send email: {e}")
-        })?;
+        let transport = transport.clone();
+        tokio::task::spawn_blocking(move || transport.send(&email))
+            .await
+            .map_err(|e| anyhow::anyhow!("Email sending task failed: {e}"))?
+            .map_err(|e| {
+                tracing::error!("Failed to send email: {}", e);
+                anyhow::anyhow!("Failed to send email: {e}")
+            })?;
         Ok(())
     }
 }
