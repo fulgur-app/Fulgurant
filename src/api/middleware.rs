@@ -4,7 +4,7 @@ use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use serde::Serialize;
 
@@ -29,7 +29,7 @@ pub struct AuthenticatedUser {
 }
 
 #[derive(Debug, Serialize)]
-struct ErrorResponse {
+pub struct ErrorResponse {
     error: String,
 }
 
@@ -79,13 +79,13 @@ fn redact_headers_for_log(headers: &HeaderMap) -> Vec<(String, String)> {
 ///
 /// ### Returns
 /// - `Ok(Response)`: The response if authentication succeeds
-/// - `Err(Response)`: Error response if authentication fails
+/// - `Err((StatusCode, Json<ErrorResponse>))`: Error response if authentication fails
 pub async fn require_api_auth(
     State(state): State<AppState>,
     headers: HeaderMap,
     mut request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
     let auth_header = headers
         .get("Authorization")
         .and_then(|v| v.to_str().ok())
@@ -96,7 +96,6 @@ pub async fn require_api_auth(
                     error: "Missing Authorization header".to_string(),
                 }),
             )
-                .into_response()
         })?;
     let token = auth_header
         .strip_prefix("Bearer ")
@@ -108,7 +107,6 @@ pub async fn require_api_auth(
                         .to_string(),
                 }),
             )
-                .into_response()
         })?
         .trim();
     let claims = match crate::access_token::validate_access_token(token, &state.jwt_secret) {
@@ -122,8 +120,7 @@ pub async fn require_api_auth(
                     Json(ErrorResponse {
                         error: "Access token has expired".to_string(),
                     }),
-                )
-                    .into_response());
+                ));
             }
             let safe_headers = redact_headers_for_log(&headers);
             tracing::warn!("Request headers (redacted): {:?}", safe_headers);
@@ -133,8 +130,7 @@ pub async fn require_api_auth(
                 Json(ErrorResponse {
                     error: "Invalid access token".to_string(),
                 }),
-            )
-                .into_response());
+            ));
         }
     };
     let user_id: i32 = claims.sub.parse().map_err(|e| {
@@ -145,7 +141,6 @@ pub async fn require_api_auth(
                 error: "Invalid token claims".to_string(),
             }),
         )
-            .into_response()
     })?;
     let user = match state.user_repository.get_by_id(user_id).await {
         Ok(Some(user)) => user,
@@ -156,8 +151,7 @@ pub async fn require_api_auth(
                 Json(ErrorResponse {
                     error: "User not found".to_string(),
                 }),
-            )
-                .into_response());
+            ));
         }
         Err(e) => {
             tracing::error!("Database error getting user by ID: {:?}", e);
@@ -166,8 +160,7 @@ pub async fn require_api_auth(
                 Json(ErrorResponse {
                     error: "Internal server error".to_string(),
                 }),
-            )
-                .into_response());
+            ));
         }
     };
     if !user.email_verified {
@@ -177,8 +170,7 @@ pub async fn require_api_auth(
             Json(ErrorResponse {
                 error: "Email not verified".to_string(),
             }),
-        )
-            .into_response());
+        ));
     }
     let device = match state
         .device_repository
@@ -197,8 +189,7 @@ pub async fn require_api_auth(
                 Json(ErrorResponse {
                     error: "Device not found".to_string(),
                 }),
-            )
-                .into_response());
+            ));
         }
         Err(e) => {
             tracing::error!("Database error getting device by device_id: {:?}", e);
@@ -207,8 +198,7 @@ pub async fn require_api_auth(
                 Json(ErrorResponse {
                     error: "Internal server error".to_string(),
                 }),
-            )
-                .into_response());
+            ));
         }
     };
     if device.user_id != user.id {
@@ -223,8 +213,7 @@ pub async fn require_api_auth(
             Json(ErrorResponse {
                 error: "Invalid token claims".to_string(),
             }),
-        )
-            .into_response());
+        ));
     }
     if device.is_expired() {
         tracing::warn!(
@@ -237,8 +226,7 @@ pub async fn require_api_auth(
             Json(ErrorResponse {
                 error: "Device has expired".to_string(),
             }),
-        )
-            .into_response());
+        ));
     }
     tracing::debug!(
         "Authenticated API request for user {} with device {}: {}",

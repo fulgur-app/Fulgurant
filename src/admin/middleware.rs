@@ -1,9 +1,8 @@
 // src/admin/middleware.rs
 use axum::{
     extract::{Request, State},
-    http::StatusCode,
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use tower_sessions::Session;
 
@@ -24,24 +23,21 @@ use crate::{errors::AppError, handlers::AppState, session};
 ///
 /// ### Returns
 /// - `Ok(Response)`: The response if the user is an admin
-/// - `Err(Response)`: Forbidden error if the user is not an admin or not authenticated
+/// - `Err(AppError)`: Error if the user is not an admin or not authenticated
 pub async fn require_admin(
     State(state): State<AppState>,
     session: Session,
     request: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Result<Response, AppError> {
     let user_id = session::get_session_user_id(&session).await.map_err(|e| {
         tracing::warn!("Unauthenticated user attempted to access admin route");
-        if let AppError::Unauthorized = e {
-            (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
-        } else {
-            tracing::error!("Failed to get user_id from session: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            )
-                .into_response()
+        match e {
+            AppError::Unauthorized => AppError::Unauthorized,
+            other => {
+                tracing::error!("Failed to get user_id from session: {}", other);
+                AppError::InternalError(anyhow::anyhow!("Internal server error"))
+            }
         }
     })?;
     let user = state
@@ -50,15 +46,11 @@ pub async fn require_admin(
         .await
         .map_err(|e| {
             tracing::error!("Failed to get user by id: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error".to_string(),
-            )
-                .into_response()
+            AppError::InternalError(anyhow::anyhow!("Internal server error"))
         })?;
     let Some(user) = user else {
         tracing::warn!("User {} not found in database", user_id);
-        return Err((StatusCode::UNAUTHORIZED, "Unauthorized").into_response());
+        return Err(AppError::Unauthorized);
     };
     if user.role != "Admin" {
         tracing::warn!(
@@ -69,7 +61,7 @@ pub async fn require_admin(
         let error = AppError::InternalError(anyhow::anyhow!(
             "You do not have permission to access this resource. Admin privileges required."
         ));
-        return Err(error.into_response());
+        return Err(error);
     }
     Ok(next.run(request).await)
 }
