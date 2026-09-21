@@ -1,4 +1,3 @@
-use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::{Engine as _, engine::general_purpose};
 use rand::RngExt;
@@ -26,13 +25,7 @@ pub fn generate_api_key() -> String {
 /// - `Ok(String)`: The hashed API key
 /// - `Err(anyhow::Error)`: The error if the API key cannot be hashed
 pub fn hash_api_key(api_key: &str) -> anyhow::Result<String> {
-    let mut rng = rand::rng();
-    let mut salt_bytes = [0u8; 16];
-    rng.fill(&mut salt_bytes);
-
-    let salt = SaltString::encode_b64(&salt_bytes)
-        .map_err(|e| anyhow::anyhow!("Failed to encode salt: {e}"))?;
-    let hash = match Argon2::default().hash_password(api_key.as_bytes(), &salt) {
+    let hash = match Argon2::default().hash_password(api_key.as_bytes()) {
         Ok(hash) => hash,
         Err(e) => return Err(anyhow::anyhow!("Failed to hash API key: {e}")),
     };
