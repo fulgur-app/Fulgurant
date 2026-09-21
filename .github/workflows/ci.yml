@@ -49,10 +49,13 @@ jobs:
             pkg-config \
             libssl-dev
 
+      # The main-scoped cache holds the llvm-cov instrumented build, the clippy
+      # check artefacts and the plain test artefacts warmed below.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ubuntu-latest-cargo
+          shared-key: ubuntu-latest-test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # -- Coverage setup (main/PRs only) --
 
@@ -74,6 +77,12 @@ jobs:
       - name: Run tests
         if: steps.coverage.outcome == 'skipped'
         run: cargo test --all-features
+
+      # Warm the plain test artefacts for dev-* pushes (see the cache strategy
+      # header). Incremental no-op once the deps are already in the cache.
+      - name: Warm test cache for dev-* pushes
+        if: github.ref == 'refs/heads/main'
+        run: cargo test --all-features --no-run
 
       # -- Coverage upload --
 
@@ -167,10 +176,12 @@ jobs:
       - name: Install Linux dependencies
         run: *linux_deps
 
+      # Dedicated cache for MSRV (different Rust version)
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ubuntu-msrv-cargo
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check with minimum Rust version
         run: cargo check --all-features --quiet
@@ -193,7 +204,8 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ubuntu-latest-cargo
+          shared-key: ubuntu-docs
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build documentation
         run: cargo doc --no-deps --all-features
@@ -274,8 +286,12 @@ jobs:
       - name: Install Linux dependencies
         run: *linux_deps
 
+      # Dedicated cache for udeps (nightly toolchain)
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-udeps-cargo
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-udeps
         uses: taiki-e/install-action@cargo-udeps
