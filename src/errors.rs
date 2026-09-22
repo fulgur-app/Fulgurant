@@ -1,8 +1,10 @@
 use askama::Template;
 use axum::{
+    Json,
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
+use fulgur_common::api::sync::ErrorResponse;
 
 use crate::templates::ErrorMessageTemplate;
 
@@ -46,13 +48,16 @@ impl std::fmt::Display for AppError {
     }
 }
 
-impl IntoResponse for AppError {
-    /// Convert an `AppError` to a Response
+impl AppError {
+    /// Resolve the HTTP status and user-facing message of an `AppError`
+    ///
+    /// Internal errors are logged here and replaced by a generic message so
+    /// that no implementation detail leaks to the client.
     ///
     /// ### Returns
-    /// - `Response`: The converted Response
-    fn into_response(self) -> Response {
-        let (status, message) = match self {
+    /// - `(StatusCode, String)`: The status code and the message to show
+    pub fn status_and_message(self) -> (StatusCode, String) {
+        match self {
             AppError::NotFound => (StatusCode::NOT_FOUND, "Entity not found".to_string()),
             AppError::DatabaseError(e) => {
                 tracing::error!("Database error: {:?}", e);
@@ -93,8 +98,17 @@ impl IntoResponse for AppError {
                 "Too many concurrent connections".to_string(),
             ),
             AppError::ValidationError(msg) => (StatusCode::BAD_REQUEST, msg),
-        };
+        }
+    }
+}
 
+impl IntoResponse for AppError {
+    /// Convert an `AppError` to a Response
+    ///
+    /// ### Returns
+    /// - `Response`: The converted Response
+    fn into_response(self) -> Response {
+        let (status, message) = self.status_and_message();
         let template = ErrorMessageTemplate {
             message: message.clone(),
         };
@@ -102,6 +116,36 @@ impl IntoResponse for AppError {
             Ok(html) => (status, Html(html)).into_response(),
             Err(_) => (status, message).into_response(),
         }
+    }
+}
+
+/// `AppError` rendered as a JSON body (`{"error": "..."}`) instead of an HTML partial
+///
+/// Used by session-authenticated endpoints driven by `fetch` rather than HTMX.
+#[derive(Debug)]
+pub struct JsonAppError(pub AppError);
+
+impl<E: Into<AppError>> From<E> for JsonAppError {
+    /// Wrap anything convertible to an `AppError`
+    ///
+    /// ### Arguments
+    /// - `err`: The error to wrap
+    ///
+    /// ### Returns
+    /// - `JsonAppError`: The wrapped error
+    fn from(err: E) -> Self {
+        JsonAppError(err.into())
+    }
+}
+
+impl IntoResponse for JsonAppError {
+    /// Convert a `JsonAppError` to a JSON Response
+    ///
+    /// ### Returns
+    /// - `Response`: The response with a JSON error body
+    fn into_response(self) -> Response {
+        let (status, message) = self.0.status_and_message();
+        (status, Json(ErrorResponse { error: message })).into_response()
     }
 }
 

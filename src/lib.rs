@@ -350,8 +350,18 @@ fn make_web_routes(
 /// ### Returns
 /// - `Router`: The router that handles the protected routes
 fn make_protected_routes(app_state: &handlers::AppState) -> Router {
+    let max_content_bytes = app_state
+        .max_file_size_bytes
+        .try_read()
+        .ok()
+        .and_then(|guard| *guard);
+    let web_share_route = Router::new()
+        .route("/share", post(handlers::create_web_share))
+        .layer(share_body_limit(max_content_bytes));
     Router::new()
         .route("/", get(handlers::index))
+        .route("/share/new", get(handlers::get_new_share))
+        .merge(web_share_route)
         .route(
             "/force-password-update",
             get(auth::handlers::get_force_password_update_page),

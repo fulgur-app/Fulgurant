@@ -9,6 +9,11 @@ pub const MAX_DEVICES_PER_USER: i32 = 99;
 pub const MAX_DEVICE_NAME_LEN: usize = 50;
 pub const MAX_DEVICE_TYPE_LEN: usize = 20;
 
+/// Reserved `device_type` for web share.
+pub const WEB_DEVICE_TYPE: &str = "web";
+/// Display name of the synthetic web device
+pub const WEB_DEVICE_NAME: &str = "Web";
+
 /// Allowed API key lifetimes in days, matching the values offered by the UI
 pub const VALID_API_KEY_LIFETIMES: [i64; 5] = [30, 90, 180, 365, 36500];
 
@@ -21,6 +26,28 @@ pub const VALID_API_KEY_LIFETIMES: [i64; 5] = [30, 90, 180, 365, 36500];
 /// - `bool`: `true` if the lifetime is allowed, `false` otherwise
 pub fn is_valid_api_key_lifetime(lifetime: i64) -> bool {
     VALID_API_KEY_LIFETIMES.contains(&lifetime)
+}
+
+/// Checks whether a user-supplied device type collides with a reserved value
+///
+/// ### Arguments
+/// - `device_type`: The device type to validate (compared case-insensitively)
+///
+/// ### Returns
+/// - `bool`: `true` if the type is reserved for internal use, `false` otherwise
+pub fn is_reserved_device_type(device_type: &str) -> bool {
+    device_type.eq_ignore_ascii_case(WEB_DEVICE_TYPE)
+}
+
+/// Checks whether a user-supplied device name collides with the synthetic web device name
+///
+/// ### Arguments
+/// - `name`: The device name to validate (compared case-insensitively)
+///
+/// ### Returns
+/// - `bool`: `true` if the name is reserved for internal use, `false` otherwise
+pub fn is_reserved_device_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case(WEB_DEVICE_NAME)
 }
 
 /// Get the maximum number of devices per user from the environment variable, defaults to 99
@@ -156,16 +183,78 @@ impl DeviceRepository {
     /// ### Arguments
     /// - `user_id`: The ID of the user
     ///
+    /// The synthetic web device (see [`WEB_DEVICE_TYPE`]) is never returned.
+    ///
     /// ### Returns
     /// - `Ok(Vec<Device>)`: The devices for the user, newest first
     /// - `Err(sqlx::Error)`: The error if the operation fails
     pub async fn get_all_for_user(&self, user_id: i32) -> Result<Vec<Device>, sqlx::Error> {
         db_fetch_all!(
             self.pool,
-            "SELECT * FROM devices WHERE user_id = ? ORDER BY created_at DESC, id DESC",
+            "SELECT * FROM devices WHERE user_id = ? AND device_type <> ? ORDER BY created_at DESC, id DESC",
             Device,
-            user_id
+            user_id,
+            WEB_DEVICE_TYPE
         )
+    }
+
+    /// Get the synthetic web device of a user, if it has been created
+    ///
+    /// ### Arguments
+    /// - `user_id`: The ID of the user
+    ///
+    /// ### Returns
+    /// - `Ok(Some(Device))`: The web device
+    /// - `Ok(None)`: The user has not shared anything from the web yet
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn get_web_device(&self, user_id: i32) -> Result<Option<Device>, sqlx::Error> {
+        db_fetch_optional!(
+            self.pool,
+            "SELECT * FROM devices WHERE user_id = ? AND device_type = ? ORDER BY id ASC LIMIT 1",
+            Device,
+            user_id,
+            WEB_DEVICE_TYPE
+        )
+    }
+
+    /// Get the synthetic web device of a user, creating it on first use
+    ///
+    /// ### Arguments
+    /// - `user_id`: The ID of the user
+    /// - `device_key_hash`: Argon2 hash of a discarded, randomly generated API key
+    ///
+    /// ### Returns
+    /// - `Ok(Device)`: The existing or newly created web device
+    /// - `Err(sqlx::Error)`: The error if the operation fails
+    pub async fn get_or_create_web_device(
+        &self,
+        user_id: i32,
+        device_key_hash: String,
+    ) -> Result<Device, sqlx::Error> {
+        if let Some(device) = self.get_web_device(user_id).await? {
+            return Ok(device);
+        }
+        let now = OffsetDateTime::now_utc();
+        let device_id = Uuid::new_v4().to_string();
+        let fast_hash = crate::api_key::hash_api_key_fast(&device_key_hash);
+        db_execute_dual!(
+            self.pool,
+            sqlite: "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, public_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            postgres: "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, public_key, expires_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, to_timestamp($8), to_timestamp($9))",
+            user_id,
+            device_id,
+            device_key_hash,
+            fast_hash,
+            WEB_DEVICE_NAME,
+            WEB_DEVICE_TYPE,
+            None::<String>,
+            now.unix_timestamp(),
+            now.unix_timestamp()
+        )?;
+        tracing::info!("Created web device for user {}", user_id);
+        self.get_web_device(user_id)
+            .await?
+            .ok_or(sqlx::Error::RowNotFound)
     }
 
     /// Create a new device, enforcing the per-user device limit atomically
@@ -206,11 +295,13 @@ impl DeviceRepository {
         let id = match &self.pool {
             DbPool::Sqlite(pool) => {
                 let mut tx = pool.begin().await?;
-                let count: (i64,) =
-                    sqlx::query_as("SELECT COUNT(*) FROM devices WHERE user_id = ?")
-                        .bind(user_id)
-                        .fetch_one(&mut *tx)
-                        .await?;
+                let count: (i64,) = sqlx::query_as(
+                    "SELECT COUNT(*) FROM devices WHERE user_id = ? AND device_type <> ?",
+                )
+                .bind(user_id)
+                .bind(WEB_DEVICE_TYPE)
+                .fetch_one(&mut *tx)
+                .await?;
                 if count.0 as i32 >= max_devices {
                     tx.rollback().await?;
                     return Err(CreateDeviceError::LimitReached(max_devices));
@@ -239,11 +330,13 @@ impl DeviceRepository {
                     .bind(i64::from(user_id))
                     .execute(&mut *tx)
                     .await?;
-                let count: (i64,) =
-                    sqlx::query_as("SELECT COUNT(*) FROM devices WHERE user_id = $1")
-                        .bind(user_id)
-                        .fetch_one(&mut *tx)
-                        .await?;
+                let count: (i64,) = sqlx::query_as(
+                    "SELECT COUNT(*) FROM devices WHERE user_id = $1 AND device_type <> $2",
+                )
+                .bind(user_id)
+                .bind(WEB_DEVICE_TYPE)
+                .fetch_one(&mut *tx)
+                .await?;
                 if count.0 as i32 >= max_devices {
                     tx.rollback().await?;
                     return Err(CreateDeviceError::LimitReached(max_devices));
@@ -433,7 +526,7 @@ impl DeviceRepository {
         Ok(())
     }
 
-    /// Count the number of devices for a user
+    /// Count the number of devices for a user, excluding the synthetic web device
     ///
     /// ### Arguments
     /// - `user_id`: The ID of the user
@@ -444,9 +537,10 @@ impl DeviceRepository {
     pub async fn count_devices_for_user(&self, user_id: i32) -> Result<i32, sqlx::Error> {
         let count: (i64,) = db_fetch_one!(
             self.pool,
-            "SELECT COUNT(*) FROM devices WHERE user_id = ?",
+            "SELECT COUNT(*) FROM devices WHERE user_id = ? AND device_type <> ?",
             (i64,),
-            user_id
+            user_id,
+            WEB_DEVICE_TYPE
         )?;
         Ok(count.0 as i32)
     }
@@ -458,6 +552,26 @@ mod tests {
     use crate::db::DbPool;
     use crate::users::UserRepository;
     use sqlx::sqlite::SqlitePoolOptions;
+
+    #[test]
+    fn test_is_reserved_device_name() {
+        assert!(is_reserved_device_name("web"));
+        assert!(is_reserved_device_name("Web"));
+        assert!(is_reserved_device_name("WEB"));
+        assert!(!is_reserved_device_name("Webserver"));
+        assert!(!is_reserved_device_name("My Laptop"));
+        assert!(!is_reserved_device_name(""));
+    }
+
+    #[test]
+    fn test_is_reserved_device_type() {
+        assert!(is_reserved_device_type("web"));
+        assert!(is_reserved_device_type("Web"));
+        assert!(is_reserved_device_type("WEB"));
+        assert!(!is_reserved_device_type("Laptop"));
+        assert!(!is_reserved_device_type("website"));
+        assert!(!is_reserved_device_type(""));
+    }
 
     #[test]
     fn test_is_valid_api_key_lifetime() {

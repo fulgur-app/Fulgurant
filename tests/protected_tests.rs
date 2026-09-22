@@ -7,8 +7,10 @@ use common::{
     auth_helpers::{create_verified_user, extract_csrf_token, login},
     test_app::{TestApp, TestAppOptions},
 };
+use fulgur_common::api::{shares::ShareFileResponse, sync::ErrorResponse};
 use fulgurant::{
-    devices::DeviceRepository,
+    db::DbPool,
+    devices::{DeviceRepository, WEB_DEVICE_NAME, WEB_DEVICE_TYPE},
     shares::{CreateShare, SHARE_VALIDITY_DAYS, ShareRepository},
 };
 use serde::Serialize;
@@ -24,6 +26,13 @@ struct CreateDeviceFormData<'a> {
 struct UpdateDeviceFormData<'a> {
     name: &'a str,
     device_type: &'a str,
+}
+
+#[derive(Serialize)]
+struct WebShareRequestData<'a> {
+    destination_device_id: &'a str,
+    file_name: &'a str,
+    content: &'a str,
 }
 
 #[derive(Serialize)]
@@ -563,4 +572,389 @@ async fn test_update_name_too_long() {
 
     response.assert_status(StatusCode::BAD_REQUEST);
     assert!(response.text().contains("cannot exceed"));
+}
+
+// ─────────────────────────────────────────────
+// GET /share/new
+// ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_new_share_page_requires_auth() {
+    let app = TestApp::new().await;
+
+    let response = app.server.get("/share/new").expect_failure().await;
+
+    response.assert_status(StatusCode::SEE_OTHER);
+}
+
+#[tokio::test]
+async fn test_new_share_page_lists_devices_and_limit() {
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+    let (synced_id, _) = create_device_for_user(&app.pool, user_id, "Synced laptop").await;
+    create_device_for_user(&app.pool, user_id, "Fresh tower").await;
+    let device_repo = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()));
+    device_repo
+        .update_public_key(&synced_id, "age1testpublickey".to_string())
+        .await
+        .unwrap();
+
+    let response = app.server.get("/share/new").await;
+
+    response.assert_status_ok();
+    let html = response.text();
+    assert!(html.contains("Send a file to your devices"));
+    assert!(html.contains("data-max-bytes=\"1048576\""));
+    assert!(html.contains("up to 1 MB"));
+    assert!(html.contains("Synced laptop"));
+    assert!(html.contains("data-public-key=\"age1testpublickey\""));
+    assert!(html.contains("Fresh tower"));
+    assert!(html.contains("Sync from Fulgur first"));
+}
+
+#[tokio::test]
+async fn test_dashboard_has_new_share_button() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+
+    let response = app.server.get("/").await;
+
+    response.assert_status_ok();
+    assert!(response.text().contains("href=\"/share/new\""));
+}
+
+// ─────────────────────────────────────────────
+// POST /share
+// ─────────────────────────────────────────────
+
+/// Create a user with a synced device and log in, returning the ids and CSRF header
+async fn setup_web_share_user(app: &TestApp) -> (i32, String, (HeaderName, HeaderValue)) {
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+    let (device_id, _) = create_device_for_user(&app.pool, user_id, "Laptop").await;
+    DeviceRepository::new(DbPool::Sqlite(app.pool.clone()))
+        .update_public_key(&device_id, "age1testpublickey".to_string())
+        .await
+        .unwrap();
+    let page = app.server.get("/share/new").await;
+    let csrf = csrf_header(&extract_csrf_token(&page.text()));
+    (user_id, device_id, csrf)
+}
+
+#[tokio::test]
+async fn test_create_web_share_success() {
+    let app = TestApp::new().await;
+    let (user_id, device_id, (name, value)) = setup_web_share_user(&app).await;
+
+    let response = app
+        .server
+        .post("/share")
+        .add_header(name.clone(), value.clone())
+        .json(&WebShareRequestData {
+            destination_device_id: &device_id,
+            file_name: "notes.md",
+            content: "ciphertext-base64",
+        })
+        .await;
+
+    response.assert_status_ok();
+    let body: ShareFileResponse = response.json();
+    assert!(body.message.contains("successfully"));
+    assert!(!body.expiration_date.is_empty());
+
+    let device_repo = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()));
+    let web_device = device_repo.get_web_device(user_id).await.unwrap().unwrap();
+    assert_eq!(web_device.device_type, WEB_DEVICE_TYPE);
+    assert_eq!(web_device.name, WEB_DEVICE_NAME);
+    assert!(web_device.is_expired());
+    assert!(web_device.public_key.is_none());
+
+    let shares = ShareRepository::new(app.db_pool.clone())
+        .get_available_for_user(user_id)
+        .await
+        .unwrap();
+    assert_eq!(shares.len(), 1);
+    assert_eq!(shares[0].source_device_id, web_device.device_id);
+    assert_eq!(shares[0].destination_device_id, device_id);
+    assert_eq!(shares[0].file_name, "notes.md");
+    assert_eq!(shares[0].content, "ciphertext-base64");
+
+    // A second share reuses the same web device instead of creating another one
+    app.server
+        .post("/share")
+        .add_header(name, value)
+        .json(&WebShareRequestData {
+            destination_device_id: &device_id,
+            file_name: "second.txt",
+            content: "more-ciphertext",
+        })
+        .await
+        .assert_status_ok();
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM devices WHERE user_id = ? AND device_type = ?")
+            .bind(user_id)
+            .bind(WEB_DEVICE_TYPE)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(count.0, 1);
+}
+
+#[tokio::test]
+async fn test_web_device_hidden_from_dashboard_but_named_in_shares() {
+    let app = TestApp::new().await;
+    let (user_id, device_id, (name, value)) = setup_web_share_user(&app).await;
+    app.server
+        .post("/share")
+        .add_header(name, value)
+        .json(&WebShareRequestData {
+            destination_device_id: &device_id,
+            file_name: "notes.md",
+            content: "ciphertext-base64",
+        })
+        .await
+        .assert_status_ok();
+
+    let html = app.server.get("/").await.text();
+
+    let device_repo = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()));
+    let web_device = device_repo.get_web_device(user_id).await.unwrap().unwrap();
+    assert!(!html.contains(&format!("id=\"device-{}\"", web_device.id)));
+    assert_eq!(
+        device_repo.get_all_for_user(user_id).await.unwrap().len(),
+        1
+    );
+    assert_eq!(
+        device_repo.count_devices_for_user(user_id).await.unwrap(),
+        1
+    );
+    // The share row shows the web device as its source instead of "Unknown"
+    assert!(html.contains("<td>Web</td>"));
+    assert!(!html.contains("<td>Unknown</td>"));
+}
+
+#[tokio::test]
+async fn test_create_web_share_rejects_unsynced_device() {
+    let app = TestApp::new().await;
+    let (user_id, _, (name, value)) = setup_web_share_user(&app).await;
+    let (unsynced_id, _) = create_device_for_user(&app.pool, user_id, "Fresh tower").await;
+
+    let response = app
+        .server
+        .post("/share")
+        .add_header(name, value)
+        .json(&WebShareRequestData {
+            destination_device_id: &unsynced_id,
+            file_name: "notes.md",
+            content: "ciphertext-base64",
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("never synced"));
+}
+
+#[tokio::test]
+async fn test_create_web_share_rejects_other_users_device() {
+    let app = TestApp::new().await;
+    let (_, _, (name, value)) = setup_web_share_user(&app).await;
+    let victim_id = create_verified_user(&app.pool, "victim@test.com", "Password123!").await;
+    let (victim_device, _) = create_device_for_user(&app.pool, victim_id, "Victim").await;
+    DeviceRepository::new(DbPool::Sqlite(app.pool.clone()))
+        .update_public_key(&victim_device, "age1victimkey".to_string())
+        .await
+        .unwrap();
+
+    let response = app
+        .server
+        .post("/share")
+        .add_header(name, value)
+        .json(&WebShareRequestData {
+            destination_device_id: &victim_device,
+            file_name: "notes.md",
+            content: "ciphertext-base64",
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_create_web_share_rejects_oversized_content() {
+    let app = TestApp::new().await;
+    let (_, device_id, (name, value)) = setup_web_share_user(&app).await;
+    let content = "A".repeat(1_048_577);
+
+    let response = app
+        .server
+        .post("/share")
+        .add_header(name, value)
+        .json(&WebShareRequestData {
+            destination_device_id: &device_id,
+            file_name: "big.txt",
+            content: &content,
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("exceeds the server limit"));
+}
+
+#[tokio::test]
+async fn test_create_web_share_rejects_invalid_file_name() {
+    let app = TestApp::new().await;
+    let (_, device_id, (name, value)) = setup_web_share_user(&app).await;
+
+    let response = app
+        .server
+        .post("/share")
+        .add_header(name, value)
+        .json(&WebShareRequestData {
+            destination_device_id: &device_id,
+            file_name: "../etc/passwd",
+            content: "ciphertext-base64",
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("File name"));
+}
+
+#[tokio::test]
+async fn test_create_web_share_requires_csrf() {
+    let app = TestApp::new().await;
+    let (_, device_id, _) = setup_web_share_user(&app).await;
+
+    let response = app
+        .server
+        .post("/share")
+        .json(&WebShareRequestData {
+            destination_device_id: &device_id,
+            file_name: "notes.md",
+            content: "ciphertext-base64",
+        })
+        .expect_failure()
+        .await;
+
+    assert!(response.status_code().is_client_error());
+}
+
+// ─────────────────────────────────────────────
+// Reserved device type
+// ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_create_device_rejects_reserved_type() {
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+    let page = app.server.get("/").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post(&format!("/device/{user_id}/create"))
+        .add_header(name, value)
+        .form(&CreateDeviceFormData {
+            name: "Sneaky",
+            device_type: "Web",
+            api_key_lifetime: 30,
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+    assert!(response.text().contains("reserved"));
+}
+
+#[tokio::test]
+async fn test_create_device_rejects_reserved_name() {
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+    let page = app.server.get("/").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post(&format!("/device/{user_id}/create"))
+        .add_header(name, value)
+        .form(&CreateDeviceFormData {
+            name: "web",
+            device_type: "Laptop",
+            api_key_lifetime: 30,
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+    assert!(response.text().contains("name is reserved"));
+}
+
+#[tokio::test]
+async fn test_update_device_rejects_reserved_name() {
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+    create_device_for_user(&app.pool, user_id, "Laptop").await;
+    let device = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()))
+        .get_all_for_user(user_id)
+        .await
+        .unwrap()
+        .remove(0);
+    let page = app.server.get("/").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .put(&format!("/device/{}", device.id))
+        .add_header(name, value)
+        .form(&UpdateDeviceFormData {
+            name: "WEB",
+            device_type: "Laptop",
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::BAD_REQUEST);
+    assert!(response.text().contains("name is reserved"));
+}
+
+#[tokio::test]
+async fn test_web_device_cannot_be_managed() {
+    let app = TestApp::new().await;
+    let (user_id, device_id, (name, value)) = setup_web_share_user(&app).await;
+    app.server
+        .post("/share")
+        .add_header(name.clone(), value.clone())
+        .json(&WebShareRequestData {
+            destination_device_id: &device_id,
+            file_name: "notes.md",
+            content: "ciphertext-base64",
+        })
+        .await
+        .assert_status_ok();
+    let web_device = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()))
+        .get_web_device(user_id)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let response = app
+        .server
+        .delete(&format!("/device/{}", web_device.id))
+        .add_header(name, value)
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::NOT_FOUND);
 }

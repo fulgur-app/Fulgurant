@@ -1,30 +1,32 @@
 use askama::Template;
 use axum::{
-    Form,
+    Form, Json,
     extract::{Path, State},
     http::StatusCode,
     response::{Html, IntoResponse},
 };
+use fulgur_common::api::shares::ShareFileResponse;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, atomic::AtomicBool};
 use tokio::sync::RwLock;
 use tower_sessions::Session;
 
 use crate::{
-    api::sse::{SseChannelManager, SseConnectionLimiter},
+    api::sse::{ChannelTag, ShareNotification, SseChannelManager, SseConnectionLimiter},
     api_key::{self},
     devices::{
-        self, CreateDevice, DeviceRepository, MAX_DEVICE_NAME_LEN, MAX_DEVICE_TYPE_LEN,
+        self, CreateDevice, Device, DeviceRepository, MAX_DEVICE_NAME_LEN, MAX_DEVICE_TYPE_LEN,
         UpdateDevice,
     },
-    errors::AppError,
+    errors::{AppError, JsonAppError},
     mail,
     session::{self, SessionRepository},
     settings::SettingsRepository,
-    shares::{DisplayShare, ShareRepository},
+    shares::{CreateShare, DisplayShare, ShareRepository},
     templates::{self},
     users::{MAX_NAME_LEN, UserRepository},
-    utils::is_valid_email,
+    utils::{is_valid_email, is_valid_file_name},
     verification_code::{self, VerificationCodeRepository},
 };
 
@@ -113,8 +115,10 @@ pub async fn index(
             return Err(AppError::DatabaseError(e));
         }
     };
+    let web_device = state.device_repository.get_web_device(user_id).await?;
     let device_names = devices
         .iter()
+        .chain(web_device.iter())
         .map(|device| (device.device_id.clone(), device.name.clone()))
         .collect::<HashMap<String, String>>();
     let shares = raw_shares
@@ -133,6 +137,26 @@ pub async fn index(
         csrf_token,
     };
     Ok(Html(template.render()?))
+}
+
+/// Check that a device may be managed by the session user
+///
+/// ### Arguments
+/// - `device`: The device being accessed
+/// - `session_user_id`: The ID of the logged-in user
+///
+/// ### Returns
+/// - `Ok(())`: The user owns the device and it is a regular device
+/// - `Err(AppError::Forbidden)`: The device belongs to another user
+/// - `Err(AppError::NotFound)`: The device is the synthetic web device
+fn authorize_device_access(device: &Device, session_user_id: i32) -> Result<(), AppError> {
+    if device.user_id != session_user_id {
+        return Err(AppError::Forbidden);
+    }
+    if device.device_type == devices::WEB_DEVICE_TYPE {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
 }
 
 /// POST /`device/{user_id}/create` - Creates a new device
@@ -168,6 +192,11 @@ pub async fn create_device(
             "Device name cannot exceed {MAX_DEVICE_NAME_LEN} characters"
         )));
     }
+    if devices::is_reserved_device_name(&name) {
+        return Err(AppError::ValidationError(
+            "This device name is reserved".to_string(),
+        ));
+    }
     if device_type.is_empty() {
         return Err(AppError::ValidationError(
             "Device type cannot be empty".to_string(),
@@ -177,6 +206,11 @@ pub async fn create_device(
         return Err(AppError::ValidationError(format!(
             "Device type cannot exceed {MAX_DEVICE_TYPE_LEN} characters"
         )));
+    }
+    if devices::is_reserved_device_type(&device_type) {
+        return Err(AppError::ValidationError(
+            "This device type is reserved".to_string(),
+        ));
     }
     if !devices::is_valid_api_key_lifetime(request.api_key_lifetime) {
         return Err(AppError::ValidationError(
@@ -221,9 +255,7 @@ pub async fn get_device_edit_form(
 ) -> Result<Html<String>, AppError> {
     let session_user_id = session::get_session_user_id(&session).await?;
     let device = state.device_repository.get_by_id(id).await?;
-    if device.user_id != session_user_id {
-        return Err(AppError::Forbidden);
-    }
+    authorize_device_access(&device, session_user_id)?;
     let template = templates::InlineEditFormTemplate { device };
     Ok(Html(template.render()?))
 }
@@ -247,9 +279,7 @@ pub async fn update_device(
 ) -> Result<Html<String>, AppError> {
     let session_user_id = session::get_session_user_id(&session).await?;
     let existing_device = state.device_repository.get_by_id(id).await?;
-    if existing_device.user_id != session_user_id {
-        return Err(AppError::Forbidden);
-    }
+    authorize_device_access(&existing_device, session_user_id)?;
     let name = request.name.trim().to_string();
     let device_type = request.device_type.trim().to_string();
     if name.is_empty() {
@@ -262,6 +292,11 @@ pub async fn update_device(
             "Device name cannot exceed {MAX_DEVICE_NAME_LEN} characters"
         )));
     }
+    if devices::is_reserved_device_name(&name) {
+        return Err(AppError::ValidationError(
+            "This device name is reserved".to_string(),
+        ));
+    }
     if device_type.is_empty() {
         return Err(AppError::ValidationError(
             "Device type cannot be empty".to_string(),
@@ -271,6 +306,11 @@ pub async fn update_device(
         return Err(AppError::ValidationError(format!(
             "Device type cannot exceed {MAX_DEVICE_TYPE_LEN} characters"
         )));
+    }
+    if devices::is_reserved_device_type(&device_type) {
+        return Err(AppError::ValidationError(
+            "This device type is reserved".to_string(),
+        ));
     }
     request.name = name;
     request.device_type = device_type;
@@ -297,9 +337,7 @@ pub async fn delete_device(
 ) -> Result<axum::response::Response, AppError> {
     let session_user_id = session::get_session_user_id(&session).await?;
     let device = state.device_repository.get_by_id(id).await?;
-    if device.user_id != session_user_id {
-        return Err(AppError::Forbidden);
-    }
+    authorize_device_access(&device, session_user_id)?;
     let user_id = device.user_id;
 
     // Count how many devices this user has
@@ -344,9 +382,7 @@ pub async fn get_device_renew_form(
 ) -> Result<Html<String>, AppError> {
     let session_user_id = session::get_session_user_id(&session).await?;
     let device = state.device_repository.get_by_id(id).await?;
-    if device.user_id != session_user_id {
-        return Err(AppError::Forbidden);
-    }
+    authorize_device_access(&device, session_user_id)?;
     let template = templates::InlineRenewFormTemplate { device };
     Ok(Html(template.render()?))
 }
@@ -375,9 +411,7 @@ pub async fn renew_device(
         ));
     }
     let existing_device = state.device_repository.get_by_id(id).await?;
-    if existing_device.user_id != session_user_id {
-        return Err(AppError::Forbidden);
-    }
+    authorize_device_access(&existing_device, session_user_id)?;
     let device = state.device_repository.renew(id, request).await?;
     let template = templates::DeviceRowRenewResponseTemplate { device };
     Ok(Html(template.render()?))
@@ -400,9 +434,7 @@ pub async fn cancel_edit_device(
 ) -> Result<Html<String>, AppError> {
     let session_user_id = session::get_session_user_id(&session).await?;
     let device = state.device_repository.get_by_id(id).await?;
-    if device.user_id != session_user_id {
-        return Err(AppError::Forbidden);
-    }
+    authorize_device_access(&device, session_user_id)?;
     let template = templates::DeviceRowTemplate { device };
     Ok(Html(template.render()?))
 }
@@ -434,6 +466,161 @@ pub async fn delete_share(
             Err(AppError::DatabaseError(e))
         }
     }
+}
+
+/// Request body of `POST /share`, one destination per request
+///
+/// `content` is the age ciphertext produced in the browser for
+/// `destination_device_id`, base64-encoded, exactly as the Fulgur client
+/// sends it to `POST /api/share`.
+#[derive(Debug, Deserialize)]
+pub struct WebShareRequest {
+    pub destination_device_id: String,
+    pub file_name: String,
+    pub content: String,
+}
+
+/// GET /share/new - Returns the page to send a file from the browser to a device
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The new share page as formatted HTML
+/// - `Err(AppError)`: Error that occurred while rendering the template
+pub async fn get_new_share(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<Html<String>, AppError> {
+    let user_id = session::get_session_user_id(&session).await?;
+    let user = state.user_repository.get_by_id(user_id).await?;
+    let Some(user) = user else {
+        return Err(AppError::Unauthorized);
+    };
+    let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
+        .await
+        .map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to generate CSRF token: {e}"))
+        })?;
+    let devices = state.device_repository.get_all_for_user(user_id).await?;
+    let max_file_size_bytes = *state.max_file_size_bytes.read().await;
+    let template = templates::NewShareTemplate {
+        devices,
+        max_file_size_bytes,
+        max_file_size_display: max_file_size_bytes.map(crate::utils::format_bytes),
+        share_validity_days: state.share_validity_days,
+        user: templates::UserContext::from(&user),
+        csrf_token,
+    };
+    Ok(Html(template.render()?))
+}
+
+/// POST /share - Creates a share from the browser for a single destination device
+///
+/// The browser compresses and encrypts the file to the destination device's
+/// age public key before calling this endpoint, so the server only ever
+/// stores ciphertext. The synthetic per-user web device is used as the
+/// source of the share (created on first use).
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `session`: The session
+/// - `request`: The destination device, file name and encrypted content
+///
+/// ### Returns
+/// - `Ok(Json<ShareFileResponse>)`: Confirmation with the share expiration date
+/// - `Err(JsonAppError)`: Validation, authorization or database error as JSON
+pub async fn create_web_share(
+    State(state): State<AppState>,
+    session: Session,
+    Json(request): Json<WebShareRequest>,
+) -> Result<Json<ShareFileResponse>, JsonAppError> {
+    let user_id = session::get_session_user_id(&session).await?;
+    if request.content.is_empty() {
+        return Err(AppError::ValidationError("The file is empty".to_string()).into());
+    }
+    if let Some(max_size) = *state.max_file_size_bytes.read().await
+        && request.content.len() > max_size as usize
+    {
+        return Err(AppError::ValidationError(format!(
+            "Encrypted file ({}) exceeds the server limit of {}",
+            crate::utils::format_bytes(request.content.len() as u64),
+            crate::utils::format_bytes(max_size)
+        ))
+        .into());
+    }
+    if !is_valid_file_name(&request.file_name) {
+        return Err(AppError::ValidationError(
+            "File name is empty, too long, or contains invalid characters".to_string(),
+        )
+        .into());
+    }
+    let destination = match state
+        .device_repository
+        .get_by_device_id(&request.destination_device_id)
+        .await
+    {
+        Ok(device) => device,
+        Err(sqlx::Error::RowNotFound) => {
+            return Err(
+                AppError::ValidationError("Destination device does not exist".to_string()).into(),
+            );
+        }
+        Err(e) => return Err(AppError::DatabaseError(e).into()),
+    };
+    if destination.user_id != user_id || destination.device_type == devices::WEB_DEVICE_TYPE {
+        return Err(AppError::Forbidden.into());
+    }
+    if destination.public_key.is_none() {
+        return Err(AppError::ValidationError(format!(
+            "{} has never synced and cannot receive encrypted files yet",
+            destination.name
+        ))
+        .into());
+    }
+    let discarded_key_hash = api_key::hash_api_key(&api_key::generate_api_key())
+        .map_err(|e| AppError::ApiKeyError(anyhow::anyhow!("Failed to hash API key: {e}")))?;
+    let web_device = state
+        .device_repository
+        .get_or_create_web_device(user_id, discarded_key_hash)
+        .await?;
+    let share = state
+        .share_repository
+        .create(
+            user_id,
+            CreateShare {
+                source_device_id: web_device.device_id,
+                destination_device_id: destination.device_id.clone(),
+                file_name: request.file_name,
+                content: request.content,
+                deduplication_hash: None,
+            },
+            state.share_validity_days,
+        )
+        .await?;
+    tracing::info!(
+        "Created web share {} for user {} for device {}",
+        share.id,
+        user_id,
+        destination.device_id
+    );
+    let notification = ShareNotification {
+        share_id: share.id.clone(),
+    };
+    state
+        .sse_manager
+        .send_by_tag(&ChannelTag::DeviceId(destination.device_id), notification)
+        .await;
+    if let Err(e) = state.user_repository.increment_shares(user_id).await {
+        tracing::error!("Failed to increment shares count: {}", e);
+    }
+    let date_format =
+        time::format_description::parse_borrowed::<2>("[year]-[month]-[day]").unwrap();
+    Ok(Json(ShareFileResponse {
+        message: "Share created successfully".to_string(),
+        expiration_date: share.expires_at.format(&date_format).unwrap_or_default(),
+    }))
 }
 
 /// GET /settings - Returns the settings page

@@ -1,0 +1,119 @@
+{% extends "layout.html" %} {% block page_title %}New share{% endblock %} {% block head %}
+<script src="/assets/js/age.min.js"></script>
+<script src="/assets/js/new_share.js"></script>
+{% endblock %} {% block content %}
+<div class="max-w-3xl mx-auto">
+	<div class="mb-6 mx-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+		<div class="max-w-lg">
+			<h2 class="text-2xl font-bold">Send a file to your devices</h2>
+			<p class="text-base-content/60">
+				The file is encrypted in your browser with each device's key. Fulgurant only stores
+				ciphertext.
+			</p>
+		</div>
+		<a href="/" class="link link-hover text-sm text-base-content/60 whitespace-nowrap sm:pt-2"
+			>Back to dashboard</a
+		>
+	</div>
+
+	<div class="card bg-base-200 shadow-xl">
+		<div class="card-body">
+			<form
+				id="new-share-form"
+				novalidate
+				{% if let Some(max_file_size_bytes) = max_file_size_bytes %}
+				data-max-bytes="{{ max_file_size_bytes }}"
+				{% endif %}
+			>
+				<h3 class="card-title">File</h3>
+				<label
+					id="file-target"
+					for="file-input"
+					class="mt-2 block cursor-pointer rounded-box border-2 border-dashed border-base-300 px-6 py-8 text-center transition-colors hover:border-primary focus-within:border-primary"
+				>
+					<input type="file" id="file-input" name="file" class="sr-only" />
+					<div id="file-target-idle">
+						<p class="text-lg">
+							Drop a text file here, or <span class="link link-primary">browse</span>
+						</p>
+						<p class="mt-1 text-sm text-base-content/60">
+							Anything Fulgur can open: plain text or code{% if let Some(limit) =
+							max_file_size_display %}, up to {{ limit }}{% endif %}.
+						</p>
+					</div>
+					<div id="file-readout" class="text-left" hidden>
+						<div class="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-4">
+							<span id="file-readout-name" class="font-semibold break-all"></span>
+							<span id="file-readout-size" class="text-sm text-base-content/60"></span>
+						</div>
+						<ul id="file-readout-checks" class="mt-3 space-y-1 text-sm"></ul>
+						<p class="mt-3 text-sm text-base-content/60">Click to choose another file.</p>
+					</div>
+				</label>
+
+				<h3 class="card-title mt-8">Send to</h3>
+				{% if devices.is_empty() %}
+				<p class="mt-2 text-base-content/60">
+					You have no devices yet. Add one on the
+					<a href="/" class="link link-primary">dashboard</a>, then sync it from Fulgur
+					once so it can receive encrypted files.
+				</p>
+				{% else %}
+				<ul id="device-list" class="mt-2 divide-y divide-base-300">
+					{% for device in devices %}
+					<li>
+						<label class="flex items-center gap-4 py-3">
+							{% if let Some(public_key) = device.public_key %}
+							<input
+								type="checkbox"
+								name="device"
+								value="{{ device.device_id }}"
+								data-name="{{ device.name }}"
+								data-public-key="{{ public_key }}"
+								class="checkbox checkbox-primary"
+							/>
+							{% else %}
+							<input type="checkbox" class="checkbox" disabled />
+							{% endif %}
+							<span class="flex-1 min-w-0">
+								<span class="block truncate">{{ device.name }}</span>
+								<span class="block text-sm text-base-content/60"
+									>{{ device.device_type }}</span
+								>
+							</span>
+							{% if device.public_key.is_none() %}
+							<span class="text-sm text-warning whitespace-nowrap"
+								>Sync from Fulgur first</span
+							>
+							{% else %}
+							<span
+								class="device-status text-sm text-right"
+								data-status-for="{{ device.device_id }}"
+							></span>
+							{% endif %}
+						</label>
+					</li>
+					{% endfor %}
+				</ul>
+				{% endif %}
+
+				<div id="share-error" class="mt-6 text-sm text-error" hidden></div>
+				<div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<p class="text-sm text-base-content/60">
+						Unclaimed shares expire after {{ share_validity_days }} day{{
+						share_validity_days | pluralize }}.
+					</p>
+					<button
+						type="submit"
+						id="send-button"
+						class="btn btn-primary w-full sm:w-auto"
+						disabled
+					>
+						Send file
+					</button>
+				</div>
+			</form>
+		</div>
+	</div>
+</div>
+{% endblock %}
