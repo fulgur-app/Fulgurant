@@ -5,9 +5,16 @@ document.addEventListener('DOMContentLoaded', function () {
       var errorContainer = document.getElementById('device-error-message');
       if (event.detail.successful) {
         errorContainer.textContent = '';
+        errorContainer.classList.remove('alert', 'alert-error');
         form.reset();
       } else {
-        errorContainer.textContent = event.detail.xhr.responseText;
+        // The server answers with the error_message.html partial; keep only its text.
+        var errorDocument = new DOMParser().parseFromString(
+          event.detail.xhr.responseText,
+          'text/html'
+        );
+        errorContainer.textContent = errorDocument.body.textContent.trim();
+        errorContainer.classList.add('alert', 'alert-error');
       }
     });
   }

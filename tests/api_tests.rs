@@ -376,6 +376,27 @@ async fn test_get_devices_excludes_current() {
 }
 
 #[tokio::test]
+async fn test_get_devices_excludes_web_device() {
+    let app = TestApp::new().await;
+    let (user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
+    let web_device = device_repo
+        .get_or_create_web_device(user_id, "discarded-hash".to_string())
+        .await
+        .unwrap();
+    assert_eq!(web_device.device_type, fulgurant::devices::WEB_DEVICE_TYPE);
+
+    let response = app
+        .server
+        .get("/api/devices")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .await;
+
+    let body: DevicesResponse = response.json();
+    assert!(body.devices.is_empty());
+}
+
+#[tokio::test]
 async fn test_get_devices_empty_when_single_device() {
     let app = TestApp::new().await;
     let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;

@@ -2,11 +2,14 @@
 	"private": true,
 	"scripts": {
 		"tw:watch": "tailwindcss -i assets/css/input.css -o assets/css/output.css --watch",
-		"tw:build": "tailwindcss -i assets/css/input.css -o assets/css/output.css --minify"
+		"tw:build": "tailwindcss -i assets/css/input.css -o assets/css/output.css --minify",
+		"js:build": "esbuild assets/js/age_entry.js --bundle --minify --format=iife --global-name=age --target=es2020 --outfile=assets/js/age.min.js"
 	},
 	"devDependencies": {
-		"tailwindcss": "4.3.0",
 		"@tailwindcss/cli": "4.3.0",
-		"daisyui": "5.5.20"
+		"age-encryption": "0.3.1",
+		"daisyui": "5.5.20",
+		"esbuild": "0.25.11",
+		"tailwindcss": "4.3.0"
 	}
 }

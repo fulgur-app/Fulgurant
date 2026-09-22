@@ -71,6 +71,20 @@ pub struct IndexTemplate {
     pub csrf_token: String,
 }
 
+/// New share page template: send a file from the browser to a device
+#[derive(Template)]
+#[template(path = "new_share.html")]
+pub struct NewShareTemplate {
+    pub devices: Vec<Device>,
+    /// Server share size limit in bytes, `None` for no limit
+    pub max_file_size_bytes: Option<u64>,
+    /// Human-readable form of `max_file_size_bytes`
+    pub max_file_size_display: Option<String>,
+    pub share_validity_days: i64,
+    pub user: UserContext,
+    pub csrf_token: String,
+}
+
 /// Individual device row template (for HTMX updates)
 #[derive(Template)]
 #[template(path = "partials/devices/device_row.html")]

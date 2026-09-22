@@ -38,3 +38,4 @@ node_modules/
 
 # Generated files
 assets/css/output.css
+assets/js/age.min.js

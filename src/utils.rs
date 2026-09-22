@@ -178,9 +178,48 @@ pub fn format_date_utc(dt: &OffsetDateTime) -> String {
     }
 }
 
+/// Format a byte count for display, using binary units (KB = 1024 bytes)
+///
+/// ### Arguments
+/// - `bytes`: The number of bytes
+///
+/// ### Returns
+/// - Formatted string such as "512 bytes", "1 KB", "1.5 MB" or "2 GB"
+#[allow(clippy::cast_precision_loss)] // Display only: sub-byte precision at TB scale is irrelevant
+pub fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} bytes");
+    }
+    let mut value = bytes as f64;
+    let mut unit = "";
+    for candidate in UNITS {
+        value /= 1024.0;
+        unit = candidate;
+        if value < 1024.0 {
+            break;
+        }
+    }
+    if value.fract() == 0.0 {
+        format!("{value:.0} {unit}")
+    } else {
+        format!("{value:.1} {unit}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_format_bytes() {
+        assert_eq!(format_bytes(0), "0 bytes");
+        assert_eq!(format_bytes(1023), "1023 bytes");
+        assert_eq!(format_bytes(1024), "1 KB");
+        assert_eq!(format_bytes(1536), "1.5 KB");
+        assert_eq!(format_bytes(1024 * 1024), "1 MB");
+        assert_eq!(format_bytes(10 * 1024 * 1024 * 1024), "10 GB");
+    }
 
     #[test]
     fn test_is_valid_email_with_valid_emails() {

@@ -37,6 +37,9 @@ jobs:
       - name: Build CSS
         run: npm run tw:build
 
+      - name: Build JS bundle
+        run: npm run js:build
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:

@@ -1,11 +1,12 @@
-# CSS build stage
-FROM node:22-alpine AS css-builder
+# CSS and JS bundle build stage
+FROM node:22-alpine AS assets-builder
 WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY assets/css/input.css assets/css/input.css
+COPY assets/js/age_entry.js assets/js/new_share.js assets/js/
 COPY templates ./templates
-RUN npm run tw:build
+RUN npm run tw:build && npm run js:build
 
 # Rust build stage
 FROM rust:1.96-alpine AS builder
@@ -66,7 +67,8 @@ COPY --from=builder /build/templates /app/templates
 COPY --from=builder /build/data/migrations /app/data/migrations
 COPY --from=builder /build/data/migrations_postgres /app/data/migrations_postgres
 COPY assets /app/assets
-COPY --from=css-builder /build/assets/css/output.css /app/assets/css/output.css
+COPY --from=assets-builder /build/assets/css/output.css /app/assets/css/output.css
+COPY --from=assets-builder /build/assets/js/age.min.js /app/assets/js/age.min.js
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /app/

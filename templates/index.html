@@ -1,18 +1,21 @@
 {% extends "layout.html" %} {% block page_title %}Dashboard{% endblock %} {% block head %}
 <script src="/assets/js/dashboard.js"></script>
 {% endblock %} {% block content %}
-<div class="mb-6 mx-5">
-	<h2 class="text-2xl font-bold">Welcome, {{ user.first_name }}!</h2>
-	<p class="text-base-content/60">
-		You have created {{ user.shares }} share{{ user.shares | pluralize("s") }} so far.
-	</p>
+<div class="mb-6 mx-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+	<div>
+		<h2 class="text-2xl font-bold">Welcome, {{ user.first_name }}!</h2>
+		<p class="text-base-content/60">
+			You have created {{ user.shares }} share{{ user.shares | pluralize }} so far.
+		</p>
+	</div>
+	<a href="/share/new" class="btn btn-primary w-full sm:w-auto">New share</a>
 </div>
 
 <!-- Add Device Form -->
 <div class="card bg-base-200 shadow-xl mb-6">
 	<div class="card-body">
 		<h3 class="card-title">Add New Device</h3>
-		<div id="device-error-message"></div>
+		<div id="device-error-message" class="mb-4 empty:hidden"></div>
 		<form
 			id="add-device-form-element"
 			hx-post="/device/{{ user.user_id }}/create"
@@ -65,7 +68,7 @@
 			<h3 class="card-title">Devices inventory</h3>
 			{% if let Some(max_devices_per_user) = max_devices_per_user %}
 			<span class="text-sm text-base-content/60">
-				Up to {{ max_devices_per_user }} device{{ max_devices_per_user | pluralize("s") }}
+				Up to {{ max_devices_per_user }} device{{ max_devices_per_user | pluralize }}
 			</span>
 			{% endif %}
 		</div>
