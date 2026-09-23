@@ -809,6 +809,7 @@ async fn test_get_share_v2_returns_content_without_consuming() {
         response.assert_status_ok();
         let share: SharedFileResponse = response.json();
         assert_eq!(share.content, "secret payload");
+        assert_eq!(share.source_device_name.as_deref(), Some("Source"));
     }
 
     // The row is still available with its content intact.
@@ -1147,6 +1148,7 @@ async fn test_get_shares_returns_and_deletes() {
     assert_eq!(shares.len(), 1);
     assert_eq!(shares[0].file_name, "shared.txt");
     assert_eq!(shares[0].content, "shared content");
+    assert_eq!(shares[0].source_device_name.as_deref(), Some("Source"));
 
     // Fetch again - should be empty (shares are deleted after retrieval)
     let response = app
