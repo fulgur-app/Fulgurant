@@ -876,8 +876,8 @@ checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fulgur-common"
-version = "0.6.0"
-source = "git+https://github.com/fulgur-app/Fulgur-common.git?tag=v0.6.0#3f626a46c320d3059ab0bf40a9f17e2e5e109a7b"
+version = "0.7.0"
+source = "git+https://github.com/fulgur-app/Fulgur-common.git?tag=v0.7.0#7367ac4da428481a4102b64728a84768d4708c32"
 dependencies = [
  "serde",
 ]

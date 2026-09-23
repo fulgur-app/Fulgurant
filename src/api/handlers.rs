@@ -18,6 +18,7 @@ use fulgur_common::api::{
         InitialSynchronizationPayload, PingResponse,
     },
 };
+use std::collections::HashMap;
 use time::{Duration, OffsetDateTime};
 
 use super::middleware::AuthenticatedUser;
@@ -269,8 +270,79 @@ impl From<Share> for SharedFileResponse {
                 .expires_at
                 .format(&time::format_description::well_known::Rfc3339)
                 .unwrap_or_default(),
+            source_device_name: None,
         }
     }
+}
+
+/// Resolve the display name of the device that sent a share
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `source_device_id`: The public ID of the sending device
+///
+/// ### Returns
+/// - `Some(String)`: The sending device name
+/// - `None`: The device no longer exists or could not be read
+async fn resolve_source_device_name(state: &AppState, source_device_id: &str) -> Option<String> {
+    match state
+        .device_repository
+        .get_by_device_id(source_device_id)
+        .await
+    {
+        Ok(device) => Some(device.name),
+        Err(e) => {
+            tracing::warn!(
+                "Could not resolve the name of source device {}: {:?}",
+                source_device_id,
+                e
+            );
+            None
+        }
+    }
+}
+
+/// Convert a share to a `SharedFileResponse` that includes the sending device name
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `share`: The share to convert
+///
+/// ### Returns
+/// - `SharedFileResponse`: The response, with `source_device_name` set when the sender is known
+async fn shared_file_response(state: &AppState, share: Share) -> SharedFileResponse {
+    let source_device_name = resolve_source_device_name(state, &share.source_device_id).await;
+    SharedFileResponse {
+        source_device_name,
+        ..SharedFileResponse::from(share)
+    }
+}
+
+/// Convert shares to `SharedFileResponse`s, resolving each distinct sending device once
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `shares`: The shares to convert
+///
+/// ### Returns
+/// - `Vec<SharedFileResponse>`: The responses, in the same order as `shares`
+async fn shared_file_responses(state: &AppState, shares: Vec<Share>) -> Vec<SharedFileResponse> {
+    let mut names: HashMap<String, Option<String>> = HashMap::new();
+    let mut responses = Vec::with_capacity(shares.len());
+    for share in shares {
+        let source_device_name = if let Some(name) = names.get(&share.source_device_id) {
+            name.clone()
+        } else {
+            let name = resolve_source_device_name(state, &share.source_device_id).await;
+            names.insert(share.source_device_id.clone(), name.clone());
+            name
+        };
+        responses.push(SharedFileResponse {
+            source_device_name,
+            ..SharedFileResponse::from(share)
+        });
+    }
+    responses
 }
 
 /// GET /api/shares - Returns all pending shares for the authenticated device
@@ -298,8 +370,7 @@ pub async fn get_shares(
                 auth_user.device_id,
                 auth_user.user.id
             );
-            let share_infos: Vec<SharedFileResponse> =
-                shares.into_iter().map(SharedFileResponse::from).collect();
+            let share_infos = shared_file_responses(&state, shares).await;
             Ok(Json(share_infos))
         }
         Err(e) => {
@@ -342,7 +413,7 @@ pub async fn get_share(
                 auth_user.device_id,
                 auth_user.user.id
             );
-            Ok(Json(SharedFileResponse::from(share)))
+            Ok(Json(shared_file_response(&state, share).await))
         }
         Ok(None) => {
             tracing::warn!(
@@ -398,7 +469,7 @@ pub async fn get_share_v2(
                 auth_user.device_id,
                 auth_user.user.id
             );
-            Ok(Json(SharedFileResponse::from(share)))
+            Ok(Json(shared_file_response(&state, share).await))
         }
         Ok(None) => {
             tracing::warn!(
