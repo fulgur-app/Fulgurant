@@ -25,10 +25,15 @@
 	--noise: 0;
 }
 
+/* Replace daisyUI's offset focus ring with the primary border as the only focus indicator */
 .input:focus,
+.input:focus-within,
 .select:focus,
-.textarea:focus {
+.select:focus-within,
+.textarea:focus,
+.textarea:focus-within {
 	border-color: var(--color-primary);
+	outline: none;
 }
 .table .btn-ghost {
 	background-color: var(--color-base-300);
