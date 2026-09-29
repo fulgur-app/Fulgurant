@@ -222,9 +222,16 @@ pub async fn create_device(
     let api_key = api_key::generate_api_key();
     let hash = api_key::hash_api_key(&api_key)
         .map_err(|e| AppError::ApiKeyError(anyhow::anyhow!("Failed to hash API key: {e}")))?;
+    let fast_hash = api_key::hash_api_key_fast(&api_key);
     let device = state
         .device_repository
-        .create(user_id, hash, request.clone(), state.max_devices_per_user)
+        .create(
+            user_id,
+            hash,
+            fast_hash,
+            request.clone(),
+            state.max_devices_per_user,
+        )
         .await
         .map_err(|e| match e {
             devices::CreateDeviceError::LimitReached(max) => {
