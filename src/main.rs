@@ -39,6 +39,7 @@ struct RuntimeConfig {
     jwt_secret: String,
     jwt_expiry_seconds: i64,
     can_register: bool,
+    trust_proxy_headers: bool,
     share_validity_days: i64,
     max_devices_per_user: i32,
     bind_host: String,
@@ -154,6 +155,7 @@ fn parse_env_u64_bounded(name: &str, default: u64, min: u64, max: u64) -> anyhow
 fn load_runtime_config() -> anyhow::Result<RuntimeConfig> {
     let is_prod = parse_env_bool("IS_PROD", true)?;
     let can_register = parse_env_bool("CAN_REGISTER", false)?;
+    let trust_proxy_headers = parse_env_bool("TRUST_PROXY_HEADERS", false)?;
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string());
     if database_url.trim().is_empty() {
@@ -203,6 +205,7 @@ fn load_runtime_config() -> anyhow::Result<RuntimeConfig> {
         jwt_secret,
         jwt_expiry_seconds,
         can_register,
+        trust_proxy_headers,
         share_validity_days,
         max_devices_per_user,
         bind_host,
@@ -303,6 +306,7 @@ async fn main() -> anyhow::Result<()> {
         mailer: Arc::new(mail::Mailer::new(is_prod)?),
         is_prod,
         can_register: config.can_register,
+        trust_proxy_headers: config.trust_proxy_headers,
         setup_needed: Arc::new(AtomicBool::new(setup_needed)),
         share_validity_days: config.share_validity_days,
         max_devices_per_user: config.max_devices_per_user,
@@ -316,6 +320,13 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     tracing::info!("API rate limiter: 100 requests per minute per IP");
     tracing::info!("Auth rate limiter: 10 requests per minute per IP");
+    if app_state.trust_proxy_headers {
+        tracing::info!(
+            "Rate limiters key on X-Forwarded-For / X-Real-Ip (TRUST_PROXY_HEADERS=true); the reverse proxy must set these headers"
+        );
+    } else {
+        tracing::info!("Rate limiters key on the TCP peer address (TRUST_PROXY_HEADERS=false)");
+    }
     let session_store = session::FulgurSessionStore::new(session_repository);
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(is_prod)

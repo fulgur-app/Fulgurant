@@ -88,6 +88,7 @@ Fulgurant uses:
 | `SSE_HEARTBEAT_SECONDS` | No | `30` | SSE heartbeat interval in seconds (5-300) |
 | `BIND_HOST` | No | `127.0.0.1` | Bind address (`0.0.0.0` for external access) |
 | `BIND_PORT` | No | `3000` | Bind port |
+| `TRUST_PROXY_HEADERS` | No | `false` | Key rate limiters on `X-Forwarded-For` (rightmost entry) / `X-Real-Ip` instead of the peer address. Enable only behind a reverse proxy that sets these headers, with Fulgurant unreachable directly |
 | `RUST_LOG` | No | `debug` (dev), `info` (prod) | Log filter |
 | `LOG_FOLDER` | No | `logs` | Log directory |
 | `DAILY_DATABASE_BACKUP` | No | `false` | Enable daily SQLite backup task |
@@ -155,6 +156,7 @@ CAN_REGISTER=true
 | `DATABASE_URL` | `sqlite:data/database.db` | Database connection string (SQLite or PostgreSQL) |
 | `BIND_HOST` | `0.0.0.0` | Bind address (0.0.0.0 for all interfaces) |
 | `BIND_PORT` | `3000` | Port to listen on |
+| `TRUST_PROXY_HEADERS` | `true` | Rate limit on the client IP forwarded by the reverse proxy (the compose file publishes the port on `127.0.0.1` only) |
 | `IS_PROD` | `true` | Production mode (true/false) |
 | `CAN_REGISTER` | `false` | Allow user registration |
 | `MAX_DEVICES_PER_USER` | `99` | Maximum devices per user |

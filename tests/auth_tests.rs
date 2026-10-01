@@ -104,6 +104,30 @@ async fn test_login_success() {
 }
 
 #[tokio::test]
+async fn test_login_rate_limit_ignores_spoofed_forwarded_for() {
+    let app = TestApp::new().await;
+    let forwarded_for = HeaderName::from_static("x-forwarded-for");
+
+    let mut last_status = StatusCode::OK;
+    for i in 0..6 {
+        let spoofed_ip = HeaderValue::from_str(&format!("198.51.100.{i}")).unwrap();
+        last_status = app
+            .server
+            .post("/login")
+            .add_header(forwarded_for.clone(), spoofed_ip)
+            .form(&LoginFormData {
+                email: "user@test.com",
+                password: "WrongPass1!",
+            })
+            .expect_failure()
+            .await
+            .status_code();
+    }
+
+    assert_eq!(last_status, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
 async fn test_login_wrong_password() {
     let app = TestApp::new().await;
     create_verified_user(&app.pool, "user@test.com", "Password123!").await;

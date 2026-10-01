@@ -100,6 +100,7 @@ impl TestApp {
             mailer: Arc::new(Mailer::new(false).unwrap()),
             is_prod: false,
             can_register: opts.can_register,
+            trust_proxy_headers: false,
             setup_needed: Arc::new(AtomicBool::new(opts.setup_needed)),
             share_validity_days: 3,
             max_devices_per_user: opts.max_devices_per_user,
