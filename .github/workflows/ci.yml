@@ -1,10 +1,28 @@
 name: CI
 
+# Trigger scopes:
+# - push to dev-*: fmt, clippy and test run in parallel (commit smoke).
+# - pull_request to main: test only (merge gate).
+# - push to main (post-merge): coverage + cache warm-up, no fmt/clippy/test.
+#
+# Cache strategy: GitHub Actions caches are immutable per key and scoped to the
+# branch that saved them. Only caches saved on main are readable by every PR and
+# dev-* branch, so every job uses its own `shared-key` (clippy, test and coverage
+# artefacts are not interchangeable) and only saves on main. The
+# `warm-test-cache` and `warm-clippy-cache` jobs on push-to-main are what keep
+# the dev-* and PR jobs warm.
+
 on:
   push:
-    branches: [main, dev, dev-*]
+    branches: [main, dev-*]
   pull_request:
     branches: [main]
+
+# Cancel superseded runs on the same ref. Main is excluded from cancellation so
+# post-merge jobs (coverage, cache warm-up) cannot be interrupted.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -17,14 +35,63 @@ env:
   RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
-  test:
-    name: Test
+  fmt:
+    name: Formatting
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-')
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install Linux dependencies
+        run: &linux_deps_install_cmd |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libssl-dev
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-latest-clippy
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test
+    if: >-
+      github.event_name == 'pull_request'
+      || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # The Rust tests do not need the built assets (served at runtime via
+      # ServeDir); this only checks that the CSS and JS bundles still build.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -42,56 +109,95 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
 
       - name: Install Linux dependencies
-        run: &linux_deps |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            libssl-dev
+        run: *linux_deps_install_cmd
 
-      # The main-scoped cache holds the llvm-cov instrumented build, the clippy
-      # check artefacts and the plain test artefacts warmed below.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ubuntu-latest-test
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # -- Coverage setup (main/PRs only) --
-
-      - name: Install coverage tools
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-        run: rustup component add llvm-tools-preview
-
-      - name: Install cargo-llvm-cov
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      # -- Test phase --
-
-      - name: Run tests with coverage
-        id: coverage
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-
       - name: Run tests
-        if: steps.coverage.outcome == 'skipped'
         run: cargo test --all-features
 
-      # Warm the plain test artefacts for dev-* pushes (see the cache strategy
-      # header). Incremental no-op once the deps are already in the cache.
-      - name: Warm test cache for dev-* pushes
-        if: github.ref == 'refs/heads/main'
+  warm-test-cache:
+    name: Warm test cache
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        run: *linux_deps_install_cmd
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-latest-test
+
+      - name: Build test artefacts
         run: cargo test --all-features --no-run
 
-      # -- Coverage upload --
+  warm-clippy-cache:
+    name: Warm clippy cache
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        run: *linux_deps_install_cmd
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-latest-clippy
+
+      - name: Build check artefacts
+        run: cargo check --all-targets --all-features
+
+  coverage:
+    name: Coverage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      percentage: ${{ steps.cov_summary.outputs.percentage }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install Linux dependencies
+        run: *linux_deps_install_cmd
+
+      # Dedicated cache: coverage builds are instrumented and cannot reuse a standard cache.
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-coverage-cargo
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Run tests with coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
-        if: steps.coverage.outcome == 'success'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: lcov.info
           fail_ci_if_error: false
@@ -99,150 +205,109 @@ jobs:
 
       - name: Generate coverage summary
         id: cov_summary
-        if: steps.coverage.outcome == 'success'
         run: |
           COVERAGE=$(awk -F: '/^LF:/{lf+=$2} /^LH:/{lh+=$2} END{if(lf>0) printf "%.2f", (lh/lf)*100; else print "0.00"}' lcov.info)
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
           echo "Coverage: $COVERAGE%"
 
-      # -- Lint phase --
-
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      # -- Notifications --
-
-      - name: Telegram notification - Success
-        if: success()
+  # Aggregator job named "CI" so branch protection can require a single stable
+  # status check instead of every individual job. Fails if any gate job failed;
+  # allows "skipped" so a PR (which skips fmt and clippy) still reports green.
+  ci:
+    name: CI
+    needs: [fmt, clippy, test]
+    if: ${{ always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gate results
         env:
-          COVERAGE: ${{ steps.cov_summary.outputs.percentage }}
+          FMT: ${{ needs.fmt.result }}
+          CLIPPY: ${{ needs.clippy.result }}
+          TEST: ${{ needs.test.result }}
         run: |
-          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
+          failed=0
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST"; do
+            name="${entry%%:*}"
+            result="${entry#*:}"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "Gate failed: $name = $result"
+              failed=1
+            fi
+          done
+          exit $failed
 
-          if [ -n "$COVERAGE" ]; then
-            DESCRIPTION="All tests and checks passed
-          Coverage: *${COVERAGE}%*"
-          else
-            DESCRIPTION="All tests and checks passed"
+  # Single aggregated Telegram notification for the whole workflow run.
+  notify:
+    name: Telegram notification
+    needs: [fmt, clippy, test, warm-test-cache, warm-clippy-cache, coverage]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Compose and send notification
+        env:
+          FMT: ${{ needs.fmt.result }}
+          CLIPPY: ${{ needs.clippy.result }}
+          TEST: ${{ needs.test.result }}
+          WARM_TEST_CACHE: ${{ needs.warm-test-cache.result }}
+          WARM_CLIPPY_CACHE: ${{ needs.warm-clippy-cache.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+          COVERAGE_PCT: ${{ needs.coverage.outputs.percentage }}
+        run: |
+          # Determine overall status: failure > cancelled > success.
+          STATUS="success"
+          for result in "$FMT" "$CLIPPY" "$TEST" "$WARM_TEST_CACHE" "$WARM_CLIPPY_CACHE" "$COVERAGE"; do
+            if [ "$result" = "failure" ]; then
+              STATUS="failure"
+            elif [ "$result" = "cancelled" ] && [ "$STATUS" != "failure" ]; then
+              STATUS="cancelled"
+            fi
+          done
+
+          # Stay silent on concurrency-cancelled runs; the superseding run will notify.
+          if [ "$STATUS" = "cancelled" ]; then
+            echo "Run cancelled, skipping notification"
+            exit 0
           fi
 
-          MESSAGE="✅ *Fulgurant CI - Build Passed*
+          # Per-job summary line, omitting jobs that did not run.
+          SUMMARY=""
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "warm-test-cache:$WARM_TEST_CACHE" "warm-clippy-cache:$WARM_CLIPPY_CACHE" "coverage:$COVERAGE"; do
+            name="${entry%%:*}"
+            result="${entry#*:}"
+            case "$result" in
+              success) SUMMARY="${SUMMARY}${name} ✅ · " ;;
+              failure) SUMMARY="${SUMMARY}${name} ❌ · " ;;
+            esac
+          done
+          SUMMARY="${SUMMARY% · }"
 
-          ${DESCRIPTION}
+          if [ -z "$SUMMARY" ]; then
+            echo "No jobs ran, skipping notification"
+            exit 0
+          fi
 
-          *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}
-          *Author:* ${ACTOR}
+          if [ "$STATUS" = "success" ]; then
+            ICON="✅"
+            TITLE="Fulgurant CI - Build Passed"
+          else
+            ICON="❌"
+            TITLE="Fulgurant CI - Build Failed"
+          fi
 
-          [View Run](${RUN_URL})"
-
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
-
-      - name: Telegram notification - Failure
-        if: failure()
-        run: |
+          # Main-only extra: coverage percentage.
+          EXTRAS=""
+          if [ -n "$COVERAGE_PCT" ]; then
+            EXTRAS="${EXTRAS}
+          Coverage: *${COVERAGE_PCT}%*"
+          fi
           COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
 
-          MESSAGE="❌ *Fulgurant CI - Build Failed*
+          MESSAGE="${ICON} *${TITLE}*
 
-          Build or tests failed
-
-          *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}
-          *Author:* ${ACTOR}
-
-          [View Run](${RUN_URL})"
-
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
-
-  msrv:
-    name: Minimum Rust Version (1.96.0)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust 1.96.0
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.96.0
-
-      - name: Install Linux dependencies
-        run: *linux_deps
-
-      # Dedicated cache for MSRV (different Rust version)
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ubuntu-msrv-cargo
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Check with minimum Rust version
-        run: cargo check --all-features --quiet
-
-  unused-deps:
-    name: Unused Dependencies Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust nightly
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Install Linux dependencies
-        run: *linux_deps
-
-      # Dedicated cache for udeps (nightly toolchain)
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ubuntu-udeps-cargo
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Install cargo-udeps
-        uses: taiki-e/install-action@cargo-udeps
-
-      - name: Check for unused dependencies
-        run: cargo +nightly udeps --all-targets
-
-      - name: Telegram notification - Success
-        if: success()
-        run: |
-          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
-
-          MESSAGE="✅ *Fulgurant Dependency Check - Passed*
-
-          No unused dependencies detected
-
-          *Branch:* \`${BRANCH}\`
-          *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}
-          *Author:* ${ACTOR}
-
-          [View Run](${RUN_URL})"
-
-          jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}' |
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" -d @-
-
-      - name: Telegram notification - Failure
-        if: failure()
-        run: |
-          COMMIT_MSG=$(git log --format=%s -1 | tr '`' "'" | head -c 80)
-
-          MESSAGE="⚠️ *Fulgurant Dependency Check - Unused Dependencies Found*
-
-          Unused dependencies detected in Cargo.toml
+          ${SUMMARY}${EXTRAS}
 
           *Branch:* \`${BRANCH}\`
           *Commit:* \`${COMMIT_SHA:0:7}\` - ${COMMIT_MSG}

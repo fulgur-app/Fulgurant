@@ -11,7 +11,7 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 use tower_http::services::ServeDir;
-use tower_sessions::{Expiry, SessionManagerLayer, cookie::time::Duration as CookieDuration};
+use tower_sessions::{Expiry, SessionManagerLayer};
 
 static SQLITE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./data/migrations");
 static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./data/migrations_postgres");
@@ -332,7 +332,7 @@ async fn main() -> anyhow::Result<()> {
     let session_store = session::FulgurSessionStore::new(session_repository);
     let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(is_prod)
-        .with_expiry(Expiry::OnInactivity(CookieDuration::hours(1)));
+        .with_expiry(Expiry::OnInactivity(session::SESSION_IDLE_TIMEOUT));
     if is_prod {
         tracing::info!(
             "Session cookies configured with secure flag (expects HTTPS via reverse proxy)"

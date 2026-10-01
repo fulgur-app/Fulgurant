@@ -9,7 +9,7 @@ use axum::{
 };
 use serde::Deserialize;
 use std::sync::LazyLock;
-use tower_sessions::{Expiry, Session, cookie::time::Duration as CookieDuration};
+use tower_sessions::Session;
 
 use crate::{
     errors::AppError,
@@ -35,9 +35,6 @@ pub struct LoginRequest {
     #[serde(default)]
     remember_me: Option<String>,
 }
-
-/// Idle timeout applied to "Remember me" sessions (30 days).
-const REMEMBER_ME_IDLE_DAYS: i64 = 30;
 
 /// GET /login - Returns the login page
 ///
@@ -121,11 +118,6 @@ pub async fn login(
         .insert(session::SESSION_REMEMBER_ME, remember_me)
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
-    if remember_me {
-        session.set_expiry(Some(Expiry::OnInactivity(CookieDuration::days(
-            REMEMBER_ME_IDLE_DAYS,
-        ))));
-    }
     let redirect_url = if user.force_password_update {
         session
             .insert("force_password_update", true)

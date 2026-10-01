@@ -5,7 +5,7 @@ use fulgurant::{
     devices::DeviceRepository,
     handlers::AppState,
     mail::Mailer,
-    session::{FulgurSessionStore, SessionRepository},
+    session::{FulgurSessionStore, SESSION_IDLE_TIMEOUT, SessionRepository},
     settings::SettingsRepository,
     shares::ShareRepository,
     users::UserRepository,
@@ -122,7 +122,7 @@ impl TestApp {
         let session_store = FulgurSessionStore::new(session_repository);
         let session_layer = SessionManagerLayer::new(session_store)
             .with_secure(false)
-            .with_expiry(Expiry::OnInactivity(CookieDuration::hours(1)));
+            .with_expiry(Expiry::OnInactivity(SESSION_IDLE_TIMEOUT));
 
         let (app, _rate_limit_pruners) = fulgurant::build_app(&app_state, session_layer);
 

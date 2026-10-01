@@ -2,10 +2,10 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
-use tower_sessions::Session;
+use time::{Duration, OffsetDateTime};
 use tower_sessions::session::{Id, Record};
 use tower_sessions::session_store::{self, SessionStore};
+use tower_sessions::{Expiry, Session};
 
 use crate::db::DbPool;
 use crate::errors::AppError;
@@ -24,6 +24,18 @@ pub const SESSION_REMEMBER_ME: &str = "remember_me";
 
 /// Session key for the short-lived forgot-password authorization set after step 2
 pub const SESSION_PASSWORD_RESET_AUTHORIZED: &str = "password_reset_authorized";
+
+/// Session key for the unix timestamp of the last recorded activity
+pub const SESSION_LAST_SEEN: &str = "last_seen";
+
+/// Idle timeout of a regular (or anonymous) session
+pub const SESSION_IDLE_TIMEOUT: Duration = Duration::hours(1);
+
+/// Idle timeout of a session opened with "Remember me"
+pub const REMEMBER_ME_IDLE_TIMEOUT: Duration = Duration::days(30);
+
+/// Minimum delay between two activity writes, bounding session saves per client
+const ACTIVITY_REFRESH_INTERVAL_SECONDS: i64 = 60;
 
 /// Lifetime of a forgot-password authorization marker, in seconds (5 minutes)
 const PASSWORD_RESET_AUTHORIZATION_TTL_SECONDS: i64 = 300;
@@ -130,6 +142,81 @@ pub async fn rotate_session(session: &Session) -> Result<(), AppError> {
         .remove::<String>(axum_tower_sessions_csrf::TOKEN_KEY)
         .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to clear CSRF token: {e}")))?;
+    Ok(())
+}
+
+/// Build the inactivity expiry matching the session's remember-me choice.
+///
+/// ### Arguments
+/// - `remember_me`: Whether the user ticked "Remember me" at login
+///
+/// ### Returns
+/// - `Expiry::OnInactivity`: 30 days with remember-me, 1 hour otherwise
+pub fn idle_expiry(remember_me: bool) -> Expiry {
+    if remember_me {
+        Expiry::OnInactivity(REMEMBER_ME_IDLE_TIMEOUT)
+    } else {
+        Expiry::OnInactivity(SESSION_IDLE_TIMEOUT)
+    }
+}
+
+/// Record the activity of an authenticated session, at most once per refresh interval.
+///
+/// ### Arguments
+/// - `session`: The session of the current request
+///
+/// ### Returns
+/// - `Ok(())`: The session is anonymous, fresh, or its activity was recorded
+/// - `Err(AppError::InternalError)`: If session access fails
+pub async fn record_activity(session: &Session) -> Result<(), AppError> {
+    let user_id: Option<i32> = session
+        .get(SESSION_USER_ID)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to read session: {e}")))?;
+    if user_id.is_none() {
+        return Ok(());
+    }
+    // Updating `SESSION_LAST_SEEN` marks the session modified, so it is saved with a
+    // fresh expiry and cookie. Within the interval nothing is written, which keeps
+    // session saves bounded while the idle timeout still slides.
+    let last_seen: Option<i64> = session
+        .get(SESSION_LAST_SEEN)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to read session: {e}")))?;
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let is_stale = last_seen.is_none_or(|seen| now - seen >= ACTIVITY_REFRESH_INTERVAL_SECONDS);
+    if is_stale {
+        session.insert(SESSION_LAST_SEEN, now).await.map_err(|e| {
+            AppError::InternalError(anyhow::anyhow!("Failed to record session activity: {e}"))
+        })?;
+    }
+    Ok(())
+}
+
+/// Pin the expiry of a modified authenticated session to its remember-me idle timeout.
+///
+/// ### Arguments
+/// - `session`: The session of the current request, after the handler ran
+///
+/// ### Returns
+/// - `Ok(())`: The expiry was applied, or the session will not be saved
+/// - `Err(AppError::InternalError)`: If session access fails
+pub async fn apply_idle_expiry(session: &Session) -> Result<(), AppError> {
+    if !session.is_modified() {
+        return Ok(());
+    }
+    let user_id: Option<i32> = session
+        .get(SESSION_USER_ID)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to read session: {e}")))?;
+    if user_id.is_none() {
+        return Ok(());
+    }
+    let remember_me: Option<bool> = session
+        .get(SESSION_REMEMBER_ME)
+        .await
+        .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to read session: {e}")))?;
+    session.set_expiry(Some(idle_expiry(remember_me.unwrap_or(false))));
     Ok(())
 }
 
