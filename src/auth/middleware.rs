@@ -45,3 +45,34 @@ pub async fn require_auth(
 
     Ok(next.run(request).await)
 }
+
+/// Middleware that slides the session idle timeout on activity.
+///
+/// Must sit inside the session layer. Before the handler it records the activity of an
+/// authenticated session (throttled), and after the handler it pins the expiry of any
+/// session about to be saved to 1 hour, or 30 days for "Remember me" sessions.
+///
+/// ### Arguments
+/// - `session`: The session
+/// - `request`: The request
+/// - `next`: The next middleware
+///
+/// ### Returns
+/// - `Ok(Response)`: The response
+/// - `Err(StatusCode)`: `500` if the session cannot be read or written
+pub async fn slide_session_expiry(
+    session: Session,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    session::record_activity(&session).await.map_err(|e| {
+        tracing::error!("Failed to record session activity: {e:?}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let response = next.run(request).await;
+    session::apply_idle_expiry(&session).await.map_err(|e| {
+        tracing::error!("Failed to apply session expiry: {e:?}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(response)
+}

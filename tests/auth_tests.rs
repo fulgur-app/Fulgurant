@@ -20,6 +20,13 @@ struct LoginFormData<'a> {
 }
 
 #[derive(Serialize)]
+struct RememberMeLoginFormData<'a> {
+    email: &'a str,
+    password: &'a str,
+    remember_me: &'a str,
+}
+
+#[derive(Serialize)]
 struct VerifyCodeFormData<'a> {
     email: &'a str,
     code: &'a str,
@@ -101,6 +108,95 @@ async fn test_login_success() {
 
     response.assert_status_ok();
     assert_eq!(response.header("HX-Redirect"), "/");
+}
+
+/// Read the `expires_at` unix timestamp of the only session owned by `user_id`
+async fn session_expires_at(pool: &sqlx::SqlitePool, user_id: i32) -> i64 {
+    sqlx::query_scalar("SELECT expires_at FROM sessions WHERE user_id = ?")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn test_remember_me_keeps_30_day_expiry_after_first_page_load() {
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+
+    let page = app.server.get("/login").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+    app.server
+        .post("/login")
+        .add_header(name, value)
+        .form(&RememberMeLoginFormData {
+            email: "user@test.com",
+            password: "Password123!",
+            remember_me: "on",
+        })
+        .await
+        .assert_status_ok();
+
+    let dashboard = app.server.get("/").await;
+    dashboard.assert_status_ok();
+
+    let thirty_days = time::Duration::days(30);
+    let max_age = dashboard
+        .cookie("id")
+        .max_age()
+        .expect("session cookie should carry a Max-Age");
+    assert!(max_age > thirty_days - time::Duration::minutes(1));
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let expires_at = session_expires_at(&app.pool, user_id).await;
+    assert!(expires_at > now + thirty_days.whole_seconds() - 60);
+}
+
+#[tokio::test]
+async fn test_session_idle_timeout_slides_on_activity() {
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+    app.server.get("/").await.assert_status_ok();
+
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    sqlx::query(
+        "UPDATE sessions \
+         SET expires_at = ?, \
+             data = CAST(json_set(CAST(data AS TEXT), '$.data.last_seen', ?) AS BLOB) \
+         WHERE user_id = ?",
+    )
+    .bind(now + 600)
+    .bind(now - 120)
+    .bind(user_id)
+    .execute(&app.pool)
+    .await
+    .unwrap();
+
+    let dashboard = app.server.get("/").await;
+    dashboard.assert_status_ok();
+
+    let one_hour = time::Duration::hours(1);
+    let max_age = dashboard
+        .cookie("id")
+        .max_age()
+        .expect("session cookie should carry a Max-Age");
+    assert!(max_age > one_hour - time::Duration::minutes(1));
+    assert!(max_age <= one_hour);
+    let expires_at = session_expires_at(&app.pool, user_id).await;
+    assert!(expires_at > now + one_hour.whole_seconds() - 60);
+}
+
+#[tokio::test]
+async fn test_session_not_rewritten_within_activity_refresh_interval() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+    app.server.get("/").await.assert_status_ok();
+
+    let dashboard = app.server.get("/").await;
+
+    dashboard.assert_status_ok();
+    assert!(dashboard.maybe_cookie("id").is_none());
 }
 
 #[tokio::test]
