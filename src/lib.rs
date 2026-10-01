@@ -171,6 +171,9 @@ fn make_auth_routes(
         .layer(axum::middleware::from_fn(
             axum_tower_sessions_csrf::CsrfMiddleware::middleware,
         ))
+        .layer(axum::middleware::from_fn(
+            auth::middleware::slide_session_expiry,
+        ))
         .layer(session_layer)
         .layer(tower_governor::GovernorLayer::new(auth_governor_conf));
     (router, auth_pruner)
@@ -326,6 +329,9 @@ fn make_web_routes(
         .merge(make_protected_routes(app_state))
         .layer(axum::middleware::from_fn(
             axum_tower_sessions_csrf::CsrfMiddleware::middleware,
+        ))
+        .layer(axum::middleware::from_fn(
+            auth::middleware::slide_session_expiry,
         ))
         .layer(session_layer)
         .layer(SetResponseHeaderLayer::if_not_present(
