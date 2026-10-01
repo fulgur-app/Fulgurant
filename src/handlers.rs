@@ -41,6 +41,8 @@ pub struct AppState {
     pub mailer: Arc<mail::Mailer>,
     pub is_prod: bool,
     pub can_register: bool,
+    /// Whether rate limiters key on `X-Forwarded-For` / `X-Real-Ip` set by a trusted reverse proxy.
+    pub trust_proxy_headers: bool,
     pub setup_needed: Arc<AtomicBool>,
     pub share_validity_days: i64,
     pub max_devices_per_user: i32,

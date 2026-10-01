@@ -27,9 +27,9 @@ services:
     #   postgres:
     #     condition: service_healthy
 
-    # Port mapping
+    # Port mapping (loopback only: expose Fulgurant through a reverse proxy)
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
 
     # Environment variables
     environment:
@@ -58,6 +58,9 @@ services:
       # Network configuration
       - BIND_HOST=0.0.0.0
       - BIND_PORT=3000
+      # Rate limit on X-Forwarded-For / X-Real-Ip set by the reverse proxy.
+      # Only safe while the port above is not reachable without the proxy.
+      - TRUST_PROXY_HEADERS=true
 
       # Logging
       - RUST_LOG=info

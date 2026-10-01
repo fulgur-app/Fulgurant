@@ -25,6 +25,7 @@ pub mod devices;
 pub mod handlers;
 pub mod logging;
 pub mod mail;
+pub mod rate_limit;
 pub mod session;
 pub mod settings;
 pub mod shares;
@@ -126,7 +127,9 @@ fn make_auth_routes(
         tower_governor::governor::GovernorConfigBuilder::default()
             .period(std::time::Duration::from_secs(6)) // 10 requests/min = 1 per 6s
             .burst_size(5)
-            .use_headers()
+            .key_extractor(rate_limit::ClientIpKeyExtractor::new(
+                app_state.trust_proxy_headers,
+            ))
             .finish()
             .expect("Failed to build auth governor config"),
     );
@@ -250,7 +253,9 @@ fn make_api_routes(app_state: &handlers::AppState) -> (Router, RateLimitPruner) 
         tower_governor::governor::GovernorConfigBuilder::default()
             .period(std::time::Duration::from_millis(600)) // 100 requests/min = 1 per 600ms
             .burst_size(20)
-            .use_headers()
+            .key_extractor(rate_limit::ClientIpKeyExtractor::new(
+                app_state.trust_proxy_headers,
+            ))
             .finish()
             .expect("Failed to build governor config"),
     );
