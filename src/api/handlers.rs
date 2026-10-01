@@ -843,7 +843,16 @@ pub async fn obtain_access_token(
                     ));
                 }
             };
-            for device in &devices {
+            // Devices with a fast hash would have matched above, so only legacy rows can
+            // still hold this key. A dummy verification keeps the cost constant when there are none.
+            let legacy_devices: Vec<_> = devices
+                .iter()
+                .filter(|device| device.device_key_fast_hash.is_none())
+                .collect();
+            if legacy_devices.is_empty() {
+                crate::api_key::dummy_verify_api_key();
+            }
+            for device in legacy_devices {
                 match crate::api_key::verify_api_key(device_key, &device.device_key) {
                     Ok(true) => {
                         authenticated_device =
@@ -853,21 +862,18 @@ pub async fn obtain_access_token(
                             user.id,
                             device.device_id
                         );
-                        // Lazy migration: populate fast hash for future requests
-                        if device.device_key_fast_hash.is_none() {
-                            if let Err(e) = state
-                                .device_repository
-                                .update_fast_hash(device.id, fast_hash.clone())
-                                .await
-                            {
-                                tracing::error!(
-                                    "Failed to populate fast hash for device {}: {:?}",
-                                    device.id,
-                                    e
-                                );
-                            } else {
-                                tracing::info!("Populated fast hash for device {}", device.id);
-                            }
+                        if let Err(e) = state
+                            .device_repository
+                            .update_fast_hash(device.id, fast_hash.clone())
+                            .await
+                        {
+                            tracing::error!(
+                                "Failed to populate fast hash for device {}: {:?}",
+                                device.id,
+                                e
+                            );
+                        } else {
+                            tracing::info!("Populated fast hash for device {}", device.id);
                         }
                         break;
                     }

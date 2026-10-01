@@ -33,6 +33,7 @@ pub async fn create_device_for_user(
         .create(
             user_id,
             hash,
+            fast_hash,
             CreateDevice {
                 name: name.to_string(),
                 device_type: "Desktop".to_string(),
@@ -40,11 +41,6 @@ pub async fn create_device_for_user(
             },
             i32::MAX,
         )
-        .await
-        .unwrap();
-    // Populate fast hash for efficient lookups
-    device_repo
-        .update_fast_hash(device.id, fast_hash)
         .await
         .unwrap();
     (device.device_id, api_key)

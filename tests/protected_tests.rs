@@ -3,12 +3,13 @@ mod common;
 use axum::http::StatusCode;
 use axum::http::header::{HeaderName, HeaderValue};
 use common::{
-    api_helpers::create_device_for_user,
+    api_helpers::{create_device_for_user, get_jwt_token},
     auth_helpers::{create_verified_user, extract_csrf_token, login},
     test_app::{TestApp, TestAppOptions},
 };
 use fulgur_common::api::{shares::ShareFileResponse, sync::ErrorResponse};
 use fulgurant::{
+    api_key::hash_api_key_fast,
     db::DbPool,
     devices::{DeviceRepository, WEB_DEVICE_NAME, WEB_DEVICE_TYPE},
     shares::{CreateShare, SHARE_VALIDITY_DAYS, ShareRepository},
@@ -113,6 +114,49 @@ async fn test_create_device_success() {
 
     response.assert_status_ok();
     assert!(response.text().contains("Your API key is:"));
+}
+
+#[tokio::test]
+async fn test_created_device_obtains_token_via_fast_hash() {
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+
+    let page = app.server.get("/").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post(&format!("/device/{user_id}/create"))
+        .add_header(name, value)
+        .form(&CreateDeviceFormData {
+            name: "My Laptop",
+            device_type: "Desktop",
+            api_key_lifetime: 365,
+        })
+        .await;
+    response.assert_status_ok();
+    let body = response.text();
+    let api_key = body
+        .split("api-key-value\">")
+        .nth(1)
+        .and_then(|rest| rest.split("</code>").next())
+        .expect("the response should display the API key");
+
+    let (stored_fast_hash,): (Option<String>,) =
+        sqlx::query_as("SELECT device_key_fast_hash FROM devices WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        stored_fast_hash.as_deref(),
+        Some(hash_api_key_fast(api_key).as_str()),
+        "the fast hash must be the SHA256 of the raw API key"
+    );
+
+    let token = get_jwt_token(&app.server, "user@test.com", api_key).await;
+    assert_ne!(token, "");
 }
 
 #[tokio::test]
@@ -436,7 +480,7 @@ async fn test_delete_share_success() {
     // The row is kept as a historic record: status becomes "deleted" and content is cleared.
     let deleted = share_repo.get_by_id(&share.id).await.unwrap();
     assert_eq!(deleted.status, "deleted");
-    assert!(deleted.content.is_empty());
+    assert_eq!(deleted.content, "");
 }
 
 #[tokio::test]
@@ -662,7 +706,7 @@ async fn test_create_web_share_success() {
     response.assert_status_ok();
     let body: ShareFileResponse = response.json();
     assert!(body.message.contains("successfully"));
-    assert!(!body.expiration_date.is_empty());
+    assert_ne!(body.expiration_date, "");
 
     let device_repo = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()));
     let web_device = device_repo.get_web_device(user_id).await.unwrap().unwrap();

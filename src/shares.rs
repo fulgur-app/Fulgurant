@@ -592,6 +592,7 @@ mod tests {
             .create(
                 user_id,
                 "source-device-key".to_string(),
+                crate::api_key::hash_api_key_fast("source-device-key"),
                 CreateDevice {
                     name: "Source".to_string(),
                     device_type: "desktop".to_string(),

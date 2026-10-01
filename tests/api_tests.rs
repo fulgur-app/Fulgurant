@@ -217,10 +217,10 @@ async fn test_token_response_format() {
         .await;
 
     let body: AccessTokenResponse = response.json();
-    assert!(!body.access_token.is_empty());
+    assert_ne!(body.access_token, "");
     assert_eq!(body.token_type, "Bearer");
     assert_eq!(body.expires_in, 900);
-    assert!(!body.expires_at.is_empty());
+    assert_ne!(body.expires_at, "");
 }
 
 #[tokio::test]
@@ -481,7 +481,7 @@ async fn test_share_file_success() {
     response.assert_status_ok();
     let body: ShareFileResponse = response.json();
     assert!(body.message.contains("successfully"));
-    assert!(!body.expiration_date.is_empty());
+    assert_ne!(body.expiration_date, "");
 }
 
 #[tokio::test]
@@ -752,7 +752,7 @@ async fn test_download_keeps_share_as_historic_downloaded_record() {
     let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
     let stored = share_repo.get_by_id(&share_id).await.unwrap();
     assert_eq!(stored.status, "downloaded");
-    assert!(stored.content.is_empty());
+    assert_eq!(stored.content, "");
 }
 
 #[tokio::test]
@@ -899,7 +899,7 @@ async fn test_share_successful_consumes_share() {
     // The row is kept as a historic record: status "downloaded", content cleared.
     let stored = share_repo.get_by_id(&share_id).await.unwrap();
     assert_eq!(stored.status, "downloaded");
-    assert!(stored.content.is_empty());
+    assert_eq!(stored.content, "");
 
     // The consumed share is no longer readable via the v2 endpoint.
     let read = app
@@ -1553,7 +1553,7 @@ async fn test_get_share_legacy_consumes_and_keeps_historic_record() {
     // The row is kept as a historic record: status "downloaded", content cleared.
     let stored = share_repo.get_by_id(&share_id).await.unwrap();
     assert_eq!(stored.status, "downloaded");
-    assert!(stored.content.is_empty());
+    assert_eq!(stored.content, "");
 
     // A second claim returns 404: the once-only download guarantee holds.
     let second = app

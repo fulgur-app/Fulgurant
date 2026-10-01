@@ -236,7 +236,6 @@ impl DeviceRepository {
         }
         let now = OffsetDateTime::now_utc();
         let device_id = Uuid::new_v4().to_string();
-        let fast_hash = crate::api_key::hash_api_key_fast(&device_key_hash);
         db_execute_dual!(
             self.pool,
             sqlite: "INSERT INTO devices (user_id, device_id, device_key, device_key_fast_hash, name, device_type, public_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -244,7 +243,7 @@ impl DeviceRepository {
             user_id,
             device_id,
             device_key_hash,
-            fast_hash,
+            None::<String>,
             WEB_DEVICE_NAME,
             WEB_DEVICE_TYPE,
             None::<String>,
@@ -268,7 +267,8 @@ impl DeviceRepository {
     ///
     /// ### Arguments
     /// - `user_id`: The ID of the user
-    /// - `device_key`: The device key
+    /// - `device_key`: Argon2 hash of the raw API key
+    /// - `device_key_fast_hash`: SHA256 of the raw API key (see `api_key::hash_api_key_fast`)
     /// - `data`: The data for the device
     /// - `max_devices`: The maximum number of devices allowed per user
     ///
@@ -280,6 +280,7 @@ impl DeviceRepository {
         &self,
         user_id: i32,
         device_key: String,
+        device_key_fast_hash: String,
         data: CreateDevice,
         max_devices: i32,
     ) -> Result<Device, CreateDeviceError> {
@@ -291,7 +292,6 @@ impl DeviceRepository {
             api_key_lifetime,
         } = data;
         let expires_at = now + Duration::days(api_key_lifetime);
-        let fast_hash = crate::api_key::hash_api_key_fast(&device_key);
         let id = match &self.pool {
             DbPool::Sqlite(pool) => {
                 let mut tx = pool.begin().await?;
@@ -312,7 +312,7 @@ impl DeviceRepository {
                 .bind(user_id)
                 .bind(&device_id)
                 .bind(&device_key)
-                .bind(&fast_hash)
+                .bind(&device_key_fast_hash)
                 .bind(&name)
                 .bind(&device_type)
                 .bind(None::<String>)
@@ -347,7 +347,7 @@ impl DeviceRepository {
                 .bind(user_id)
                 .bind(&device_id)
                 .bind(&device_key)
-                .bind(&fast_hash)
+                .bind(&device_key_fast_hash)
                 .bind(&name)
                 .bind(&device_type)
                 .bind(None::<String>)
@@ -637,6 +637,7 @@ mod tests {
                 .create(
                     user_id,
                     format!("device-key-{index}"),
+                    crate::api_key::hash_api_key_fast(&format!("device-key-{index}")),
                     sample_device(&format!("Device {index}")),
                     max_devices,
                 )
@@ -648,6 +649,7 @@ mod tests {
             .create(
                 user_id,
                 "device-key-overflow".to_string(),
+                crate::api_key::hash_api_key_fast("device-key-overflow"),
                 sample_device("Overflow"),
                 max_devices,
             )
@@ -674,6 +676,7 @@ mod tests {
             .create(
                 user_id,
                 "device-key".to_string(),
+                crate::api_key::hash_api_key_fast("device-key"),
                 sample_device("Laptop"),
                 10,
             )
@@ -701,6 +704,7 @@ mod tests {
             .create(
                 user_id,
                 "device-key".to_string(),
+                crate::api_key::hash_api_key_fast("device-key"),
                 sample_device("Phone"),
                 10,
             )
@@ -730,18 +734,17 @@ mod tests {
         let raw_key = crate::api_key::generate_api_key();
         let stored_hash =
             crate::api_key::hash_api_key(&raw_key).expect("hashing the key should succeed");
+        let fast_hash = crate::api_key::hash_api_key_fast(&raw_key);
         let created = repository
-            .create(user_id, stored_hash, sample_device("Tablet"), 10)
+            .create(
+                user_id,
+                stored_hash,
+                fast_hash.clone(),
+                sample_device("Tablet"),
+                10,
+            )
             .await
             .expect("create should succeed");
-
-        // Mirror the token endpoint lazy migration: the persisted fast hash is the
-        // SHA256 of the raw key, not of the stored Argon2 hash written at create time.
-        let fast_hash = crate::api_key::hash_api_key_fast(&raw_key);
-        repository
-            .update_fast_hash(created.id, fast_hash.clone())
-            .await
-            .expect("populating the fast hash should succeed");
 
         let found = repository
             .get_by_fast_hash(&fast_hash)
@@ -769,6 +772,7 @@ mod tests {
             .create(
                 user_id,
                 "device-key".to_string(),
+                crate::api_key::hash_api_key_fast("device-key"),
                 sample_device("Desktop"),
                 10,
             )
@@ -797,6 +801,7 @@ mod tests {
             .create(
                 user_id,
                 "active-key".to_string(),
+                crate::api_key::hash_api_key_fast("active-key"),
                 sample_device("Active"),
                 10,
             )
@@ -811,6 +816,7 @@ mod tests {
             .create(
                 user_id,
                 "expired-key".to_string(),
+                crate::api_key::hash_api_key_fast("expired-key"),
                 CreateDevice {
                     name: "Expired".to_string(),
                     device_type: "desktop".to_string(),
