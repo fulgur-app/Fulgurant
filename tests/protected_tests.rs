@@ -156,7 +156,7 @@ async fn test_created_device_obtains_token_via_fast_hash() {
     );
 
     let token = get_jwt_token(&app.server, "user@test.com", api_key).await;
-    assert!(!token.is_empty());
+    assert_ne!(token, "");
 }
 
 #[tokio::test]
@@ -480,7 +480,7 @@ async fn test_delete_share_success() {
     // The row is kept as a historic record: status becomes "deleted" and content is cleared.
     let deleted = share_repo.get_by_id(&share.id).await.unwrap();
     assert_eq!(deleted.status, "deleted");
-    assert!(deleted.content.is_empty());
+    assert_eq!(deleted.content, "");
 }
 
 #[tokio::test]
@@ -706,7 +706,7 @@ async fn test_create_web_share_success() {
     response.assert_status_ok();
     let body: ShareFileResponse = response.json();
     assert!(body.message.contains("successfully"));
-    assert!(!body.expiration_date.is_empty());
+    assert_ne!(body.expiration_date, "");
 
     let device_repo = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()));
     let web_device = device_repo.get_web_device(user_id).await.unwrap().unwrap();
