@@ -14,6 +14,7 @@ use fulgurant::{
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::{Arc, atomic::AtomicBool};
+use tokio_util::sync::CancellationToken;
 use tower_sessions::{Expiry, SessionManagerLayer, cookie::time::Duration as CookieDuration};
 
 /// Test application wrapper providing a configured test server with an in-memory database
@@ -24,6 +25,8 @@ pub struct TestApp {
     pub db_pool: DbPool,
     #[allow(dead_code)]
     pub jwt_secret: String,
+    #[allow(dead_code)]
+    pub shutdown_token: CancellationToken,
 }
 
 /// Configuration options for test application setup
@@ -90,6 +93,7 @@ impl TestApp {
 
         let session_repository = SessionRepository::new(db_pool.clone());
 
+        let shutdown_token = CancellationToken::new();
         let app_state = AppState {
             device_repository: DeviceRepository::new(db_pool.clone()),
             user_repository: UserRepository::new(db_pool.clone()),
@@ -112,6 +116,7 @@ impl TestApp {
             jwt_secret: jwt_secret.clone(),
             jwt_expiry_seconds: 900,
             max_file_size_bytes: Arc::new(tokio::sync::RwLock::new(Some(1_048_576))),
+            shutdown_token: shutdown_token.clone(),
         };
 
         let session_store = FulgurSessionStore::new(session_repository);
@@ -132,6 +137,7 @@ impl TestApp {
             pool,
             db_pool,
             jwt_secret,
+            shutdown_token,
         }
     }
 }

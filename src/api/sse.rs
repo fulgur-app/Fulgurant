@@ -166,6 +166,7 @@ pub async fn handle_sse_connection(
         .sse_manager
         .create_channel([ChannelTag::DeviceId(device_id.clone())]);
     let heartbeat_interval = Duration::from_secs(state.sse_heartbeat_seconds);
+    let shutdown_token = state.shutdown_token.clone();
     let initial_share_ids = match state
         .share_repository
         .list_share_ids_for_device(&device_id)
@@ -211,6 +212,13 @@ pub async fn handle_sse_connection(
         tokio::pin!(token_expiry);
         loop {
             tokio::select! {
+                () = shutdown_token.cancelled() => {
+                    tracing::info!(
+                        device_id = ?device_id,
+                        "Closing SSE stream: server shutting down"
+                    );
+                    break;
+                }
                 () = &mut token_expiry => {
                     tracing::info!(
                         device_id = ?device_id,
