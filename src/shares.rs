@@ -144,6 +144,8 @@ impl ShareRepository {
     /// When `deduplication_hash` is `Some`, uses UPSERT to replace any existing share
     /// with the same (`source_device_id`, `destination_device_id`, `deduplication_hash`).
     /// When `None`, always inserts a new share (`SQLite` treats NULLs as distinct).
+    /// A replaced share gets a fresh `id`, so a stale v2 acknowledgement of the
+    /// previous version cannot consume the new content.
     ///
     /// ### Arguments
     /// - `user_id`: The ID of the user
@@ -176,6 +178,7 @@ impl ShareRepository {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(source_device_id, destination_device_id, deduplication_hash)
                 DO UPDATE SET
+                    id = excluded.id,
                     file_hash = excluded.file_hash,
                     file_name = excluded.file_name,
                     file_size = excluded.file_size,
@@ -193,6 +196,7 @@ impl ShareRepository {
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, to_timestamp($10), to_timestamp($11))
                 ON CONFLICT(source_device_id, destination_device_id, deduplication_hash)
                 DO UPDATE SET
+                    id = excluded.id,
                     file_hash = excluded.file_hash,
                     file_name = excluded.file_name,
                     file_size = excluded.file_size,
@@ -703,7 +707,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_recreate_with_dedup_resets_consumed_share_to_available() {
-        let (repository, _pool, user_id, source_device_id) = setup_test_repository().await;
+        let (repository, pool, user_id, source_device_id) = setup_test_repository().await;
         let dedup = Some("dedup-tuple");
 
         let first = repository
@@ -738,7 +742,12 @@ mod tests {
             .await
             .expect("re-create succeeds");
 
-        assert_eq!(second.id, first.id, "UPSERT must reuse the same row");
+        assert_ne!(second.id, first.id, "UPSERT must rotate the share id");
+        let row_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM shares")
+            .fetch_one(&pool)
+            .await
+            .expect("count shares");
+        assert_eq!(row_count.0, 1, "UPSERT must replace the row, not add one");
         assert_eq!(
             second.status,
             status::AVAILABLE,
@@ -785,6 +794,55 @@ mod tests {
                 .unwrap()
                 .is_some(),
             "peek must be idempotently retryable"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_stale_ack_after_dedup_reshare_keeps_new_content() {
+        let (repository, _pool, user_id, source_device_id) = setup_test_repository().await;
+        let dedup = Some("dedup-tuple");
+
+        let first = repository
+            .create(
+                user_id,
+                sample_share(&source_device_id, "dest-1", dedup),
+                SHARE_VALIDITY_DAYS,
+            )
+            .await
+            .expect("create initial share");
+        repository
+            .peek_available_share_for_device(&first.id, "dest-1")
+            .await
+            .expect("peek runs")
+            .expect("initial share should be available");
+
+        // A newer version lands between the client's read and its ack.
+        let mut reshare = sample_share(&source_device_id, "dest-1", dedup);
+        reshare.content = "fresh content".to_string();
+        let second = repository
+            .create(user_id, reshare, SHARE_VALIDITY_DAYS)
+            .await
+            .expect("re-share succeeds");
+
+        let stale_ack = repository
+            .mark_downloaded(&first.id, "dest-1")
+            .await
+            .expect("stale ack runs");
+        assert!(!stale_ack, "an ack of the replaced version must be a no-op");
+
+        let pending = repository
+            .peek_available_share_for_device(&second.id, "dest-1")
+            .await
+            .expect("peek runs")
+            .expect("the new version must still be available");
+        assert_eq!(pending.content, "fresh content");
+
+        assert!(
+            repository
+                .mark_downloaded(&second.id, "dest-1")
+                .await
+                .expect("ack runs"),
+            "the new version must be consumable with its own id"
         );
     }
 }
