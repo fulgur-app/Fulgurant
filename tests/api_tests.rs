@@ -1842,3 +1842,26 @@ async fn test_sse_rejects_connections_over_per_device_cap() {
     // Keep the saturating connections alive until after the over-cap assertion has run.
     drop(held_connections);
 }
+
+#[tokio::test]
+async fn test_sse_stream_ends_when_shutdown_starts() {
+    let app = TestApp::new().await;
+    let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    let mut stream = open_sse_connection(&app, &jwt).await;
+    let received = read_sse_until(&mut stream, "pending_shares", StdDuration::from_secs(5)).await;
+    assert!(
+        received.contains("200 OK"),
+        "the SSE connection must succeed, got: {received}"
+    );
+
+    // Cancelling the shutdown token must end the stream well before the 15-minute token expiry,
+    // which shows up as the terminating zero-length chunk of the chunked response.
+    app.shutdown_token.cancel();
+    let terminator = "0\r\n\r\n";
+    let after_shutdown = read_sse_until(&mut stream, terminator, StdDuration::from_secs(5)).await;
+    assert!(
+        after_shutdown.ends_with(terminator),
+        "the SSE stream must end once shutdown starts, got: {after_shutdown}"
+    );
+}

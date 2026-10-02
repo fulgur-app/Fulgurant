@@ -10,6 +10,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, atomic::AtomicBool};
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tower_sessions::Session;
 
 use crate::{
@@ -54,6 +55,9 @@ pub struct AppState {
     /// Maximum share file size in bytes. `None` means no limit.
     /// Wrapped in Arc<`RwLock`<>> to allow live updates from the admin settings page.
     pub max_file_size_bytes: Arc<RwLock<Option<u64>>>,
+    /// Cancelled when the server starts shutting down, so long-lived streams (SSE) can end
+    /// and let graceful shutdown drain open connections.
+    pub shutdown_token: CancellationToken,
 }
 
 /// GET /healthz - Unauthenticated liveness probe for container orchestration

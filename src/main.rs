@@ -296,6 +296,7 @@ async fn main() -> anyhow::Result<()> {
         "Max file size for sharing: {}",
         max_file_size_bytes.map_or_else(|| "no limit".to_string(), |b| format!("{b} bytes"))
     );
+    let shutdown_token = CancellationToken::new();
     let app_state = handlers::AppState {
         device_repository,
         user_repository,
@@ -316,6 +317,7 @@ async fn main() -> anyhow::Result<()> {
         jwt_secret,
         jwt_expiry_seconds,
         max_file_size_bytes: Arc::new(tokio::sync::RwLock::new(max_file_size_bytes)),
+        shutdown_token: shutdown_token.clone(),
     };
     tracing::info!("Max devices per user: {}", app_state.max_devices_per_user);
     tracing::info!("API rate limiter: 100 requests per minute per IP");
@@ -341,7 +343,6 @@ async fn main() -> anyhow::Result<()> {
     let (app, rate_limit_pruners) = fulgurant::build_app(&app_state, session_layer);
     let assets_service = ServeDir::new("assets");
     let app = app.nest_service("/assets", assets_service);
-    let shutdown_token = CancellationToken::new();
     make_rate_limit_pruning_task(rate_limit_pruners, shutdown_token.clone());
     let share_repo = app_state.share_repository.clone();
     spawn_periodic_task(
@@ -392,14 +393,10 @@ async fn main() -> anyhow::Result<()> {
     } else if bind_host == "127.0.0.1" {
         tracing::info!("Server is listening on localhost only");
     }
-    let sse_manager_shutdown = app_state.sse_manager.clone();
     let shutdown_token_handler = shutdown_token.clone();
     tokio::spawn(async move {
         shutdown_signal().await;
         shutdown_token_handler.cancel();
-        tracing::info!("Closing all SSE connections");
-        drop(sse_manager_shutdown);
-        tracing::info!("Graceful shutdown complete");
     });
 
     tracing::info!("Server starting on http://{}", addr);
@@ -413,8 +410,9 @@ async fn main() -> anyhow::Result<()> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
+    .with_graceful_shutdown(shutdown_token.cancelled_owned())
     .await?;
+    tracing::info!("Graceful shutdown complete");
     Ok(())
 }
 
