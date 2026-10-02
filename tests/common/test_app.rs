@@ -15,7 +15,7 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::{Arc, atomic::AtomicBool};
 use tokio_util::sync::CancellationToken;
-use tower_sessions::{Expiry, SessionManagerLayer, cookie::time::Duration as CookieDuration};
+use tower_sessions::{Expiry, SessionManagerLayer};
 
 /// Test application wrapper providing a configured test server with an in-memory database
 pub struct TestApp {
