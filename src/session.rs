@@ -249,33 +249,24 @@ impl SessionRepository {
         Self { pool }
     }
 
-    /// Insert or update a session row.
+    /// Insert a new session row, leaving any existing row with the same id untouched.
     ///
     /// ### Arguments
     /// - `record`: The session record to persist
     ///
     /// ### Returns
-    /// - `Ok(())`: The row was written
+    /// - `Ok(true)`: The row was inserted
+    /// - `Ok(false)`: A row with the same id already exists (expired or not)
     /// - `Err(anyhow::Error)`: The error if the operation fails
-    pub async fn upsert(&self, record: &SessionRecord) -> anyhow::Result<()> {
-        db_execute_dual!(
+    pub async fn insert(&self, record: &SessionRecord) -> anyhow::Result<bool> {
+        let inserted = db_execute_dual!(
             self.pool,
             sqlite: "INSERT INTO sessions (id, user_id, data, expires_at, user_agent, remember_me) \
                      VALUES (?, ?, ?, ?, ?, ?) \
-                     ON CONFLICT(id) DO UPDATE SET \
-                         user_id = excluded.user_id, \
-                         data = excluded.data, \
-                         expires_at = excluded.expires_at, \
-                         user_agent = excluded.user_agent, \
-                         remember_me = excluded.remember_me",
+                     ON CONFLICT(id) DO NOTHING",
             postgres: "INSERT INTO sessions (id, user_id, data, expires_at, user_agent, remember_me) \
                        VALUES ($1, $2, $3, to_timestamp($4), $5, $6) \
-                       ON CONFLICT(id) DO UPDATE SET \
-                           user_id = EXCLUDED.user_id, \
-                           data = EXCLUDED.data, \
-                           expires_at = EXCLUDED.expires_at, \
-                           user_agent = EXCLUDED.user_agent, \
-                           remember_me = EXCLUDED.remember_me",
+                       ON CONFLICT(id) DO NOTHING",
             record.id.clone(),
             record.user_id,
             record.data.clone(),
@@ -283,7 +274,36 @@ impl SessionRepository {
             record.user_agent.clone(),
             record.remember_me
         )?;
-        Ok(())
+        Ok(inserted > 0)
+    }
+
+    /// Update an existing session row, never creating one.
+    ///
+    /// A missing row means the session was revoked (logout, admin revocation,
+    /// sign-out-everywhere, password change) while a request was in flight, so
+    /// the write is dropped instead of resurrecting the session.
+    ///
+    /// ### Arguments
+    /// - `record`: The session record to persist
+    ///
+    /// ### Returns
+    /// - `Ok(true)`: The row was updated
+    /// - `Ok(false)`: No row with this id exists
+    /// - `Err(anyhow::Error)`: The error if the operation fails
+    pub async fn update(&self, record: &SessionRecord) -> anyhow::Result<bool> {
+        let updated = db_execute_dual!(
+            self.pool,
+            sqlite: "UPDATE sessions SET user_id = ?, data = ?, expires_at = ?, remember_me = ? \
+                     WHERE id = ?",
+            postgres: "UPDATE sessions SET user_id = $1, data = $2, expires_at = to_timestamp($3), \
+                       remember_me = $4 WHERE id = $5",
+            record.user_id,
+            record.data.clone(),
+            record.expires_at.unix_timestamp(),
+            record.remember_me,
+            record.id.clone()
+        )?;
+        Ok(updated > 0)
     }
 
     /// Load a session row by id.
@@ -498,6 +518,26 @@ fn encode_record(record: &Record) -> session_store::Result<Vec<u8>> {
     serde_json::to_vec(record).map_err(|e| session_store::Error::Encode(e.to_string()))
 }
 
+/// Build the persisted row for a tower-sessions record.
+///
+/// ### Arguments
+/// - `record`: The tower-sessions record to persist
+///
+/// ### Returns
+/// - `Ok(SessionRecord)`: The row with `user_id` and `remember_me` hoisted out of the blob
+/// - `Err(session_store::Error::Encode)`: If serialization fails
+fn to_session_row(record: &Record) -> session_store::Result<SessionRecord> {
+    Ok(SessionRecord {
+        id: record.id.to_string(),
+        user_id: extract_user_id(record),
+        data: encode_record(record)?,
+        expires_at: record.expiry_date,
+        created_at: OffsetDateTime::now_utc(),
+        user_agent: None,
+        remember_me: extract_remember_me(record),
+    })
+}
+
 /// Decode the `data` column back into a tower-sessions `Record`.
 ///
 /// ### Arguments
@@ -520,47 +560,46 @@ impl SessionStore for FulgurSessionStore {
     ///
     /// ### Returns
     /// - `Ok(())`: The row was inserted under a unique id
+    /// - `Err(session_store::Error::Encode)`: JSON serialization failed
     /// - `Err(session_store::Error::Backend)`: The backing repository failed
     async fn create(&self, record: &mut Record) -> session_store::Result<()> {
         loop {
-            let id_str = record.id.to_string();
-            let existing = self
+            let inserted = self
                 .repository
-                .load(&id_str)
+                .insert(&to_session_row(record)?)
                 .await
                 .map_err(|e| session_store::Error::Backend(e.to_string()))?;
-            if existing.is_some() {
-                record.id = Id::default();
-                continue;
+            if inserted {
+                return Ok(());
             }
-            return self.save(record).await;
+            record.id = Id::default();
         }
     }
 
-    /// Persist a session record, hoisting `user_id` and `remember_me` into
-    /// their dedicated columns alongside the JSON-encoded blob.
+    /// Persist changes to an existing session, hoisting `user_id` and
+    /// `remember_me` into their dedicated columns alongside the JSON-encoded blob.
     ///
     /// ### Arguments
     /// - `record`: The tower-sessions record to persist
     ///
     /// ### Returns
-    /// - `Ok(())`: The row was inserted or updated
+    /// - `Ok(())`: The row was updated, or no longer exists
     /// - `Err(session_store::Error::Encode)`: JSON serialization failed
     /// - `Err(session_store::Error::Backend)`: The backing repository failed
     async fn save(&self, record: &Record) -> session_store::Result<()> {
-        let row = SessionRecord {
-            id: record.id.to_string(),
-            user_id: extract_user_id(record),
-            data: encode_record(record)?,
-            expires_at: record.expiry_date,
-            created_at: OffsetDateTime::now_utc(),
-            user_agent: None,
-            remember_me: extract_remember_me(record),
-        };
-        self.repository
-            .upsert(&row)
+        let row = to_session_row(record)?;
+        let updated = self
+            .repository
+            .update(&row)
             .await
-            .map_err(|e| session_store::Error::Backend(e.to_string()))
+            .map_err(|e| session_store::Error::Backend(e.to_string()))?;
+        if !updated {
+            tracing::warn!(
+                "Dropped save of a revoked session: user_id={:?}",
+                row.user_id
+            );
+        }
+        Ok(())
     }
 
     /// Load a session by id, re-applying the persisted `id` and
@@ -614,7 +653,110 @@ impl SessionStore for FulgurSessionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::users::UserRepository;
+    use sqlx::sqlite::SqlitePoolOptions;
     use time::Duration;
+
+    /// Build an in-memory `SQLite`-backed session store and seed one owning user.
+    ///
+    /// ### Returns
+    /// - `(FulgurSessionStore, SessionRepository, i32)`: The store, its repository and the seeded user id
+    async fn setup_test_store() -> (FulgurSessionStore, SessionRepository, i32) {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("failed to open in-memory SQLite");
+        sqlx::migrate!("./data/migrations")
+            .run(&pool)
+            .await
+            .expect("failed to run migrations");
+        let db_pool = DbPool::Sqlite(pool);
+        let user_id = UserRepository::new(db_pool.clone())
+            .create(
+                "session-owner@example.com".to_string(),
+                "Session".to_string(),
+                "Owner".to_string(),
+                "hash".to_string(),
+                true,
+                false,
+            )
+            .await
+            .expect("failed to create owning user");
+        let repository = SessionRepository::new(db_pool);
+        (
+            FulgurSessionStore::new(repository.clone()),
+            repository,
+            user_id,
+        )
+    }
+
+    /// Build a record authenticated as the given user.
+    ///
+    /// ### Arguments
+    /// - `user_id`: The user id stored under `SESSION_USER_ID`
+    ///
+    /// ### Returns
+    /// - `Record`: A record expiring in one hour
+    fn make_authenticated_record(user_id: i32) -> Record {
+        let mut record = make_record();
+        record
+            .data
+            .insert(SESSION_USER_ID.to_string(), serde_json::json!(user_id));
+        record
+    }
+
+    #[tokio::test]
+    async fn save_after_revocation_does_not_resurrect_session() {
+        let (store, repository, user_id) = setup_test_store().await;
+        let mut record = make_authenticated_record(user_id);
+        store.create(&mut record).await.expect("create");
+
+        repository
+            .delete_all_for_user(user_id)
+            .await
+            .expect("revoke");
+        record
+            .data
+            .insert(SESSION_LAST_SEEN.to_string(), serde_json::json!(1));
+        store.save(&record).await.expect("save");
+
+        assert!(store.load(&record.id).await.expect("load").is_none());
+        assert_eq!(repository.count_for_user(user_id).await.expect("count"), 0);
+    }
+
+    #[tokio::test]
+    async fn save_updates_existing_session() {
+        let (store, _repository, user_id) = setup_test_store().await;
+        let mut record = make_authenticated_record(user_id);
+        store.create(&mut record).await.expect("create");
+
+        record
+            .data
+            .insert(SESSION_REMEMBER_ME.to_string(), serde_json::json!(true));
+        store.save(&record).await.expect("save");
+
+        let loaded = store
+            .load(&record.id)
+            .await
+            .expect("load")
+            .expect("session exists");
+        assert_eq!(loaded.data, record.data);
+    }
+
+    #[tokio::test]
+    async fn create_regenerates_id_on_collision() {
+        let (store, repository, user_id) = setup_test_store().await;
+        let mut first = make_authenticated_record(user_id);
+        store.create(&mut first).await.expect("create first");
+
+        let mut second = make_authenticated_record(user_id);
+        second.id = first.id;
+        store.create(&mut second).await.expect("create second");
+
+        assert_ne!(second.id, first.id);
+        assert_eq!(repository.count_for_user(user_id).await.expect("count"), 2);
+    }
 
     fn make_record() -> Record {
         Record {
