@@ -13,7 +13,7 @@ use crate::{
     handlers::AppState,
     session, templates,
     users::MAX_NAME_LEN,
-    utils::{generate_valid_password, is_valid_email},
+    utils::{generate_valid_password, is_valid_email, normalize_email},
 };
 
 const MIN_MAX_FILE_SIZE_BYTES: u64 = 1_024; // 1 KB
@@ -350,7 +350,7 @@ pub async fn create_user_from_admin(
     };
     let first_name = request.first_name.trim();
     let last_name = request.last_name.trim();
-    let email = request.email.trim();
+    let email = normalize_email(&request.email);
     if first_name.is_empty() {
         return Err(AppError::ValidationError(
             "First name cannot be empty".to_string(),
@@ -371,17 +371,12 @@ pub async fn create_user_from_admin(
             "Last name cannot exceed {MAX_NAME_LEN} characters"
         )));
     }
-    if !is_valid_email(email) {
+    if !is_valid_email(&email) {
         return Err(AppError::InternalError(anyhow::anyhow!(
             "Invalid email address"
         )));
     }
-    if (state
-        .user_repository
-        .get_by_email(email.to_string())
-        .await?)
-        .is_some()
-    {
+    if (state.user_repository.get_by_email(email.clone()).await?).is_some() {
         return Err(AppError::InternalError(anyhow::anyhow!(
             "A user with this email already exists"
         )));
@@ -392,7 +387,7 @@ pub async fn create_user_from_admin(
     let new_user_id = state
         .user_repository
         .create(
-            email.to_string(),
+            email.clone(),
             first_name.to_string(),
             last_name.to_string(),
             password_hash,
@@ -436,7 +431,7 @@ pub async fn create_user_from_admin(
         );
         state
             .mailer
-            .send_email(email.to_string(), subject, text_body, html_body)
+            .send_email(email.clone(), subject, text_body, html_body)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to send account creation email: {}", e);

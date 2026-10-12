@@ -56,6 +56,23 @@ pub fn normalize_password(password: &str) -> &str {
     password.trim()
 }
 
+/// Normalize a submitted email address before lookup or storage.
+///
+/// `users.email` is compared case-sensitively on both backends, so every
+/// email-accepting path (login, registration, setup, admin creation, password
+/// reset, email change, API token) must apply the same normalization. Otherwise
+/// an account stored with uppercase letters can never be found by the
+/// lowercasing login flow.
+///
+/// ### Arguments
+/// - `email`: The raw email as submitted by the user
+///
+/// ### Returns
+/// - The email with surrounding whitespace removed and converted to lowercase
+pub fn normalize_email(email: &str) -> String {
+    email.trim().to_lowercase()
+}
+
 /// Generate a random password that meets validation requirements
 ///
 /// ### Returns
@@ -219,6 +236,15 @@ mod tests {
         assert_eq!(format_bytes(1536), "1.5 KB");
         assert_eq!(format_bytes(1024 * 1024), "1 MB");
         assert_eq!(format_bytes(10 * 1024 * 1024 * 1024), "10 GB");
+    }
+
+    #[test]
+    fn test_normalize_email() {
+        assert_eq!(
+            normalize_email("  Jane.Doe@Example.COM \n"),
+            "jane.doe@example.com"
+        );
+        assert_eq!(normalize_email("user@example.com"), "user@example.com");
     }
 
     #[test]

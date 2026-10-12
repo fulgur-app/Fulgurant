@@ -27,7 +27,7 @@ use crate::{
     shares::{CreateShare, DisplayShare, ShareRepository},
     templates::{self},
     users::{MAX_NAME_LEN, UserRepository},
-    utils::{is_valid_email, is_valid_file_name},
+    utils::{is_valid_email, is_valid_file_name, normalize_email},
     verification_code::{self, VerificationCodeRepository},
 };
 
@@ -749,7 +749,7 @@ pub async fn update_email_step_1(
     Form(request): Form<UpdateEmailRequest>,
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
-    let email = request.email.trim().to_lowercase();
+    let email = normalize_email(&request.email);
     if !is_valid_email(&email) {
         let template = templates::EmailChangeStep2Template {
             new_email: email,
@@ -814,7 +814,7 @@ pub async fn update_email_step_2(
     Form(request): Form<VerifyEmailChangeRequest>,
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
-    let email = request.email.trim().to_lowercase();
+    let email = normalize_email(&request.email);
     let result = state
         .verification_code_repository
         .verify_code(
