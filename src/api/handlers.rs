@@ -784,7 +784,7 @@ pub async fn obtain_access_token(
         Ok(Some(user)) => user,
         Ok(None) => {
             tracing::warn!("Token request for non-existent user");
-            crate::api_key::dummy_verify_api_key();
+            crate::api_key::dummy_verify_api_key().await;
             return Err((
                 StatusCode::UNAUTHORIZED,
                 Json(ErrorResponse {
@@ -806,29 +806,31 @@ pub async fn obtain_access_token(
     let fast_hash = crate::api_key::hash_api_key_fast(device_key);
     let mut authenticated_device = None;
     match state.device_repository.get_by_fast_hash(&fast_hash).await {
-        Ok(Some(device)) => match crate::api_key::verify_api_key(device_key, &device.device_key) {
-            Ok(true) if device.user_id == user.id => {
-                authenticated_device = Some((device.device_id.clone(), device.name.clone()));
-                tracing::debug!(
-                    "Access token requested for user {} with device {} (fast path)",
-                    user.id,
-                    device.device_id
-                );
+        Ok(Some(device)) => {
+            match crate::api_key::verify_api_key(device_key, &device.device_key).await {
+                Ok(true) if device.user_id == user.id => {
+                    authenticated_device = Some((device.device_id.clone(), device.name.clone()));
+                    tracing::debug!(
+                        "Access token requested for user {} with device {} (fast path)",
+                        user.id,
+                        device.device_id
+                    );
+                }
+                Ok(true) => {
+                    tracing::warn!(
+                        "Fast hash matched but user_id mismatch: device user {}, requesting user {}",
+                        device.user_id,
+                        user.id
+                    );
+                }
+                Ok(false) => {
+                    tracing::warn!("Fast hash matched but Argon2 failed - possible hash collision");
+                }
+                Err(e) => {
+                    tracing::error!("Error verifying device key after fast hash match: {:?}", e);
+                }
             }
-            Ok(true) => {
-                tracing::warn!(
-                    "Fast hash matched but user_id mismatch: device user {}, requesting user {}",
-                    device.user_id,
-                    user.id
-                );
-            }
-            Ok(false) => {
-                tracing::warn!("Fast hash matched but Argon2 failed - possible hash collision");
-            }
-            Err(e) => {
-                tracing::error!("Error verifying device key after fast hash match: {:?}", e);
-            }
-        },
+        }
         Ok(None) => {
             tracing::debug!("No fast hash match for user {} - trying slow path", user.id);
             let devices = match state.device_repository.get_all_for_user(user.id).await {
@@ -850,10 +852,10 @@ pub async fn obtain_access_token(
                 .filter(|device| device.device_key_fast_hash.is_none())
                 .collect();
             if legacy_devices.is_empty() {
-                crate::api_key::dummy_verify_api_key();
+                crate::api_key::dummy_verify_api_key().await;
             }
             for device in legacy_devices {
-                match crate::api_key::verify_api_key(device_key, &device.device_key) {
+                match crate::api_key::verify_api_key(device_key, &device.device_key).await {
                     Ok(true) => {
                         authenticated_device =
                             Some((device.device_id.clone(), device.name.clone()));

@@ -383,6 +383,7 @@ pub async fn create_user_from_admin(
     }
     let password = generate_valid_password();
     let password_hash = hash_password(&password)
+        .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     let new_user_id = state
         .user_repository

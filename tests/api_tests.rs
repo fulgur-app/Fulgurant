@@ -305,7 +305,8 @@ async fn test_token_nonexistent_user() {
 async fn test_token_unverified_email() {
     let app = TestApp::new().await;
     let email = "unverified@test.com";
-    let password_hash = fulgurant::auth::handlers::hash_password("TestPassword1!").unwrap();
+    let password_hash =
+        fulgurant::auth::handlers::hash_password_blocking("TestPassword1!").unwrap();
     let user_repo = fulgurant::users::UserRepository::new(app.db_pool.clone());
     let user_id = user_repo
         .create(

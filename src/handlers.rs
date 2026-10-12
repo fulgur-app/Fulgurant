@@ -227,6 +227,7 @@ pub async fn create_device(
     request.device_type = device_type;
     let api_key = api_key::generate_api_key();
     let hash = api_key::hash_api_key(&api_key)
+        .await
         .map_err(|e| AppError::ApiKeyError(anyhow::anyhow!("Failed to hash API key: {e}")))?;
     let fast_hash = api_key::hash_api_key_fast(&api_key);
     let device = state
@@ -593,6 +594,7 @@ pub async fn create_web_share(
         .into());
     }
     let discarded_key_hash = api_key::hash_api_key(&api_key::generate_api_key())
+        .await
         .map_err(|e| AppError::ApiKeyError(anyhow::anyhow!("Failed to hash API key: {e}")))?;
     let web_device = state
         .device_repository

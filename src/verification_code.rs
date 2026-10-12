@@ -1,3 +1,4 @@
+use crate::argon2_executor::run_argon2;
 use crate::db::DbPool;
 use crate::{db_execute, db_execute_dual, db_fetch_one_dual, db_fetch_optional};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -18,7 +19,7 @@ pub fn generate_code() -> String {
     code.to_string()
 }
 
-/// Hash a code
+/// Hash a code on the bounded Argon2 executor
 ///
 /// ### Arguments
 /// - `code`: The code to hash
@@ -26,7 +27,20 @@ pub fn generate_code() -> String {
 /// ### Returns
 /// - `Ok(String)`: The hashed code
 /// - `Err(anyhow::Error)`: If hashing fails
-pub fn hash_code(code: &str) -> anyhow::Result<String> {
+pub async fn hash_code(code: &str) -> anyhow::Result<String> {
+    let code = code.to_owned();
+    run_argon2(move || hash_code_blocking(&code)).await
+}
+
+/// Hash a code on the current thread (blocking, use `hash_code` from async code)
+///
+/// ### Arguments
+/// - `code`: The code to hash
+///
+/// ### Returns
+/// - `Ok(String)`: The hashed code
+/// - `Err(anyhow::Error)`: If hashing fails
+pub fn hash_code_blocking(code: &str) -> anyhow::Result<String> {
     let hash = Argon2::default()
         .hash_password(code.as_bytes())
         .map_err(|e| anyhow::anyhow!("Failed to hash verification code: {e}"))?
@@ -34,7 +48,7 @@ pub fn hash_code(code: &str) -> anyhow::Result<String> {
     Ok(hash)
 }
 
-/// Verify a code
+/// Verify a code on the bounded Argon2 executor
 ///
 /// ### Arguments
 /// - `code`: The code to verify
@@ -42,7 +56,21 @@ pub fn hash_code(code: &str) -> anyhow::Result<String> {
 ///
 /// ### Returns
 /// - `true` if the code is valid, `false` otherwise (including on malformed hash)
-pub fn verify_code(code: &str, hash: &str) -> bool {
+pub async fn verify_code(code: &str, hash: &str) -> bool {
+    let code = code.to_owned();
+    let hash = hash.to_owned();
+    run_argon2(move || verify_code_blocking(&code, &hash)).await
+}
+
+/// Verify a code on the current thread (blocking, use `verify_code` from async code)
+///
+/// ### Arguments
+/// - `code`: The code to verify
+/// - `hash`: The hashed code
+///
+/// ### Returns
+/// - `true` if the code is valid, `false` otherwise (including on malformed hash)
+pub fn verify_code_blocking(code: &str, hash: &str) -> bool {
     let Ok(parsed) = PasswordHash::new(hash) else {
         tracing::warn!("Failed to parse verification code hash - treating as invalid");
         return false;
@@ -107,7 +135,7 @@ impl VerificationCodeRepository {
         code: String,
         purpose: String,
     ) -> anyhow::Result<VerificationCode> {
-        let code_hash = hash_code(&code)?;
+        let code_hash = hash_code(&code).await?;
         let id = Uuid::new_v4().to_string();
         let now = OffsetDateTime::now_utc();
         let expires_at = now + Duration::minutes(VERIFICATION_CODE_EXPIRATION_MINUTES);
@@ -262,7 +290,7 @@ impl VerificationCodeRepository {
             return Ok(VerificationResult::TooManyAttempts);
         }
 
-        let is_valid = verify_code(&code, &verification_code.code_hash);
+        let is_valid = verify_code(&code, &verification_code.code_hash).await;
         if !is_valid {
             let remaining =
                 (verification_code.max_attempts - verification_code.attempts - 1).max(0);
@@ -356,7 +384,7 @@ mod tests {
         code: &str,
         expires_in_minutes: i64,
     ) {
-        let code_hash = hash_code(code).expect("hashing the code should succeed");
+        let code_hash = hash_code_blocking(code).expect("hashing the code should succeed");
         let id = Uuid::new_v4().to_string();
         let expires_at = OffsetDateTime::now_utc() + Duration::minutes(expires_in_minutes);
         db_execute_dual!(
@@ -388,7 +416,7 @@ mod tests {
         code: &str,
         created_minutes_ago: i64,
     ) {
-        let code_hash = hash_code(code).expect("hashing the code should succeed");
+        let code_hash = hash_code_blocking(code).expect("hashing the code should succeed");
         let id = Uuid::new_v4().to_string();
         let now = OffsetDateTime::now_utc();
         let created_at = now - Duration::minutes(created_minutes_ago);
@@ -434,7 +462,7 @@ mod tests {
             .expect("a code must be returned");
 
         assert!(
-            verify_code("222222", &returned.code_hash),
+            verify_code("222222", &returned.code_hash).await,
             "get_for must return the most recently created code"
         );
     }
@@ -493,16 +521,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_hash_and_verify_code_round_trip() {
+    #[tokio::test]
+    async fn test_hash_and_verify_code_round_trip() {
         let code = "123456";
-        let hash = hash_code(code).expect("hashing the code should succeed");
+        let hash = hash_code(code)
+            .await
+            .expect("hashing the code should succeed");
         assert!(
-            verify_code(code, &hash),
+            verify_code(code, &hash).await,
             "the matching code must verify successfully"
         );
         assert!(
-            !verify_code("654321", &hash),
+            !verify_code("654321", &hash).await,
             "a non-matching code must fail verification"
         );
     }
@@ -510,11 +540,11 @@ mod tests {
     #[test]
     fn test_verify_code_rejects_malformed_hash_without_panicking() {
         assert!(
-            !verify_code("123456", "not-a-valid-argon2-hash"),
+            !verify_code_blocking("123456", "not-a-valid-argon2-hash"),
             "a malformed hash must be treated as invalid rather than panicking"
         );
         assert!(
-            !verify_code("123456", ""),
+            !verify_code_blocking("123456", ""),
             "an empty hash must be treated as invalid"
         );
     }

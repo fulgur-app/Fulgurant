@@ -732,8 +732,8 @@ mod tests {
     async fn test_fast_hash_lookup_matches_argon2_verification() {
         let (repository, user_id) = setup_test_repository().await;
         let raw_key = crate::api_key::generate_api_key();
-        let stored_hash =
-            crate::api_key::hash_api_key(&raw_key).expect("hashing the key should succeed");
+        let stored_hash = crate::api_key::hash_api_key_blocking(&raw_key)
+            .expect("hashing the key should succeed");
         let fast_hash = crate::api_key::hash_api_key_fast(&raw_key);
         let created = repository
             .create(
@@ -753,7 +753,7 @@ mod tests {
             .expect("device should be found via its fast hash");
         assert_eq!(found.id, created.id);
         assert!(
-            crate::api_key::verify_api_key(&raw_key, &found.device_key)
+            crate::api_key::verify_api_key_blocking(&raw_key, &found.device_key)
                 .expect("verification should not error"),
             "the raw key must verify against the stored Argon2 hash"
         );
