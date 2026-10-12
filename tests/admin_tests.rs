@@ -228,6 +228,63 @@ async fn test_create_user_success() {
 }
 
 #[tokio::test]
+async fn test_create_user_stores_lowercase_email() {
+    let app = TestApp::new().await;
+    login_as_admin(&app.server, &app.pool).await;
+
+    let page = app.server.get("/admin").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    app.server
+        .post("/user/create")
+        .add_header(name, value)
+        .form(&CreateUserFormData {
+            email: "  Jane.Doe@Example.COM ",
+            first_name: "Jane",
+            last_name: "Doe",
+        })
+        .await
+        .assert_status_ok();
+
+    let stored: (String,) =
+        sqlx::query_as("SELECT email FROM users WHERE first_name = 'Jane' AND last_name = 'Doe'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(stored.0, "jane.doe@example.com");
+}
+
+#[tokio::test]
+async fn test_create_user_duplicate_email_is_case_insensitive() {
+    let app = TestApp::new().await;
+    login_as_admin(&app.server, &app.pool).await;
+    create_verified_user(&app.pool, "jane@example.com", "Password123!").await;
+
+    let page = app.server.get("/admin").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post("/user/create")
+        .add_header(name, value)
+        .form(&CreateUserFormData {
+            email: "JANE@example.com",
+            first_name: "Jane",
+            last_name: "Doe",
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
+    let matching_users: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM users WHERE lower(email) = 'jane@example.com'")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    assert_eq!(matching_users.0, 1);
+}
+
+#[tokio::test]
 async fn test_create_user_invalid_email() {
     let app = TestApp::new().await;
     login_as_admin(&app.server, &app.pool).await;

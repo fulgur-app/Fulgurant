@@ -4,6 +4,7 @@ use crate::{
     devices::Device,
     handlers::AppState,
     shares::{CreateShare, Share},
+    utils::normalize_email,
 };
 use axum::{
     Extension, Json,
@@ -747,6 +748,7 @@ pub async fn obtain_access_token(
     let email = headers
         .get("X-User-Email")
         .and_then(|v| v.to_str().ok())
+        .map(normalize_email)
         .ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
@@ -754,9 +756,7 @@ pub async fn obtain_access_token(
                     error: "Missing X-User-Email header".to_string(),
                 }),
             )
-        })?
-        .trim()
-        .to_lowercase();
+        })?;
     let auth_header = headers
         .get("Authorization")
         .and_then(|v| v.to_str().ok())

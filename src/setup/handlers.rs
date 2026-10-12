@@ -1,4 +1,4 @@
-use crate::utils::{is_password_valid, is_valid_email};
+use crate::utils::{is_password_valid, is_valid_email, normalize_email};
 use crate::{
     auth::handlers::hash_password, errors::AppError, handlers::AppState, session, templates,
 };
@@ -102,7 +102,7 @@ pub async fn create_admin(
     let first_name = request.first_name.trim();
     let last_name = request.last_name.trim();
     let password = request.password.trim();
-    let email = request.email.trim().to_lowercase();
+    let email = normalize_email(&request.email);
     if !is_valid_email(&email) {
         let template = templates::SetupFormTemplate {
             error_message: "Invalid email address".to_string(),

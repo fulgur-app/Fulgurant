@@ -1,4 +1,4 @@
-use crate::utils::{is_password_valid, is_valid_email, normalize_password};
+use crate::utils::{is_password_valid, is_valid_email, normalize_email, normalize_password};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use askama::Template;
 use axum::{
@@ -75,7 +75,7 @@ pub async fn login(
     session: Session,
     Form(request): Form<LoginRequest>,
 ) -> Result<Response, AppError> {
-    let email = request.email.trim().to_lowercase();
+    let email = normalize_email(&request.email);
     let password = normalize_password(&request.password);
     let user = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(user)) => user,
@@ -375,7 +375,7 @@ pub async fn register_step_1(
     let first_name = request.first_name.trim();
     let last_name = request.last_name.trim();
     let password = normalize_password(&request.password);
-    let email = request.email.trim().to_lowercase();
+    let email = normalize_email(&request.email);
     if first_name.is_empty()
         || last_name.is_empty()
         || first_name.len() > MAX_NAME_LEN
@@ -491,7 +491,7 @@ pub async fn register_step_2(
     _session: Session,
     Form(request): Form<RegisterStep2Request>,
 ) -> Result<Html<String>, AppError> {
-    let email = request.email.trim().to_lowercase();
+    let email = normalize_email(&request.email);
     let code = request.code.trim().to_string();
     let user = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(user)) => user,
@@ -580,7 +580,7 @@ pub async fn forgot_password_step_1(
     State(state): State<AppState>,
     Form(request): Form<ForgotPasswordStep1Request>,
 ) -> Result<Html<String>, AppError> {
-    let email = request.email.trim().to_lowercase();
+    let email = normalize_email(&request.email);
     let user = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(user)) => user,
         Ok(None) => {
@@ -633,7 +633,7 @@ pub async fn forgot_password_step_2(
     session: Session,
     Form(request): Form<ForgotPasswordStep2Request>,
 ) -> Result<Html<String>, AppError> {
-    let email = request.email.trim().to_lowercase();
+    let email = normalize_email(&request.email);
     let result = state
         .verification_code_repository
         .verify_code(
@@ -688,7 +688,7 @@ pub async fn forgot_password_step_3(
     session: Session,
     Form(request): Form<ForgotPasswordStep3Request>,
 ) -> Result<Html<String>, AppError> {
-    let email = request.email.trim().to_lowercase();
+    let email = normalize_email(&request.email);
     let password = normalize_password(&request.password);
     if !is_password_valid(password) {
         let template = templates::ForgotPasswordStep3Template {
@@ -776,7 +776,7 @@ pub async fn resend_forgot_password_code(
     State(state): State<AppState>,
     Query(query): Query<ResendCodeQuery>,
 ) -> Result<Html<String>, AppError> {
-    let email = query.email.trim().to_lowercase();
+    let email = normalize_email(&query.email);
     let user_exists = match state.user_repository.get_by_email(email.clone()).await {
         Ok(Some(_)) => true,
         Ok(None) => false,
