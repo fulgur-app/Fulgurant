@@ -134,6 +134,7 @@ pub async fn create_admin(
         return Ok(Html(template.render()?).into_response());
     }
     let password_hash = hash_password(password)
+        .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     let user_id = state
         .user_repository

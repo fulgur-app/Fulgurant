@@ -1,6 +1,6 @@
 use axum::http::header::{HeaderName, HeaderValue};
 use axum_test::TestServer;
-use fulgurant::auth::handlers::hash_password;
+use fulgurant::auth::handlers::hash_password_blocking;
 use fulgurant::db::DbPool;
 use fulgurant::users::UserRepository;
 use serde::Serialize;
@@ -22,7 +22,7 @@ struct LoginFormData<'a> {
 /// ### Returns
 /// - `i32`: The created user's ID
 pub async fn create_verified_user(pool: &SqlitePool, email: &str, password: &str) -> i32 {
-    let password_hash = hash_password(password).unwrap();
+    let password_hash = hash_password_blocking(password).unwrap();
     let user_repo = UserRepository::new(DbPool::Sqlite(pool.clone()));
     user_repo
         .create(
@@ -51,7 +51,7 @@ pub async fn create_verified_user(pool: &SqlitePool, email: &str, password: &str
 /// - `i32`: The created user's ID
 #[allow(dead_code)]
 pub async fn create_unverified_user(pool: &SqlitePool, email: &str, password: &str) -> i32 {
-    let password_hash = hash_password(password).unwrap();
+    let password_hash = hash_password_blocking(password).unwrap();
     let user_repo = UserRepository::new(DbPool::Sqlite(pool.clone()));
     user_repo
         .create(
@@ -81,7 +81,7 @@ pub async fn create_unverified_user(pool: &SqlitePool, email: &str, password: &s
 pub async fn create_admin_user(pool: &SqlitePool) -> (i32, String, String) {
     let email = "admin2@test.com".to_string();
     let password = "TestAdmin1!".to_string();
-    let password_hash = hash_password(&password).unwrap();
+    let password_hash = hash_password_blocking(&password).unwrap();
     let result = sqlx::query(
         "INSERT INTO users (email, first_name, last_name, password_hash, role, email_verified) VALUES (?, 'Admin', 'User', ?, 'Admin', TRUE)",
     )
@@ -105,7 +105,7 @@ pub async fn create_admin_user(pool: &SqlitePool) -> (i32, String, String) {
 /// - `i32`: The created user's ID
 #[allow(dead_code)]
 pub async fn create_user_with_force_update(pool: &SqlitePool, email: &str, password: &str) -> i32 {
-    let password_hash = hash_password(password).unwrap();
+    let password_hash = hash_password_blocking(password).unwrap();
     let user_repo = UserRepository::new(DbPool::Sqlite(pool.clone()));
     user_repo
         .create(

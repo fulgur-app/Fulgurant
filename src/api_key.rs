@@ -1,3 +1,4 @@
+use crate::argon2_executor::run_argon2;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::{Engine as _, engine::general_purpose};
 use rand::RngExt;
@@ -16,7 +17,7 @@ pub fn generate_api_key() -> String {
     format!("fulgur_{encoded}")
 }
 
-/// Hash an API key
+/// Hash an API key on the bounded Argon2 executor
 ///
 /// ### Arguments
 /// - `api_key`: The API key to hash
@@ -24,7 +25,20 @@ pub fn generate_api_key() -> String {
 /// ### Returns
 /// - `Ok(String)`: The hashed API key
 /// - `Err(anyhow::Error)`: The error if the API key cannot be hashed
-pub fn hash_api_key(api_key: &str) -> anyhow::Result<String> {
+pub async fn hash_api_key(api_key: &str) -> anyhow::Result<String> {
+    let api_key = api_key.to_owned();
+    run_argon2(move || hash_api_key_blocking(&api_key)).await
+}
+
+/// Hash an API key on the current thread (blocking, use `hash_api_key` from async code)
+///
+/// ### Arguments
+/// - `api_key`: The API key to hash
+///
+/// ### Returns
+/// - `Ok(String)`: The hashed API key
+/// - `Err(anyhow::Error)`: The error if the API key cannot be hashed
+pub fn hash_api_key_blocking(api_key: &str) -> anyhow::Result<String> {
     let hash = match Argon2::default().hash_password(api_key.as_bytes()) {
         Ok(hash) => hash,
         Err(e) => return Err(anyhow::anyhow!("Failed to hash API key: {e}")),
@@ -32,7 +46,7 @@ pub fn hash_api_key(api_key: &str) -> anyhow::Result<String> {
     Ok(hash.to_string())
 }
 
-/// Verify an API key
+/// Verify an API key on the bounded Argon2 executor
 ///
 /// ### Arguments
 /// - `api_key`: The API key to verify
@@ -41,7 +55,22 @@ pub fn hash_api_key(api_key: &str) -> anyhow::Result<String> {
 /// ### Returns
 /// - `Ok(bool)`: True if the API key is valid, false otherwise
 /// - `Err(anyhow::Error)`: The error if the API key cannot be verified
-pub fn verify_api_key(api_key: &str, hash: &str) -> anyhow::Result<bool> {
+pub async fn verify_api_key(api_key: &str, hash: &str) -> anyhow::Result<bool> {
+    let api_key = api_key.to_owned();
+    let hash = hash.to_owned();
+    run_argon2(move || verify_api_key_blocking(&api_key, &hash)).await
+}
+
+/// Verify an API key on the current thread (blocking, use `verify_api_key` from async code)
+///
+/// ### Arguments
+/// - `api_key`: The API key to verify
+/// - `hash`: The hashed API key
+///
+/// ### Returns
+/// - `Ok(bool)`: True if the API key is valid, false otherwise
+/// - `Err(anyhow::Error)`: The error if the API key cannot be verified
+pub fn verify_api_key_blocking(api_key: &str, hash: &str) -> anyhow::Result<bool> {
     let hash = match PasswordHash::new(hash) {
         Ok(hash) => hash,
         Err(e) => return Err(anyhow::anyhow!("Invalid hash: {e}")),
@@ -56,13 +85,16 @@ pub fn verify_api_key(api_key: &str, hash: &str) -> anyhow::Result<bool> {
 /// Computed once with the default Argon2 parameters so a verification against it costs
 /// exactly the same as verifying a real device key.
 static DUMMY_API_KEY_HASH: LazyLock<String> = LazyLock::new(|| {
-    hash_api_key("fulgur_dummy_key_for_constant_time_verification")
+    hash_api_key_blocking("fulgur_dummy_key_for_constant_time_verification")
         .expect("dummy API key hashing must succeed with default Argon2 parameters")
 });
 
 /// Perform a throwaway Argon2 verification against a fixed dummy hash
-pub fn dummy_verify_api_key() {
-    let _ = verify_api_key("fulgur_dummy_key", DUMMY_API_KEY_HASH.as_str());
+pub async fn dummy_verify_api_key() {
+    run_argon2(|| {
+        let _ = verify_api_key_blocking("fulgur_dummy_key", DUMMY_API_KEY_HASH.as_str());
+    })
+    .await;
 }
 
 /// Hash an API key using SHA256 for fast lookup (not security)
@@ -126,7 +158,7 @@ mod tests {
     fn test_hash_api_key_success() {
         let api_key = "test_api_key_123";
 
-        let result = hash_api_key(api_key);
+        let result = hash_api_key_blocking(api_key);
 
         assert!(
             result.is_ok(),
@@ -149,8 +181,8 @@ mod tests {
         let api_key = "same_api_key";
 
         // Hash the same key twice - should produce different hashes due to different salts
-        let hash1 = hash_api_key(api_key).unwrap();
-        let hash2 = hash_api_key(api_key).unwrap();
+        let hash1 = hash_api_key_blocking(api_key).unwrap();
+        let hash2 = hash_api_key_blocking(api_key).unwrap();
 
         assert_ne!(
             hash1, hash2,
@@ -160,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_hash_api_key_empty_string() {
-        let result = hash_api_key("");
+        let result = hash_api_key_blocking("");
 
         // Empty string should still hash successfully
         assert!(result.is_ok(), "hash_api_key should handle empty string");
@@ -176,10 +208,10 @@ mod tests {
         let api_key = "test_api_key_456";
 
         // Hash the key
-        let hash = hash_api_key(api_key).unwrap();
+        let hash = hash_api_key_blocking(api_key).unwrap();
 
         // Verify with the same key
-        let result = verify_api_key(api_key, &hash);
+        let result = verify_api_key_blocking(api_key, &hash);
 
         assert!(
             result.is_ok(),
@@ -197,10 +229,10 @@ mod tests {
         let wrong_key = "wrong_api_key";
 
         // Hash the correct key
-        let hash = hash_api_key(api_key).unwrap();
+        let hash = hash_api_key_blocking(api_key).unwrap();
 
         // Verify with wrong key
-        let result = verify_api_key(wrong_key, &hash);
+        let result = verify_api_key_blocking(wrong_key, &hash);
 
         assert!(
             result.is_ok(),
@@ -217,7 +249,7 @@ mod tests {
         let api_key = "test_api_key_789";
         let invalid_hash = "not_a_valid_hash";
 
-        let result = verify_api_key(api_key, invalid_hash);
+        let result = verify_api_key_blocking(api_key, invalid_hash);
 
         assert!(
             result.is_err(),
@@ -229,7 +261,7 @@ mod tests {
     fn test_verify_api_key_empty_hash() {
         let api_key = "test_api_key";
 
-        let result = verify_api_key(api_key, "");
+        let result = verify_api_key_blocking(api_key, "");
 
         assert!(result.is_err(), "verify_api_key should fail for empty hash");
     }
@@ -239,10 +271,10 @@ mod tests {
         let api_key = generate_api_key();
 
         // Hash the generated key
-        let hash = hash_api_key(&api_key).unwrap();
+        let hash = hash_api_key_blocking(&api_key).unwrap();
 
         // Verify it can be verified
-        let verified = verify_api_key(&api_key, &hash).unwrap();
+        let verified = verify_api_key_blocking(&api_key, &hash).unwrap();
         assert!(verified, "Generated and hashed key should verify correctly");
     }
 
@@ -250,8 +282,8 @@ mod tests {
     fn test_hash_and_verify_special_characters() {
         let api_key = "fulgur_!@#$%^&*()_+-=[]{}|;:,.<>?";
 
-        let hash = hash_api_key(api_key).unwrap();
-        let verified = verify_api_key(api_key, &hash).unwrap();
+        let hash = hash_api_key_blocking(api_key).unwrap();
+        let verified = verify_api_key_blocking(api_key, &hash).unwrap();
 
         assert!(
             verified,
@@ -263,8 +295,8 @@ mod tests {
     fn test_hash_and_verify_unicode() {
         let api_key = "fulgur_测试_key_🎉";
 
-        let hash = hash_api_key(api_key).unwrap();
-        let verified = verify_api_key(api_key, &hash).unwrap();
+        let hash = hash_api_key_blocking(api_key).unwrap();
+        let verified = verify_api_key_blocking(api_key, &hash).unwrap();
 
         assert!(
             verified,
@@ -277,10 +309,19 @@ mod tests {
         // Generate a very long API key
         let long_key = "fulgur_".to_string() + &"a".repeat(200);
 
-        let hash = hash_api_key(&long_key).unwrap();
-        let verified = verify_api_key(&long_key, &hash).unwrap();
+        let hash = hash_api_key_blocking(&long_key).unwrap();
+        let verified = verify_api_key_blocking(&long_key, &hash).unwrap();
 
         assert!(verified, "Long API key should verify correctly");
+    }
+
+    #[tokio::test]
+    async fn test_async_hash_and_verify_api_key_round_trip() {
+        let api_key = generate_api_key();
+        let hash = hash_api_key(&api_key).await.unwrap();
+
+        assert!(verify_api_key(&api_key, &hash).await.unwrap());
+        assert!(!verify_api_key("fulgur_wrong_key", &hash).await.unwrap());
     }
 
     #[test]

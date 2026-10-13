@@ -1,3 +1,4 @@
+use crate::argon2_executor::run_argon2;
 use crate::utils::{is_password_valid, is_valid_email, normalize_email, normalize_password};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use askama::Template;
@@ -81,7 +82,7 @@ pub async fn login(
         Ok(Some(user)) => user,
         Ok(None) => {
             tracing::warn!("Login attempt for non-existent user");
-            dummy_verify_password();
+            dummy_verify_password().await;
             return invalid_credentials_response();
         }
         Err(e) => {
@@ -91,7 +92,7 @@ pub async fn login(
             )));
         }
     };
-    let password_verified = verify_password(password, user.password_hash.as_str());
+    let password_verified = verify_password(password, user.password_hash.as_str()).await;
     if !password_verified {
         tracing::warn!("Login attempt with invalid password for user {}", user.id);
         return invalid_credentials_response();
@@ -217,7 +218,7 @@ pub async fn force_password_update(
         .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Database error: {e}")))?
         .ok_or(AppError::Unauthorized)?;
-    if verify_password(password, user.password_hash.as_str()) {
+    if verify_password(password, user.password_hash.as_str()).await {
         let template = templates::ForcePasswordUpdateFormTemplate {
             error_message: "New password must be different from your current password.".to_string(),
         };
@@ -229,6 +230,7 @@ pub async fn force_password_update(
         .into_response());
     }
     let password_hash = hash_password(password)
+        .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     state
         .user_repository
@@ -453,6 +455,7 @@ pub async fn register_step_1(
     }
     let _code = create_and_send_verification_code(&state, &email, "registration").await?;
     let password_hash = hash_password(password)
+        .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     let _user_id = state
         .user_repository
@@ -724,6 +727,7 @@ pub async fn forgot_password_step_3(
         }
     };
     let password_hash = hash_password(password)
+        .await
         .map_err(|e| AppError::InternalError(anyhow::anyhow!("Failed to hash password: {e}")))?;
     match state
         .user_repository
@@ -947,7 +951,7 @@ fn format_verification_error(result: &VerificationResult) -> String {
     }
 }
 
-/// Hashes a password
+/// Hashes a password on the bounded Argon2 executor
 ///
 /// ### Arguments
 /// - `password`: The password to hash
@@ -955,12 +959,25 @@ fn format_verification_error(result: &VerificationResult) -> String {
 /// ### Returns
 /// - `Ok(String)`: The hashed password
 /// - `Err(argon2::password_hash::Error)`: The error if the password cannot be hashed
-pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
+pub async fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
+    let password = password.to_owned();
+    run_argon2(move || hash_password_blocking(&password)).await
+}
+
+/// Hashes a password on the current thread (blocking, use `hash_password` from async code)
+///
+/// ### Arguments
+/// - `password`: The password to hash
+///
+/// ### Returns
+/// - `Ok(String)`: The hashed password
+/// - `Err(argon2::password_hash::Error)`: The error if the password cannot be hashed
+pub fn hash_password_blocking(password: &str) -> Result<String, argon2::password_hash::Error> {
     let hash = Argon2::default().hash_password(password.as_bytes())?;
     Ok(hash.to_string())
 }
 
-/// Verifies a password
+/// Verifies a password on the bounded Argon2 executor
 ///
 /// ### Arguments
 /// - `password`: The password to verify
@@ -968,10 +985,24 @@ pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Er
 ///
 /// ### Returns
 /// - `true` if the password is valid, `false` otherwise (including on malformed hash)
-fn verify_password(password: &str, password_hash: &str) -> bool {
+async fn verify_password(password: &str, password_hash: &str) -> bool {
+    let password = password.to_owned();
+    let password_hash = password_hash.to_owned();
+    run_argon2(move || verify_password_blocking(&password, &password_hash)).await
+}
+
+/// Verifies a password on the current thread
+///
+/// ### Arguments
+/// - `password`: The password to verify
+/// - `password_hash`: The hashed password
+///
+/// ### Returns
+/// - `true` if the password is valid, `false` otherwise (including on malformed hash)
+fn verify_password_blocking(password: &str, password_hash: &str) -> bool {
     let Ok(password_hash) = PasswordHash::new(password_hash) else {
         tracing::warn!("Failed to parse password hash - treating as invalid");
-        dummy_verify_password();
+        dummy_verify_password_blocking();
         return false;
     };
     let argon2 = Argon2::default();
@@ -982,11 +1013,16 @@ fn verify_password(password: &str, password_hash: &str) -> bool {
 
 /// A precomputed Argon2 hash of a fixed dummy password.
 static DUMMY_PASSWORD_HASH: LazyLock<String> = LazyLock::new(|| {
-    hash_password("dummy-password-for-constant-time-verification")
+    hash_password_blocking("dummy-password-for-constant-time-verification")
         .expect("dummy password hashing must succeed with default Argon2 parameters")
 });
 
-/// Performs a throwaway Argon2 verification against a fixed dummy hash.
-fn dummy_verify_password() {
-    let _ = verify_password("dummy-password", DUMMY_PASSWORD_HASH.as_str());
+/// Performs a throwaway Argon2 verification against a fixed dummy hash on the bounded executor.
+async fn dummy_verify_password() {
+    run_argon2(dummy_verify_password_blocking).await;
+}
+
+/// Performs a throwaway Argon2 verification against a fixed dummy hash on the current thread.
+fn dummy_verify_password_blocking() {
+    let _ = verify_password_blocking("dummy-password", DUMMY_PASSWORD_HASH.as_str());
 }
