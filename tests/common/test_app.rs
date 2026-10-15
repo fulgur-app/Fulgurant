@@ -27,6 +27,9 @@ pub struct TestApp {
     pub jwt_secret: String,
     #[allow(dead_code)]
     pub shutdown_token: CancellationToken,
+    /// Live share size limit shared with the app state, for changing it at runtime
+    #[allow(dead_code)]
+    pub max_file_size_bytes: Arc<tokio::sync::RwLock<Option<u64>>>,
 }
 
 /// Configuration options for test application setup
@@ -94,6 +97,7 @@ impl TestApp {
         let session_repository = SessionRepository::new(db_pool.clone());
 
         let shutdown_token = CancellationToken::new();
+        let max_file_size_bytes = Arc::new(tokio::sync::RwLock::new(Some(1_048_576)));
         let app_state = AppState {
             device_repository: DeviceRepository::new(db_pool.clone()),
             user_repository: UserRepository::new(db_pool.clone()),
@@ -115,7 +119,7 @@ impl TestApp {
             sse_heartbeat_seconds: 30,
             jwt_secret: jwt_secret.clone(),
             jwt_expiry_seconds: 900,
-            max_file_size_bytes: Arc::new(tokio::sync::RwLock::new(Some(1_048_576))),
+            max_file_size_bytes: max_file_size_bytes.clone(),
             shutdown_token: shutdown_token.clone(),
         };
 
@@ -138,6 +142,7 @@ impl TestApp {
             db_pool,
             jwt_secret,
             shutdown_token,
+            max_file_size_bytes,
         }
     }
 }

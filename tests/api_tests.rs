@@ -525,6 +525,82 @@ async fn test_share_file_exceeds_max_size() {
 }
 
 #[tokio::test]
+async fn test_share_file_honors_limit_raised_at_runtime() {
+    let app = TestApp::new().await;
+    let email = "share_raised@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (auth_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_device_id, _) = create_device_for_user(&app.pool, user_id, "Destination").await;
+    let jwt = access_token::generate_access_token(
+        user_id,
+        auth_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    *app.max_file_size_bytes.write().await = Some(5 * 1_048_576);
+
+    // Above the body limit derived from the 1 MB startup value, below the new 5 MB limit
+    let payload = ShareFilePayload {
+        content: "x".repeat(2 * 1_048_576),
+        file_name: "big.txt".to_string(),
+        device_id: dest_device_id,
+        deduplication_hash: None,
+    };
+
+    let response = app
+        .server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&payload)
+        .await;
+
+    response.assert_status_ok();
+}
+
+#[tokio::test]
+async fn test_share_file_body_rejected_before_handler_when_limit_lowered_at_runtime() {
+    let app = TestApp::new().await;
+    let email = "share_lowered@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (auth_device_id, _) = create_device_for_user(&app.pool, user_id, "Source").await;
+    let (dest_device_id, _) = create_device_for_user(&app.pool, user_id, "Destination").await;
+    let jwt = access_token::generate_access_token(
+        user_id,
+        auth_device_id,
+        "Source".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    *app.max_file_size_bytes.write().await = Some(1024);
+
+    let payload = ShareFilePayload {
+        content: "x".repeat(64 * 1024),
+        file_name: "big.txt".to_string(),
+        device_id: dest_device_id,
+        deduplication_hash: None,
+    };
+
+    let response = app
+        .server
+        .post("/api/share")
+        .add_header(AUTHORIZATION, bearer(&jwt))
+        .json(&payload)
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(
+        !response.text().contains("exceeds maximum"),
+        "body should be rejected by the body-limit layer, not after buffering in the handler"
+    );
+}
+
+#[tokio::test]
 async fn test_share_file_empty_file_name() {
     let app = TestApp::new().await;
     let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;

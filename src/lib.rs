@@ -68,14 +68,39 @@ fn share_body_limit(max_content_bytes: Option<u64>) -> DefaultBodyLimit {
     }
 }
 
+/// Apply the share request-body limit using the current admin setting, read per request
+/// so that changes made on the admin settings page take effect without a restart.
+///
+/// ### Arguments
+/// - `state`: The application state holding the live `max_file_size_bytes` setting
+/// - `request`: The incoming request
+/// - `next`: The rest of the middleware chain and the share handler
+///
+/// ### Returns
+/// - `Response`: The handler response, or 413 when the body exceeds the current limit
+async fn limit_share_body(
+    State(state): State<handlers::AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let max_content_bytes = *state.max_file_size_bytes.read().await;
+    let Ok(response) = share_body_limit(max_content_bytes)
+        .layer(next)
+        .call(request)
+        .await;
+    response
+}
+
 use axum::{
     Router,
-    extract::DefaultBodyLimit,
+    extract::{DefaultBodyLimit, Request, State},
     http::{HeaderValue, header},
-    middleware as axum_mw,
+    middleware::{self as axum_mw, Next},
+    response::Response,
     routing::{delete, get, post, put},
 };
 use std::sync::Arc;
+use tower::{Layer, Service};
 use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tower_sessions::SessionManagerLayer;
 
@@ -266,11 +291,6 @@ fn make_api_routes(app_state: &handlers::AppState) -> (Router, RateLimitPruner) 
     let api_limiter = governor_conf.limiter().clone();
     let api_pruner: RateLimitPruner = Box::new(move || api_limiter.retain_recent());
 
-    let max_content_bytes = app_state
-        .max_file_size_bytes
-        .try_read()
-        .ok()
-        .and_then(|guard| *guard);
     let token_route = Router::new()
         .route("/api/token", post(api::handlers::obtain_access_token))
         .layer(DefaultBodyLimit::max(API_SMALL_BODY_LIMIT_BYTES))
@@ -278,7 +298,10 @@ fn make_api_routes(app_state: &handlers::AppState) -> (Router, RateLimitPruner) 
         .with_state(app_state.clone());
     let share_route = Router::new()
         .route("/api/share", post(api::handlers::share_file))
-        .layer(share_body_limit(max_content_bytes));
+        .layer(axum_mw::from_fn_with_state(
+            app_state.clone(),
+            limit_share_body,
+        ));
     let authenticated_routes = Router::new()
         .route("/api/ping", get(api::handlers::ping))
         .route(
@@ -362,14 +385,12 @@ fn make_web_routes(
 /// ### Returns
 /// - `Router`: The router that handles the protected routes
 fn make_protected_routes(app_state: &handlers::AppState) -> Router {
-    let max_content_bytes = app_state
-        .max_file_size_bytes
-        .try_read()
-        .ok()
-        .and_then(|guard| *guard);
     let web_share_route = Router::new()
         .route("/share", post(handlers::create_web_share))
-        .layer(share_body_limit(max_content_bytes));
+        .layer(axum_mw::from_fn_with_state(
+            app_state.clone(),
+            limit_share_body,
+        ));
     Router::new()
         .route("/", get(handlers::index))
         .route("/share/new", get(handlers::get_new_share))
