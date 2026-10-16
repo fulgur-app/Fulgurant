@@ -10,7 +10,6 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 use tokio_util::sync::CancellationToken;
-use tower_http::services::ServeDir;
 use tower_sessions::{Expiry, SessionManagerLayer};
 
 static SQLITE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./data/migrations");
@@ -341,8 +340,6 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("Session cookies configured without secure flag (development mode)");
     }
     let (app, rate_limit_pruners) = fulgurant::build_app(&app_state, session_layer);
-    let assets_service = ServeDir::new("assets");
-    let app = app.nest_service("/assets", assets_service);
     make_rate_limit_pruning_task(rate_limit_pruners, shutdown_token.clone());
     let share_repo = app_state.share_repository.clone();
     spawn_periodic_task(

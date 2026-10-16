@@ -101,7 +101,7 @@ use axum::{
 };
 use std::sync::Arc;
 use tower::{Layer, Service};
-use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
+use tower_http::{services::ServeDir, set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tower_sessions::SessionManagerLayer;
 
 use crate::session::FulgurSessionStore;
@@ -132,9 +132,43 @@ pub fn build_app(
         .merge(auth_routes)
         .merge(web_routes)
         .merge(api_routes)
+        .nest_service("/assets", ServeDir::new("assets"))
         .fallback(handlers::not_found);
 
-    (router, vec![auth_pruner, api_pruner])
+    (with_security_headers(router), vec![auth_pruner, api_pruner])
+}
+
+/// Apply the security response headers to every response of the router, including
+/// auth, API, static assets, `/healthz` and the 404 fallback
+///
+/// ### Arguments
+/// - `router`: The fully assembled router (routes, nested services and fallback)
+///
+/// ### Returns
+/// - `Router`: The router with the security header layers applied
+fn with_security_headers(router: Router) -> Router {
+    router
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::HeaderName::from_static("x-xss-protection"),
+            HeaderValue::from_static("0"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        ))
+        .layer(axum::middleware::from_fn(csp::add_csp_header))
 }
 
 /// Make the auth routes
@@ -358,23 +392,6 @@ fn make_web_routes(
             auth::middleware::slide_session_expiry,
         ))
         .layer(session_layer)
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::X_FRAME_OPTIONS,
-            HeaderValue::from_static("DENY"),
-        ))
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::X_CONTENT_TYPE_OPTIONS,
-            HeaderValue::from_static("nosniff"),
-        ))
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::HeaderName::from_static("x-xss-protection"),
-            HeaderValue::from_static("1; mode=block"),
-        ))
-        .layer(SetResponseHeaderLayer::if_not_present(
-            header::STRICT_TRANSPORT_SECURITY,
-            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
-        ))
-        .layer(axum::middleware::from_fn(csp::add_csp_header))
 }
 
 /// Make the protected routes
