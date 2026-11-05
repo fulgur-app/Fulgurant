@@ -19,7 +19,7 @@ path = "src/lib.rs"
 [dependencies]
 # Web framework
 axum = { version = "0.8.9", features = ["macros"] }
-tokio = { version = "1.53.1", features = ["full"] }
+tokio = { version = "1.54.1", features = ["full"] }
 tokio-util = "0.7.19"
 tower = "0.5.3"
 tower-http = { version = "0.7.1", features = ["fs", "trace", "set-header"] }
