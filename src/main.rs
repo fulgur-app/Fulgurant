@@ -381,7 +381,8 @@ async fn main() -> anyhow::Result<()> {
             async move { repo.delete_expired().await }
         },
     );
-    database_backup::make_daily_backup_task(pool.clone(), shutdown_token.clone(), is_prod);
+    let backup_task =
+        database_backup::make_daily_backup_task(pool.clone(), shutdown_token.clone(), is_prod);
     let bind_host = config.bind_host.clone();
     let bind_port = config.bind_port;
     let addr = format!("{bind_host}:{bind_port}").parse::<SocketAddr>()?;
@@ -409,6 +410,8 @@ async fn main() -> anyhow::Result<()> {
     )
     .with_graceful_shutdown(shutdown_token.cancelled_owned())
     .await?;
+    database_backup::wait_for_backup_task(backup_task, database_backup::SHUTDOWN_BACKUP_TIMEOUT)
+        .await;
     tracing::info!("Graceful shutdown complete");
     Ok(())
 }

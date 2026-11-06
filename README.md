@@ -207,7 +207,7 @@ The server runs the following background tasks:
 
 - **Share cleanup**: Runs every hour, removes expired shares
 - **Verification code cleanup**: Runs every minute, removes expired verification codes
-- **Database backup**: Runs every 24 hours when enabled via `DAILY_DATABASE_BACKUP=true`, creates timestamped backup files using SQLite's VACUUM INTO command (SQLite only)
+- **Database backup**: Runs every 24 hours when enabled via `DAILY_DATABASE_BACKUP=true`, creates timestamped backup files using SQLite's VACUUM INTO command (SQLite only). A backup is written as `<name>.db.partial` and renamed to `<name>.db` once complete, so a leftover `.partial` file is an interrupted backup and can be deleted. In production, a final backup runs on shutdown and the server waits up to 60 seconds for it, so give your process manager enough time before it force-kills the server (Docker defaults to 10 seconds, see `stop_grace_period`)
 
 ## Development vs Production
 
