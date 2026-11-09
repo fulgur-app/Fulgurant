@@ -6,6 +6,7 @@ use common::{
     auth_helpers::{create_verified_user, extract_csrf_token, login, login_as_admin},
     test_app::TestApp,
 };
+use fulgurant::db_fetch_one;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -246,11 +247,12 @@ async fn test_create_user_stores_lowercase_email() {
         .await
         .assert_status_ok();
 
-    let stored: (String,) =
-        sqlx::query_as("SELECT email FROM users WHERE first_name = 'Jane' AND last_name = 'Doe'")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
+    let stored = db_fetch_one!(
+        app.pool,
+        "SELECT email FROM users WHERE first_name = 'Jane' AND last_name = 'Doe'",
+        (String,)
+    )
+    .unwrap();
     assert_eq!(stored.0, "jane.doe@example.com");
 }
 
@@ -276,11 +278,12 @@ async fn test_create_user_duplicate_email_is_case_insensitive() {
         .await;
 
     response.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
-    let matching_users: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM users WHERE lower(email) = 'jane@example.com'")
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
+    let matching_users = db_fetch_one!(
+        app.pool,
+        "SELECT COUNT(*) FROM users WHERE lower(email) = 'jane@example.com'",
+        (i64,)
+    )
+    .unwrap();
     assert_eq!(matching_users.0, 1);
 }
 

@@ -14,6 +14,7 @@ use fulgur_common::api::{
 };
 use fulgurant::access_token;
 use fulgurant::api::sse::MAX_SSE_CONNECTIONS_PER_DEVICE;
+use fulgurant::db_execute_dual;
 use std::time::Duration as StdDuration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -136,7 +137,7 @@ async fn test_ping_deleted_device_rejected() {
     let app = TestApp::new().await;
     let (_user_id, device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
 
-    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
     let device = device_repo.get_by_device_id(&device_id).await.unwrap();
     device_repo.delete(device.id).await.unwrap();
 
@@ -157,11 +158,13 @@ async fn test_ping_expired_device_rejected() {
     let app = TestApp::new().await;
     let (_user_id, device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
 
-    sqlx::query("UPDATE devices SET expires_at = unixepoch('now') - 60 WHERE device_id = ?")
-        .bind(&device_id)
-        .execute(&app.pool)
-        .await
-        .unwrap();
+    db_execute_dual!(
+        app.pool,
+        sqlite: "UPDATE devices SET expires_at = unixepoch('now') - 60 WHERE device_id = ?",
+        postgres: "UPDATE devices SET expires_at = NOW() - INTERVAL '60 seconds' WHERE device_id = $1",
+        &device_id
+    )
+    .unwrap();
 
     let response = app
         .server
@@ -307,7 +310,7 @@ async fn test_token_unverified_email() {
     let email = "unverified@test.com";
     let password_hash =
         fulgurant::auth::handlers::hash_password_blocking("TestPassword1!").unwrap();
-    let user_repo = fulgurant::users::UserRepository::new(app.db_pool.clone());
+    let user_repo = fulgurant::users::UserRepository::new(app.pool.clone());
     let user_id = user_repo
         .create(
             email.to_string(),
@@ -380,7 +383,7 @@ async fn test_get_devices_excludes_current() {
 async fn test_get_devices_excludes_web_device() {
     let app = TestApp::new().await;
     let (user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
-    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
     let web_device = device_repo
         .get_or_create_web_device(user_id, "discarded-hash".to_string())
         .await
@@ -826,7 +829,7 @@ async fn test_download_keeps_share_as_historic_downloaded_record() {
     assert!(second_shares.is_empty());
 
     // The row is kept as a historic record: status "downloaded", content cleared.
-    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
     let stored = share_repo.get_by_id(&share_id).await.unwrap();
     assert_eq!(stored.status, "downloaded");
     assert_eq!(stored.content, "");
@@ -871,7 +874,7 @@ async fn test_get_share_v2_returns_content_without_consuming() {
     .unwrap();
 
     // Discover the pending share id without consuming it.
-    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
     let pending = share_repo.get_available_for_user(user_id).await.unwrap();
     assert_eq!(pending.len(), 1);
     let share_id = pending[0].id.clone();
@@ -960,7 +963,7 @@ async fn test_share_successful_consumes_share() {
     )
     .unwrap();
 
-    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
     let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
         .id
         .clone();
@@ -1027,7 +1030,7 @@ async fn test_share_successful_rejects_other_devices_share() {
         .json(&payload)
         .await;
 
-    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
     let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
         .id
         .clone();
@@ -1130,7 +1133,7 @@ async fn test_share_file_rejects_other_users_destination_device() {
     let body: ErrorResponse = response.json();
     assert!(body.error.contains("does not belong"));
 
-    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
     let owner_shares = share_repo.get_all_for_user(owner_user_id).await.unwrap();
     assert!(owner_shares.is_empty());
 }
@@ -1314,7 +1317,7 @@ async fn test_begin_returns_shares_and_updates_key() {
     assert_eq!(body.shares[0].file_name, "begin.txt");
 
     // Verify public key was updated
-    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
     let device = device_repo.get_by_device_id(&dest_id).await.unwrap();
     assert_eq!(
         device.public_key.as_deref(),
@@ -1336,7 +1339,7 @@ async fn test_begin_updates_last_activity() {
         .await;
 
     // Verify last_activity was updated (it should be very recent)
-    let user_repo = fulgurant::users::UserRepository::new(app.db_pool.clone());
+    let user_repo = fulgurant::users::UserRepository::new(app.pool.clone());
     let user = user_repo
         .get_by_email("api_user@test.com".to_string())
         .await
@@ -1376,7 +1379,7 @@ async fn test_begin_empty_public_key_skips_update() {
         .await;
 
     // Verify public key was NOT set (still None)
-    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
     let device = device_repo.get_by_device_id(&device_id).await.unwrap();
     assert!(device.public_key.is_none());
 }
@@ -1462,7 +1465,7 @@ async fn test_begin_v2_lists_pending_shares_without_consuming() {
     );
 
     // The v2 contract is non-destructive: the share must stay available with intact content.
-    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
     let stored = share_repo.get_by_id(&body.share_ids[0]).await.unwrap();
     assert_eq!(stored.status, "available");
     assert_eq!(stored.content, "v2 begin content");
@@ -1491,7 +1494,7 @@ async fn test_begin_v2_persists_public_key() {
         .json(&begin_payload)
         .await;
 
-    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
     let device = device_repo.get_by_device_id(&device_id).await.unwrap();
     assert_eq!(
         device.public_key.as_deref(),
@@ -1511,7 +1514,7 @@ async fn test_begin_v2_updates_last_activity() {
         .json(&begin_payload)
         .await;
 
-    let user_repo = fulgurant::users::UserRepository::new(app.db_pool.clone());
+    let user_repo = fulgurant::users::UserRepository::new(app.pool.clone());
     let user = user_repo
         .get_by_email("api_user@test.com".to_string())
         .await
@@ -1548,7 +1551,7 @@ async fn test_begin_v2_empty_public_key_skips_update() {
         .json(&begin_payload)
         .await;
 
-    let device_repo = fulgurant::devices::DeviceRepository::new(app.db_pool.clone());
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
     let device = device_repo.get_by_device_id(&device_id).await.unwrap();
     assert!(device.public_key.is_none());
 }
@@ -1612,7 +1615,7 @@ async fn test_get_share_legacy_consumes_and_keeps_historic_record() {
     )
     .unwrap();
 
-    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
     let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
         .id
         .clone();
@@ -1672,7 +1675,7 @@ async fn test_get_share_legacy_rejects_other_devices_share() {
         .json(&payload)
         .await;
 
-    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
     let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
         .id
         .clone();
@@ -1729,17 +1732,19 @@ async fn test_get_share_legacy_returns_not_found_for_expired_share() {
         .json(&payload)
         .await;
 
-    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
     let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
         .id
         .clone();
 
     // Force the share past its expiration while still in the "available" state.
-    sqlx::query("UPDATE shares SET expires_at = unixepoch('now') - 60 WHERE id = ?")
-        .bind(&share_id)
-        .execute(&app.pool)
-        .await
-        .unwrap();
+    db_execute_dual!(
+        app.pool,
+        sqlite: "UPDATE shares SET expires_at = unixepoch('now') - 60 WHERE id = ?",
+        postgres: "UPDATE shares SET expires_at = NOW() - INTERVAL '60 seconds' WHERE id = $1",
+        &share_id
+    )
+    .unwrap();
 
     let dest_jwt = access_token::generate_access_token(
         user_id,
@@ -1857,7 +1862,7 @@ async fn test_sse_emits_pending_shares_snapshot_on_connect() {
         .json(&payload)
         .await;
 
-    let share_repo = fulgurant::shares::ShareRepository::new(app.db_pool.clone());
+    let share_repo = fulgurant::shares::ShareRepository::new(app.pool.clone());
     let share_id = share_repo.get_available_for_user(user_id).await.unwrap()[0]
         .id
         .clone();

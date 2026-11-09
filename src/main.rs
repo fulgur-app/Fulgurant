@@ -12,9 +12,6 @@ use std::{
 use tokio_util::sync::CancellationToken;
 use tower_sessions::{Expiry, SessionManagerLayer};
 
-static SQLITE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./data/migrations");
-static POSTGRES_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./data/migrations_postgres");
-
 const DEFAULT_DATABASE_URL: &str = "sqlite:data/database.db";
 const DEFAULT_BIND_HOST: &str = "127.0.0.1";
 const DEFAULT_BIND_PORT: u16 = 3000;
@@ -227,9 +224,7 @@ async fn main() -> anyhow::Result<()> {
     );
     tracing::info!("Log folder: {}", log_folder.display());
     tracing::info!("========================================");
-    let pool = if config.database_url.starts_with("postgres://")
-        || config.database_url.starts_with("postgresql://")
-    {
+    let pool = if db::is_postgres_url(&config.database_url) {
         let opts = sqlx::postgres::PgConnectOptions::from_str(config.database_url.as_str())?;
         let pg_pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(20)
@@ -252,8 +247,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Database connection established");
     tracing::info!("Running migrations...");
     match &pool {
-        db::DbPool::Sqlite(p) => SQLITE_MIGRATOR.run(p).await?,
-        db::DbPool::Postgres(p) => POSTGRES_MIGRATOR.run(p).await?,
+        db::DbPool::Sqlite(p) => db::SQLITE_MIGRATOR.run(p).await?,
+        db::DbPool::Postgres(p) => db::POSTGRES_MIGRATOR.run(p).await?,
     }
     tracing::info!("Migrations completed successfully");
     let device_repository = devices::DeviceRepository::new(pool.clone());

@@ -349,23 +349,14 @@ impl VerificationCodeRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::sqlite::SqlitePoolOptions;
+    use crate::test_db::connect_test_pool;
 
-    /// Build an in-memory `SQLite`-backed verification code repository.
+    /// Build a verification code repository over a fresh test database.
     ///
     /// ### Returns
     /// - `VerificationCodeRepository`: A repository over a fresh, migrated database
     async fn setup_test_repository() -> VerificationCodeRepository {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .expect("failed to open in-memory SQLite");
-        sqlx::migrate!("./data/migrations")
-            .run(&pool)
-            .await
-            .expect("failed to run migrations");
-        VerificationCodeRepository::new(DbPool::Sqlite(pool))
+        VerificationCodeRepository::new(connect_test_pool().await)
     }
 
     /// Insert a verification code with an explicit expiry offset, bypassing the

@@ -10,7 +10,7 @@ use common::{
 use fulgur_common::api::{shares::ShareFileResponse, sync::ErrorResponse};
 use fulgurant::{
     api_key::hash_api_key_fast,
-    db::DbPool,
+    db_fetch_one,
     devices::{DeviceRepository, WEB_DEVICE_NAME, WEB_DEVICE_TYPE},
     shares::{CreateShare, SHARE_VALIDITY_DAYS, ShareRepository},
 };
@@ -143,12 +143,13 @@ async fn test_created_device_obtains_token_via_fast_hash() {
         .and_then(|rest| rest.split("</code>").next())
         .expect("the response should display the API key");
 
-    let (stored_fast_hash,): (Option<String>,) =
-        sqlx::query_as("SELECT device_key_fast_hash FROM devices WHERE user_id = ?")
-            .bind(user_id)
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
+    let (stored_fast_hash,) = db_fetch_one!(
+        app.pool,
+        "SELECT device_key_fast_hash FROM devices WHERE user_id = ?",
+        (Option<String>,),
+        user_id
+    )
+    .unwrap();
     assert_eq!(
         stored_fast_hash.as_deref(),
         Some(hash_api_key_fast(api_key).as_str()),
@@ -243,7 +244,7 @@ async fn test_create_device_limit_enforced_at_boundary() {
     response.assert_status(StatusCode::FORBIDDEN);
 
     // The transactional check must not have inserted the extra device.
-    let device_repo = DeviceRepository::new(app.db_pool.clone());
+    let device_repo = DeviceRepository::new(app.pool.clone());
     let count = device_repo.count_devices_for_user(user_id).await.unwrap();
     assert_eq!(count, 1);
 }
@@ -273,7 +274,7 @@ async fn test_create_device_for_another_user_forbidden() {
 
     response.assert_status(StatusCode::FORBIDDEN);
 
-    let device_repo = DeviceRepository::new(app.db_pool.clone());
+    let device_repo = DeviceRepository::new(app.pool.clone());
     let victim_devices = device_repo.get_all_for_user(victim_id).await.unwrap();
     assert!(victim_devices.is_empty());
 }
@@ -289,7 +290,7 @@ async fn test_update_device_success() {
     login(&app.server, "user@test.com", "Password123!").await;
 
     let (device_uuid, _) = create_device_for_user(&app.pool, user_id, "Old Name").await;
-    let device_repo = DeviceRepository::new(app.db_pool.clone());
+    let device_repo = DeviceRepository::new(app.pool.clone());
     let device = device_repo.get_by_device_id(&device_uuid).await.unwrap();
 
     let page = app.server.get("/").await;
@@ -316,7 +317,7 @@ async fn test_update_device_empty_name() {
     login(&app.server, "user@test.com", "Password123!").await;
 
     let (device_uuid, _) = create_device_for_user(&app.pool, user_id, "My Device").await;
-    let device_repo = DeviceRepository::new(app.db_pool.clone());
+    let device_repo = DeviceRepository::new(app.pool.clone());
     let device = device_repo.get_by_device_id(&device_uuid).await.unwrap();
 
     let page = app.server.get("/").await;
@@ -347,7 +348,7 @@ async fn test_update_other_users_device_forbidden() {
 
     login(&app.server, "attacker@test.com", "Password123!").await;
 
-    let device_repo = DeviceRepository::new(app.db_pool.clone());
+    let device_repo = DeviceRepository::new(app.pool.clone());
     let victim_device = device_repo
         .get_by_device_id(&victim_device_uuid)
         .await
@@ -389,7 +390,7 @@ async fn test_delete_device_success() {
     login(&app.server, "user@test.com", "Password123!").await;
 
     let (device_uuid, _) = create_device_for_user(&app.pool, user_id, "My Device").await;
-    let device_repo = DeviceRepository::new(app.db_pool.clone());
+    let device_repo = DeviceRepository::new(app.pool.clone());
     let device = device_repo.get_by_device_id(&device_uuid).await.unwrap();
 
     let page = app.server.get("/").await;
@@ -414,7 +415,7 @@ async fn test_delete_other_users_device_forbidden() {
 
     login(&app.server, "attacker@test.com", "Password123!").await;
 
-    let device_repo = DeviceRepository::new(app.db_pool.clone());
+    let device_repo = DeviceRepository::new(app.pool.clone());
     let victim_device = device_repo
         .get_by_device_id(&victim_device_uuid)
         .await
@@ -450,7 +451,7 @@ async fn test_delete_share_success() {
 
     // Shares require real devices due to the FK constraint on source_device_id
     let (source_uuid, _) = create_device_for_user(&app.pool, user_id, "Source Device").await;
-    let share_repo = ShareRepository::new(app.db_pool.clone());
+    let share_repo = ShareRepository::new(app.pool.clone());
     let share = share_repo
         .create(
             user_id,
@@ -493,7 +494,7 @@ async fn test_delete_other_users_share_forbidden() {
     // Shares require existing source/destination devices due to FK constraints.
     let (victim_device_uuid, _) =
         create_device_for_user(&app.pool, victim_id, "Victim Device").await;
-    let share_repo = ShareRepository::new(app.db_pool.clone());
+    let share_repo = ShareRepository::new(app.pool.clone());
     let share = share_repo
         .create(
             victim_id,
@@ -638,7 +639,7 @@ async fn test_new_share_page_lists_devices_and_limit() {
     login(&app.server, "user@test.com", "Password123!").await;
     let (synced_id, _) = create_device_for_user(&app.pool, user_id, "Synced laptop").await;
     create_device_for_user(&app.pool, user_id, "Fresh tower").await;
-    let device_repo = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()));
+    let device_repo = DeviceRepository::new(app.pool.clone());
     device_repo
         .update_public_key(&synced_id, "age1testpublickey".to_string())
         .await
@@ -678,7 +679,7 @@ async fn setup_web_share_user(app: &TestApp) -> (i32, String, (HeaderName, Heade
     let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
     login(&app.server, "user@test.com", "Password123!").await;
     let (device_id, _) = create_device_for_user(&app.pool, user_id, "Laptop").await;
-    DeviceRepository::new(DbPool::Sqlite(app.pool.clone()))
+    DeviceRepository::new(app.pool.clone())
         .update_public_key(&device_id, "age1testpublickey".to_string())
         .await
         .unwrap();
@@ -708,14 +709,14 @@ async fn test_create_web_share_success() {
     assert!(body.message.contains("successfully"));
     assert_ne!(body.expiration_date, "");
 
-    let device_repo = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()));
+    let device_repo = DeviceRepository::new(app.pool.clone());
     let web_device = device_repo.get_web_device(user_id).await.unwrap().unwrap();
     assert_eq!(web_device.device_type, WEB_DEVICE_TYPE);
     assert_eq!(web_device.name, WEB_DEVICE_NAME);
     assert!(web_device.is_expired());
     assert!(web_device.public_key.is_none());
 
-    let shares = ShareRepository::new(app.db_pool.clone())
+    let shares = ShareRepository::new(app.pool.clone())
         .get_available_for_user(user_id)
         .await
         .unwrap();
@@ -736,13 +737,14 @@ async fn test_create_web_share_success() {
         })
         .await
         .assert_status_ok();
-    let count: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM devices WHERE user_id = ? AND device_type = ?")
-            .bind(user_id)
-            .bind(WEB_DEVICE_TYPE)
-            .fetch_one(&app.pool)
-            .await
-            .unwrap();
+    let count = db_fetch_one!(
+        app.pool,
+        "SELECT COUNT(*) FROM devices WHERE user_id = ? AND device_type = ?",
+        (i64,),
+        user_id,
+        WEB_DEVICE_TYPE
+    )
+    .unwrap();
     assert_eq!(count.0, 1);
 }
 
@@ -763,7 +765,7 @@ async fn test_web_device_hidden_from_dashboard_but_named_in_shares() {
 
     let html = app.server.get("/").await.text();
 
-    let device_repo = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()));
+    let device_repo = DeviceRepository::new(app.pool.clone());
     let web_device = device_repo.get_web_device(user_id).await.unwrap().unwrap();
     assert!(!html.contains(&format!("id=\"device-{}\"", web_device.id)));
     assert_eq!(
@@ -808,7 +810,7 @@ async fn test_create_web_share_rejects_other_users_device() {
     let (_, _, (name, value)) = setup_web_share_user(&app).await;
     let victim_id = create_verified_user(&app.pool, "victim@test.com", "Password123!").await;
     let (victim_device, _) = create_device_for_user(&app.pool, victim_id, "Victim").await;
-    DeviceRepository::new(DbPool::Sqlite(app.pool.clone()))
+    DeviceRepository::new(app.pool.clone())
         .update_public_key(&victim_device, "age1victimkey".to_string())
         .await
         .unwrap();
@@ -950,7 +952,7 @@ async fn test_update_device_rejects_reserved_name() {
     let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
     login(&app.server, "user@test.com", "Password123!").await;
     create_device_for_user(&app.pool, user_id, "Laptop").await;
-    let device = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()))
+    let device = DeviceRepository::new(app.pool.clone())
         .get_all_for_user(user_id)
         .await
         .unwrap()
@@ -987,7 +989,7 @@ async fn test_web_device_cannot_be_managed() {
         })
         .await
         .assert_status_ok();
-    let web_device = DeviceRepository::new(DbPool::Sqlite(app.pool.clone()))
+    let web_device = DeviceRepository::new(app.pool.clone())
         .get_web_device(user_id)
         .await
         .unwrap()

@@ -6,8 +6,9 @@ use common::{
     auth_helpers::{create_admin_user, extract_csrf_token},
     test_app::TestApp,
 };
+use fulgurant::db::DbPool;
+use fulgurant::db_execute;
 use serde::Serialize;
-use sqlx::SqlitePool;
 
 #[derive(Serialize)]
 struct SetupFormData<'a> {
@@ -29,15 +30,13 @@ fn csrf_header(token: &str) -> (HeaderName, HeaderValue) {
 ///
 /// The seed migration inserts an admin user with devices. Setup tests require
 /// no admin to exist, so this helper clears that state respecting FK constraints.
-async fn remove_all_admins(pool: &SqlitePool) {
-    sqlx::query("DELETE FROM devices WHERE user_id IN (SELECT id FROM users WHERE role = 'Admin')")
-        .execute(pool)
-        .await
-        .unwrap();
-    sqlx::query("DELETE FROM users WHERE role = 'Admin'")
-        .execute(pool)
-        .await
-        .unwrap();
+async fn remove_all_admins(pool: &DbPool) {
+    db_execute!(
+        pool,
+        "DELETE FROM devices WHERE user_id IN (SELECT id FROM users WHERE role = 'Admin')"
+    )
+    .unwrap();
+    db_execute!(pool, "DELETE FROM users WHERE role = 'Admin'").unwrap();
 }
 
 // ─────────────────────────────────────────────

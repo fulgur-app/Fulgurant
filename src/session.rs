@@ -653,25 +653,16 @@ impl SessionStore for FulgurSessionStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_db::connect_test_pool;
     use crate::users::UserRepository;
-    use sqlx::sqlite::SqlitePoolOptions;
     use time::Duration;
 
-    /// Build an in-memory `SQLite`-backed session store and seed one owning user.
+    /// Build a session store over a fresh test database and seed one owning user.
     ///
     /// ### Returns
     /// - `(FulgurSessionStore, SessionRepository, i32)`: The store, its repository and the seeded user id
     async fn setup_test_store() -> (FulgurSessionStore, SessionRepository, i32) {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .expect("failed to open in-memory SQLite");
-        sqlx::migrate!("./data/migrations")
-            .run(&pool)
-            .await
-            .expect("failed to run migrations");
-        let db_pool = DbPool::Sqlite(pool);
+        let db_pool = connect_test_pool().await;
         let user_id = UserRepository::new(db_pool.clone())
             .create(
                 "session-owner@example.com".to_string(),

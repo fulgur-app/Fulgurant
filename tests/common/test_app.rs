@@ -8,21 +8,21 @@ use fulgurant::{
     session::{FulgurSessionStore, SESSION_IDLE_TIMEOUT, SessionRepository},
     settings::SettingsRepository,
     shares::ShareRepository,
+    test_db::connect_test_pool,
     users::UserRepository,
     verification_code::VerificationCodeRepository,
 };
-use sqlx::SqlitePool;
-use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::{Arc, atomic::AtomicBool};
 use tokio_util::sync::CancellationToken;
 use tower_sessions::{Expiry, SessionManagerLayer};
 
-/// Test application wrapper providing a configured test server with an in-memory database
+/// Test application wrapper providing a configured test server with an isolated database
+///
+/// The backend is `SQLite` in memory by default, or a private `PostgreSQL` schema when
+/// `TEST_DATABASE_URL` is a `PostgreSQL` URL (see `fulgurant::test_db`).
 pub struct TestApp {
     pub server: TestServer,
-    pub pool: SqlitePool,
-    #[allow(dead_code)]
-    pub db_pool: DbPool,
+    pub pool: DbPool,
     #[allow(dead_code)]
     pub jwt_secret: String,
     #[allow(dead_code)]
@@ -53,7 +53,7 @@ impl TestApp {
     /// Create a test app with default options (registration enabled, setup done)
     ///
     /// ### Returns
-    /// - `TestApp` with an in-memory `SQLite` database and all migrations applied
+    /// - `TestApp` with a fresh test database and all migrations applied
     pub async fn new() -> Self {
         Self::with_options(TestAppOptions::default()).await
     }
@@ -77,19 +77,10 @@ impl TestApp {
     /// - `opts`: Configuration options controlling registration, setup state, and device limits
     ///
     /// ### Returns
-    /// - `TestApp` with an in-memory `SQLite` database, all migrations applied, and the given options
+    /// - `TestApp` with a fresh test database, all migrations applied, and the given options
     pub async fn with_options(opts: TestAppOptions) -> Self {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .unwrap();
-        sqlx::migrate!("./data/migrations")
-            .run(&pool)
-            .await
-            .unwrap();
-
-        let db_pool = DbPool::Sqlite(pool.clone());
+        let pool = connect_test_pool().await;
+        let db_pool = pool.clone();
 
         let jwt_secret =
             "test_jwt_secret_key_minimum_32_bytes_long_for_testing_purposes".to_string();
@@ -139,7 +130,6 @@ impl TestApp {
         TestApp {
             server,
             pool,
-            db_pool,
             jwt_secret,
             shutdown_token,
             max_file_size_bytes,

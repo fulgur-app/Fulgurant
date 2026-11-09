@@ -746,26 +746,17 @@ impl UserRepository {
 #[cfg(test)]
 mod tests {
     use super::escape_like;
-    use crate::db::DbPool;
+    use crate::test_db::connect_test_pool;
     use crate::users::UserRepository;
-    use sqlx::sqlite::SqlitePoolOptions;
+    use crate::{db_execute, db_fetch_one};
 
-    /// Build an in-memory `SQLite` pool with the project migrations applied.
+    /// Build a repository over a fresh, migrated test database (backend from `TEST_DATABASE_URL`)
     async fn setup_test_repository() -> UserRepository {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .expect("failed to open in-memory SQLite");
-        sqlx::migrate!("./data/migrations")
-            .run(&pool)
-            .await
-            .expect("failed to run migrations");
-        UserRepository::new(DbPool::Sqlite(pool))
+        UserRepository::new(connect_test_pool().await)
     }
 
     #[tokio::test]
-    async fn test_delete_user_owning_devices_succeeds_on_sqlite() {
+    async fn test_delete_user_owning_devices_succeeds() {
         let repository = setup_test_repository().await;
         let user_id = repository
             .create(
@@ -779,19 +770,15 @@ mod tests {
             .await
             .expect("failed to create user");
 
-        let DbPool::Sqlite(pool) = &repository.pool else {
-            unreachable!("test repository is SQLite-backed");
-        };
-        sqlx::query(
+        db_execute!(
+            repository.pool,
             "INSERT INTO devices (user_id, device_id, device_key, name, device_type) VALUES (?, ?, ?, ?, ?)",
+            user_id,
+            "device-uuid",
+            "hashed-key",
+            "Laptop",
+            "desktop"
         )
-        .bind(user_id)
-        .bind("device-uuid")
-        .bind("hashed-key")
-        .bind("Laptop")
-        .bind("desktop")
-        .execute(pool)
-        .await
         .expect("failed to insert device");
 
         repository
@@ -807,14 +794,13 @@ mod tests {
                 .is_none(),
             "user row should be gone after delete"
         );
-        let DbPool::Sqlite(pool) = &repository.pool else {
-            unreachable!("test repository is SQLite-backed");
-        };
-        let remaining: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM devices WHERE user_id = ?")
-            .bind(user_id)
-            .fetch_one(pool)
-            .await
-            .expect("count query failed");
+        let remaining = db_fetch_one!(
+            repository.pool,
+            "SELECT COUNT(*) FROM devices WHERE user_id = ?",
+            (i64,),
+            user_id
+        )
+        .expect("count query failed");
         assert_eq!(remaining.0, 0, "devices should be removed with the user");
     }
 

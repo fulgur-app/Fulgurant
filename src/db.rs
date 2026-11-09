@@ -15,6 +15,13 @@ pub enum DbBackend {
     Postgres,
 }
 
+/// Embedded `SQLite` migrations (`data/migrations`)
+pub static SQLITE_MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./data/migrations");
+
+/// Embedded `PostgreSQL` migrations (`data/migrations_postgres`)
+pub static POSTGRES_MIGRATOR: sqlx::migrate::Migrator =
+    sqlx::migrate!("./data/migrations_postgres");
+
 impl DbPool {
     /// Get the backend type for this pool
     pub fn backend(&self) -> DbBackend {
@@ -23,6 +30,17 @@ impl DbPool {
             DbPool::Postgres(_) => DbBackend::Postgres,
         }
     }
+}
+
+/// Tell whether a database URL targets `PostgreSQL`
+///
+/// ### Arguments
+/// - `url`: The database URL to inspect
+///
+/// ### Returns
+/// - `true` if the scheme is `postgres://` or `postgresql://`, `false` otherwise (`SQLite`)
+pub fn is_postgres_url(url: &str) -> bool {
+    url.starts_with("postgres://") || url.starts_with("postgresql://")
 }
 
 /// Convert `?` placeholders to `$1, $2, ...` for `PostgreSQL`.

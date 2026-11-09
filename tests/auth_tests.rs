@@ -11,6 +11,7 @@ use common::{
 };
 use fulgurant::db::DbPool;
 use fulgurant::verification_code::VerificationCodeRepository;
+use fulgurant::{db_execute_dual, db_fetch_one_dual};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -111,12 +112,16 @@ async fn test_login_success() {
 }
 
 /// Read the `expires_at` unix timestamp of the only session owned by `user_id`
-async fn session_expires_at(pool: &sqlx::SqlitePool, user_id: i32) -> i64 {
-    sqlx::query_scalar("SELECT expires_at FROM sessions WHERE user_id = ?")
-        .bind(user_id)
-        .fetch_one(pool)
-        .await
-        .unwrap()
+async fn session_expires_at(pool: &DbPool, user_id: i32) -> i64 {
+    let (expires_at,) = db_fetch_one_dual!(
+        pool,
+        sqlite: "SELECT expires_at FROM sessions WHERE user_id = ?",
+        postgres: "SELECT EXTRACT(EPOCH FROM expires_at)::BIGINT FROM sessions WHERE user_id = $1",
+        (i64,),
+        user_id
+    )
+    .unwrap();
+    expires_at
 }
 
 #[tokio::test]
@@ -159,17 +164,21 @@ async fn test_session_idle_timeout_slides_on_activity() {
     app.server.get("/").await.assert_status_ok();
 
     let now = time::OffsetDateTime::now_utc().unix_timestamp();
-    sqlx::query(
-        "UPDATE sessions \
-         SET expires_at = ?, \
-             data = CAST(json_set(CAST(data AS TEXT), '$.data.last_seen', ?) AS BLOB) \
-         WHERE user_id = ?",
+    db_execute_dual!(
+        app.pool,
+        sqlite: "UPDATE sessions \
+                 SET expires_at = ?, \
+                     data = CAST(json_set(CAST(data AS TEXT), '$.data.last_seen', ?) AS BLOB) \
+                 WHERE user_id = ?",
+        postgres: "UPDATE sessions \
+                   SET expires_at = to_timestamp($1), \
+                       data = convert_to(jsonb_set(convert_from(data, 'UTF8')::jsonb, \
+                                                   '{data,last_seen}', to_jsonb($2::BIGINT))::TEXT, 'UTF8') \
+                   WHERE user_id = $3",
+        now + 600,
+        now - 120,
+        user_id
     )
-    .bind(now + 600)
-    .bind(now - 120)
-    .bind(user_id)
-    .execute(&app.pool)
-    .await
     .unwrap();
 
     let dashboard = app.server.get("/").await;
@@ -565,7 +574,7 @@ async fn test_reset_password_success() {
     let csrf = extract_csrf_token(&page.text());
 
     // Seed a known verification code so step 2 can succeed deterministically.
-    VerificationCodeRepository::new(DbPool::Sqlite(app.pool.clone()))
+    VerificationCodeRepository::new(app.pool.clone())
         .create(
             "user@test.com".to_string(),
             "123456".to_string(),
