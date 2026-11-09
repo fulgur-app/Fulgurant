@@ -31,6 +31,8 @@ pub mod session;
 pub mod settings;
 pub mod shares;
 pub mod templates;
+#[doc(hidden)]
+pub mod test_db;
 pub mod users;
 pub mod utils;
 pub mod verification_code;

@@ -9,26 +9,21 @@ use fulgurant::{
     db::DbPool,
     devices::{CreateDevice, DeviceRepository},
 };
-use sqlx::SqlitePool;
 
 /// Create a device for a user directly in the database
 ///
 /// ### Arguments
-/// - `pool`: The `SQLite` connection pool
+/// - `pool`: The test database pool
 /// - `user_id`: The ID of the user who owns the device
 /// - `name`: Human-readable device name
 ///
 /// ### Returns
 /// - `(device_id, raw_api_key)`: the device's public UUID and the unhashed API key
-pub async fn create_device_for_user(
-    pool: &SqlitePool,
-    user_id: i32,
-    name: &str,
-) -> (String, String) {
+pub async fn create_device_for_user(pool: &DbPool, user_id: i32, name: &str) -> (String, String) {
     let api_key = api_key::generate_api_key();
     let hash = api_key::hash_api_key_blocking(&api_key).unwrap();
     let fast_hash = hash_api_key_fast(&api_key);
-    let device_repo = DeviceRepository::new(DbPool::Sqlite(pool.clone()));
+    let device_repo = DeviceRepository::new(pool.clone());
     let device = device_repo
         .create(
             user_id,
@@ -75,12 +70,12 @@ pub async fn get_jwt_token(server: &TestServer, email: &str, api_key: &str) -> S
 /// Full API user setup: create user + device + generate JWT directly
 ///
 /// ### Arguments
-/// - `pool`: The `SQLite` connection pool
+/// - `pool`: The test database pool
 /// - `jwt_secret`: The JWT signing secret used to generate the access token
 ///
 /// ### Returns
 /// - `(user_id, device_id, jwt_token)`: the user's ID, device UUID, and signed JWT
-pub async fn setup_api_user(pool: &SqlitePool, jwt_secret: &str) -> (i32, String, String) {
+pub async fn setup_api_user(pool: &DbPool, jwt_secret: &str) -> (i32, String, String) {
     let email = "api_user@test.com";
     let password = "TestPassword1!";
     let user_id = super::auth_helpers::create_verified_user(pool, email, password).await;

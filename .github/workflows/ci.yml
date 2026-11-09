@@ -122,6 +122,52 @@ jobs:
       - name: Run tests
         run: cargo test --all-features
 
+  # Same suite against PostgreSQL: TEST_DATABASE_URL switches every test database
+  # (unit and integration) to a private schema in this ephemeral service, so the
+  # PostgreSQL arms of the dual-backend code are exercised before merge.
+  test-postgres:
+    name: Test (PostgreSQL)
+    if: >-
+      github.event_name == 'pull_request'
+      || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: fulgurant
+          POSTGRES_PASSWORD: fulgurant
+          POSTGRES_DB: fulgurant_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fulgurant -d fulgurant_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://fulgurant:fulgurant@localhost:5432/fulgurant_test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux dependencies
+        run: *linux_deps_install_cmd
+
+      # Reuses the test job cache: the compiled artefacts are identical, only
+      # the runtime database differs.
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ubuntu-latest-test
+          save-if: false
+
+      - name: Run tests
+        run: cargo test --all-features
+
   warm-test-cache:
     name: Warm test cache
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -215,7 +261,7 @@ jobs:
   # allows "skipped" so a PR (which skips fmt and clippy) still reports green.
   ci:
     name: CI
-    needs: [fmt, clippy, test]
+    needs: [fmt, clippy, test, test-postgres]
     if: ${{ always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))) }}
     runs-on: ubuntu-latest
     steps:
@@ -224,9 +270,10 @@ jobs:
           FMT: ${{ needs.fmt.result }}
           CLIPPY: ${{ needs.clippy.result }}
           TEST: ${{ needs.test.result }}
+          TEST_POSTGRES: ${{ needs.test-postgres.result }}
         run: |
           failed=0
-          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST"; do
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "test-postgres:$TEST_POSTGRES"; do
             name="${entry%%:*}"
             result="${entry#*:}"
             if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
@@ -239,7 +286,7 @@ jobs:
   # Single aggregated Telegram notification for the whole workflow run.
   notify:
     name: Telegram notification
-    needs: [fmt, clippy, test, warm-test-cache, warm-clippy-cache, coverage]
+    needs: [fmt, clippy, test, test-postgres, warm-test-cache, warm-clippy-cache, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -251,6 +298,7 @@ jobs:
           FMT: ${{ needs.fmt.result }}
           CLIPPY: ${{ needs.clippy.result }}
           TEST: ${{ needs.test.result }}
+          TEST_POSTGRES: ${{ needs.test-postgres.result }}
           WARM_TEST_CACHE: ${{ needs.warm-test-cache.result }}
           WARM_CLIPPY_CACHE: ${{ needs.warm-clippy-cache.result }}
           COVERAGE: ${{ needs.coverage.result }}
@@ -258,7 +306,7 @@ jobs:
         run: |
           # Determine overall status: failure > cancelled > success.
           STATUS="success"
-          for result in "$FMT" "$CLIPPY" "$TEST" "$WARM_TEST_CACHE" "$WARM_CLIPPY_CACHE" "$COVERAGE"; do
+          for result in "$FMT" "$CLIPPY" "$TEST" "$TEST_POSTGRES" "$WARM_TEST_CACHE" "$WARM_CLIPPY_CACHE" "$COVERAGE"; do
             if [ "$result" = "failure" ]; then
               STATUS="failure"
             elif [ "$result" = "cancelled" ] && [ "$STATUS" != "failure" ]; then
@@ -274,7 +322,7 @@ jobs:
 
           # Per-job summary line, omitting jobs that did not run.
           SUMMARY=""
-          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "warm-test-cache:$WARM_TEST_CACHE" "warm-clippy-cache:$WARM_CLIPPY_CACHE" "coverage:$COVERAGE"; do
+          for entry in "fmt:$FMT" "clippy:$CLIPPY" "test:$TEST" "test-postgres:$TEST_POSTGRES" "warm-test-cache:$WARM_TEST_CACHE" "warm-clippy-cache:$WARM_CLIPPY_CACHE" "coverage:$COVERAGE"; do
             name="${entry%%:*}"
             result="${entry#*:}"
             case "$result" in

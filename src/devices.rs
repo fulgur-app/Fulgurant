@@ -549,9 +549,8 @@ impl DeviceRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::DbPool;
+    use crate::test_db::connect_test_pool;
     use crate::users::UserRepository;
-    use sqlx::sqlite::SqlitePoolOptions;
 
     #[test]
     fn test_is_reserved_device_name() {
@@ -584,21 +583,12 @@ mod tests {
         assert!(!is_valid_api_key_lifetime(i64::MAX));
     }
 
-    /// Build an in-memory `SQLite`-backed device repository and seed one owning user.
+    /// Build a device repository over a fresh test database and seed one owning user.
     ///
     /// ### Returns
     /// - `(DeviceRepository, i32)`: The repository and the seeded user id (used as the device owner)
     async fn setup_test_repository() -> (DeviceRepository, i32) {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .expect("failed to open in-memory SQLite");
-        sqlx::migrate!("./data/migrations")
-            .run(&pool)
-            .await
-            .expect("failed to run migrations");
-        let db_pool = DbPool::Sqlite(pool);
+        let db_pool = connect_test_pool().await;
         let user_id = UserRepository::new(db_pool.clone())
             .create(
                 "device-owner@example.com".to_string(),

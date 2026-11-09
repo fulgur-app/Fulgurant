@@ -2,9 +2,9 @@ use axum::http::header::{HeaderName, HeaderValue};
 use axum_test::TestServer;
 use fulgurant::auth::handlers::hash_password_blocking;
 use fulgurant::db::DbPool;
+use fulgurant::db_fetch_one;
 use fulgurant::users::UserRepository;
 use serde::Serialize;
-use sqlx::SqlitePool;
 
 #[derive(Serialize)]
 struct LoginFormData<'a> {
@@ -15,15 +15,15 @@ struct LoginFormData<'a> {
 /// Create a verified user directly in the database
 ///
 /// ### Arguments
-/// - `pool`: The `SQLite` connection pool
+/// - `pool`: The test database pool
 /// - `email`: The user's email address
 /// - `password`: The user's plaintext password (will be hashed)
 ///
 /// ### Returns
 /// - `i32`: The created user's ID
-pub async fn create_verified_user(pool: &SqlitePool, email: &str, password: &str) -> i32 {
+pub async fn create_verified_user(pool: &DbPool, email: &str, password: &str) -> i32 {
     let password_hash = hash_password_blocking(password).unwrap();
-    let user_repo = UserRepository::new(DbPool::Sqlite(pool.clone()));
+    let user_repo = UserRepository::new(pool.clone());
     user_repo
         .create(
             email.to_string(),
@@ -43,16 +43,16 @@ pub async fn create_verified_user(pool: &SqlitePool, email: &str, password: &str
 /// by registration step 1 before the email code is confirmed.
 ///
 /// ### Arguments
-/// - `pool`: The `SQLite` connection pool
+/// - `pool`: The test database pool
 /// - `email`: The user's email address
 /// - `password`: The user's plaintext password (will be hashed)
 ///
 /// ### Returns
 /// - `i32`: The created user's ID
 #[allow(dead_code)]
-pub async fn create_unverified_user(pool: &SqlitePool, email: &str, password: &str) -> i32 {
+pub async fn create_unverified_user(pool: &DbPool, email: &str, password: &str) -> i32 {
     let password_hash = hash_password_blocking(password).unwrap();
-    let user_repo = UserRepository::new(DbPool::Sqlite(pool.clone()));
+    let user_repo = UserRepository::new(pool.clone());
     user_repo
         .create(
             email.to_string(),
@@ -73,40 +73,39 @@ pub async fn create_unverified_user(pool: &SqlitePool, email: &str, password: &s
 /// insert an admin user into the test database.
 ///
 /// ### Arguments
-/// - `pool`: The `SQLite` connection pool
+/// - `pool`: The test database pool
 ///
 /// ### Returns
 /// - `(user_id, email, password)` - the created admin's ID and fixed credentials
 #[allow(dead_code)]
-pub async fn create_admin_user(pool: &SqlitePool) -> (i32, String, String) {
+pub async fn create_admin_user(pool: &DbPool) -> (i32, String, String) {
     let email = "admin2@test.com".to_string();
     let password = "TestAdmin1!".to_string();
     let password_hash = hash_password_blocking(&password).unwrap();
-    let result = sqlx::query(
-        "INSERT INTO users (email, first_name, last_name, password_hash, role, email_verified) VALUES (?, 'Admin', 'User', ?, 'Admin', TRUE)",
+    let (id,) = db_fetch_one!(
+        pool,
+        "INSERT INTO users (email, first_name, last_name, password_hash, role, email_verified) VALUES (?, 'Admin', 'User', ?, 'Admin', TRUE) RETURNING id",
+        (i32,),
+        &email,
+        &password_hash
     )
-    .bind(&email)
-    .bind(&password_hash)
-    .execute(pool)
-    .await
     .unwrap();
-    let id = result.last_insert_rowid() as i32;
     (id, email, password)
 }
 
 /// Create a verified user with `force_password_update = true` directly in the database
 ///
 /// ### Arguments
-/// - `pool`: The `SQLite` connection pool
+/// - `pool`: The test database pool
 /// - `email`: The user's email address
 /// - `password`: The user's plaintext password (will be hashed)
 ///
 /// ### Returns
 /// - `i32`: The created user's ID
 #[allow(dead_code)]
-pub async fn create_user_with_force_update(pool: &SqlitePool, email: &str, password: &str) -> i32 {
+pub async fn create_user_with_force_update(pool: &DbPool, email: &str, password: &str) -> i32 {
     let password_hash = hash_password_blocking(password).unwrap();
-    let user_repo = UserRepository::new(DbPool::Sqlite(pool.clone()));
+    let user_repo = UserRepository::new(pool.clone());
     user_repo
         .create(
             email.to_string(),
@@ -146,12 +145,12 @@ pub async fn login(server: &TestServer, email: &str, password: &str) {
 ///
 /// ### Arguments
 /// - `server`: The test server instance (must have `save_cookies` enabled)
-/// - `pool`: The `SQLite` connection pool
+/// - `pool`: The test database pool
 ///
 /// ### Returns
 /// - `(user_id, email, password)` - the admin's ID and fixed credentials
 #[allow(dead_code)]
-pub async fn login_as_admin(server: &TestServer, pool: &SqlitePool) -> (i32, String, String) {
+pub async fn login_as_admin(server: &TestServer, pool: &DbPool) -> (i32, String, String) {
     let (id, email, password) = create_admin_user(pool).await;
     login(server, &email, &password).await;
     (id, email, password)

@@ -545,8 +545,9 @@ impl ShareRepository {
 mod tests {
     use super::*;
     use crate::devices::{CreateDevice, DeviceRepository};
+    use crate::test_db::connect_test_pool;
     use crate::users::UserRepository;
-    use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+    use crate::{db_execute, db_execute_dual, db_fetch_one};
 
     #[test]
     fn test_calculate_file_hash() {
@@ -564,23 +565,14 @@ mod tests {
         assert_eq!(SHARE_VALIDITY_DAYS, 3);
     }
 
-    /// Build an in-memory `SQLite`-backed share repository with an owning user and a source device.
+    /// Build a share repository over a fresh test database with an owning user and a source device.
     ///
     /// ### Returns
-    /// - `(ShareRepository, SqlitePool, i32, String)`: The repository, the raw pool (for direct
-    ///   setup such as forcing rows past expiry), the owning user id, and the source device's
-    ///   public `device_id`
-    async fn setup_test_repository() -> (ShareRepository, SqlitePool, i32, String) {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .expect("failed to open in-memory SQLite");
-        sqlx::migrate!("./data/migrations")
-            .run(&pool)
-            .await
-            .expect("failed to run migrations");
-        let db_pool = DbPool::Sqlite(pool.clone());
+    /// - `(ShareRepository, DbPool, i32, String)`: The repository, the pool (for direct setup
+    ///   such as forcing rows past expiry), the owning user id, and the source device's public
+    ///   `device_id`
+    async fn setup_test_repository() -> (ShareRepository, DbPool, i32, String) {
+        let db_pool = connect_test_pool().await;
         let user_id = UserRepository::new(db_pool.clone())
             .create(
                 "share-owner@example.com".to_string(),
@@ -607,8 +599,8 @@ mod tests {
             .await
             .expect("failed to create source device");
         (
-            ShareRepository::new(db_pool),
-            pool,
+            ShareRepository::new(db_pool.clone()),
+            db_pool,
             user_id,
             source_device.device_id,
         )
@@ -668,20 +660,24 @@ mod tests {
 
         // Force every row past its expiration, then move two of them out of the
         // `available` state so only one row is eligible for `mark_expired`.
-        sqlx::query("UPDATE shares SET expires_at = unixepoch('now') - 1")
-            .execute(&pool)
-            .await
-            .expect("age rows past expiry");
-        sqlx::query("UPDATE shares SET status = 'downloaded' WHERE id = ?")
-            .bind(&downloaded.id)
-            .execute(&pool)
-            .await
-            .expect("set downloaded status");
-        sqlx::query("UPDATE shares SET status = 'deleted' WHERE id = ?")
-            .bind(&deleted.id)
-            .execute(&pool)
-            .await
-            .expect("set deleted status");
+        db_execute_dual!(
+            pool,
+            sqlite: "UPDATE shares SET expires_at = unixepoch('now') - 1",
+            postgres: "UPDATE shares SET expires_at = NOW() - INTERVAL '1 second'"
+        )
+        .expect("age rows past expiry");
+        db_execute!(
+            pool,
+            "UPDATE shares SET status = 'downloaded' WHERE id = ?",
+            &downloaded.id
+        )
+        .expect("set downloaded status");
+        db_execute!(
+            pool,
+            "UPDATE shares SET status = 'deleted' WHERE id = ?",
+            &deleted.id
+        )
+        .expect("set deleted status");
 
         let affected = repository.mark_expired().await.expect("mark_expired runs");
         assert_eq!(
@@ -743,10 +739,8 @@ mod tests {
             .expect("re-create succeeds");
 
         assert_ne!(second.id, first.id, "UPSERT must rotate the share id");
-        let row_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM shares")
-            .fetch_one(&pool)
-            .await
-            .expect("count shares");
+        let row_count =
+            db_fetch_one!(pool, "SELECT COUNT(*) FROM shares", (i64,)).expect("count shares");
         assert_eq!(row_count.0, 1, "UPSERT must replace the row, not add one");
         assert_eq!(
             second.status,
