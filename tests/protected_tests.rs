@@ -10,9 +10,11 @@ use common::{
 use fulgur_common::api::{shares::ShareFileResponse, sync::ErrorResponse};
 use fulgurant::{
     api_key::hash_api_key_fast,
-    db_fetch_one,
+    db::DbPool,
+    db_execute, db_fetch_one,
     devices::{DeviceRepository, WEB_DEVICE_NAME, WEB_DEVICE_TYPE},
     shares::{CreateShare, SHARE_VALIDITY_DAYS, ShareRepository},
+    verification_code::VerificationCodeRepository,
 };
 use serde::Serialize;
 
@@ -40,6 +42,18 @@ struct WebShareRequestData<'a> {
 struct UpdateNameFormData<'a> {
     first_name: &'a str,
     last_name: &'a str,
+}
+
+#[derive(Serialize)]
+struct UpdateEmailFormData<'a> {
+    email: &'a str,
+    current_password: &'a str,
+}
+
+#[derive(Serialize)]
+struct VerifyEmailChangeFormData<'a> {
+    email: &'a str,
+    code: &'a str,
 }
 
 /// Build the `x-csrf-token` header from a token string
@@ -617,6 +631,178 @@ async fn test_update_name_too_long() {
 
     response.assert_status(StatusCode::BAD_REQUEST);
     assert!(response.text().contains("cannot exceed"));
+}
+
+// ─────────────────────────────────────────────
+// POST /settings/update-email, /settings/verify-email-change
+// ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_update_email_rejects_wrong_current_password() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+
+    let page = app.server.get("/settings").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post("/settings/update-email")
+        .add_header(name, value)
+        .form(&UpdateEmailFormData {
+            email: "new@test.com",
+            current_password: "WrongPassword1!",
+        })
+        .await;
+
+    response.assert_status_ok();
+    let body = response.text();
+    assert!(body.contains("Current password is incorrect"));
+    assert!(!body.contains("Check your email"));
+    let (pending_codes,) = db_fetch_one!(
+        &app.pool,
+        "SELECT COUNT(*) FROM verification_codes WHERE email = ?",
+        (i64,),
+        "new@test.com"
+    )
+    .unwrap();
+    assert_eq!(
+        pending_codes, 0,
+        "no code may be issued without the password"
+    );
+}
+
+#[tokio::test]
+async fn test_update_email_with_current_password_sends_code() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+
+    let page = app.server.get("/settings").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post("/settings/update-email")
+        .add_header(name, value)
+        .form(&UpdateEmailFormData {
+            email: "new@test.com",
+            current_password: "Password123!",
+        })
+        .await;
+
+    response.assert_status_ok();
+    let body = response.text();
+    assert!(body.contains("Check your email"));
+    assert!(body.contains("new@test.com"));
+}
+
+#[tokio::test]
+async fn test_verify_email_change_updates_email() {
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+
+    let page = app.server.get("/settings").await;
+    let csrf = extract_csrf_token(&page.text());
+
+    let (name, value) = csrf_header(&csrf);
+    app.server
+        .post("/settings/update-email")
+        .add_header(name, value)
+        .form(&UpdateEmailFormData {
+            email: "new@test.com",
+            current_password: "Password123!",
+        })
+        .await
+        .assert_status_ok();
+    replace_email_change_code(&app.pool, "new@test.com", "123456").await;
+
+    let (name, value) = csrf_header(&csrf);
+    let response = app
+        .server
+        .post("/settings/verify-email-change")
+        .add_header(name, value)
+        .form(&VerifyEmailChangeFormData {
+            email: "new@test.com",
+            code: "123456",
+        })
+        .await;
+
+    response.assert_status_ok();
+    let body = response.text();
+    assert!(body.contains("Email successfully updated"));
+    assert!(body.contains("current_password"));
+    let (stored_email,) = db_fetch_one!(
+        &app.pool,
+        "SELECT email FROM users WHERE id = ?",
+        (String,),
+        user_id
+    )
+    .unwrap();
+    assert_eq!(stored_email, "new@test.com");
+}
+
+#[tokio::test]
+async fn test_verify_email_change_rejects_code_without_password_step() {
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "victim@test.com", "Password123!").await;
+    login(&app.server, "victim@test.com", "Password123!").await;
+
+    let page = app.server.get("/settings").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    // A valid code for the attacker's address, obtained outside this session
+    replace_email_change_code(&app.pool, "attacker@test.com", "123456").await;
+
+    let response = app
+        .server
+        .post("/settings/verify-email-change")
+        .add_header(name, value)
+        .form(&VerifyEmailChangeFormData {
+            email: "attacker@test.com",
+            code: "123456",
+        })
+        .await;
+
+    response.assert_status_ok();
+    assert!(response.text().contains("Please start again"));
+    let (stored_email,) = db_fetch_one!(
+        &app.pool,
+        "SELECT email FROM users WHERE id = ?",
+        (String,),
+        user_id
+    )
+    .unwrap();
+    assert_eq!(stored_email, "victim@test.com");
+}
+
+/// Replace any pending email-change codes for an address with a single known code
+///
+/// Codes are selected by `created_at` with second precision, so seeding next to a code issued in
+/// the same second would be ambiguous.
+///
+/// ### Arguments
+/// - `pool`: The test database pool
+/// - `email`: The address the code is issued for
+/// - `code`: The plaintext code to seed
+async fn replace_email_change_code(pool: &DbPool, email: &str, code: &str) {
+    db_execute!(
+        pool,
+        "DELETE FROM verification_codes WHERE email = ? AND purpose = ?",
+        email,
+        "email_change"
+    )
+    .unwrap();
+    VerificationCodeRepository::new(pool.clone())
+        .create(
+            email.to_string(),
+            code.to_string(),
+            "email_change".to_string(),
+        )
+        .await
+        .unwrap();
 }
 
 // ─────────────────────────────────────────────

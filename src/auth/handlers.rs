@@ -6,7 +6,7 @@ use axum::{
     Form,
     extract::{Query, State},
     http::HeaderValue,
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
 };
 use serde::Deserialize;
 use std::sync::LazyLock;
@@ -121,7 +121,7 @@ pub async fn login(
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
     let redirect_url = if user.force_password_update {
         session
-            .insert("force_password_update", true)
+            .insert(session::SESSION_FORCE_PASSWORD_UPDATE, true)
             .await
             .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
         "/force-password-update"
@@ -152,15 +152,36 @@ fn invalid_credentials_response() -> Result<Response, AppError> {
     Ok(Html(rendered).into_response())
 }
 
+/// Checks whether the session carries a pending forced password update
+///
+/// ### Arguments
+/// - `session`: The session
+///
+/// ### Returns
+/// - `Ok(true)`: The user must update their password before continuing
+/// - `Ok(false)`: No forced password update is pending
+/// - `Err(AppError)`: The session could not be read
+async fn is_force_password_update_pending(session: &Session) -> Result<bool, AppError> {
+    let pending: Option<bool> = session
+        .get(session::SESSION_FORCE_PASSWORD_UPDATE)
+        .await
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    Ok(pending == Some(true))
+}
+
 /// GET /force-password-update - Returns the force password update page
 ///
 /// ### Arguments
 /// - `session`: The session
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: The force password update page
+/// - `Ok(Response)`: The force password update page, or a redirect to the home page when no
+///   forced update is pending
 /// - `Err(AppError)`: An error occurred while rendering the template
-pub async fn get_force_password_update_page(session: Session) -> Result<Html<String>, AppError> {
+pub async fn get_force_password_update_page(session: Session) -> Result<Response, AppError> {
+    if !is_force_password_update_pending(&session).await? {
+        return Ok(Redirect::to("/").into_response());
+    }
     let csrf_token = axum_tower_sessions_csrf::get_or_create_token(&session)
         .await
         .map_err(|e| {
@@ -170,7 +191,7 @@ pub async fn get_force_password_update_page(session: Session) -> Result<Html<Str
         csrf_token,
         error_message: String::new(),
     };
-    Ok(Html(template.render()?))
+    Ok(Html(template.render()?).into_response())
 }
 
 #[derive(Deserialize)]
@@ -187,6 +208,7 @@ pub struct ForcePasswordUpdateRequest {
 ///
 /// ### Returns
 /// - `Ok(Response)`: Redirect to home page on success
+/// - `Err(AppError::Forbidden)`: No forced password update is pending for this session
 /// - `Err(AppError)`: An error occurred while updating the password
 pub async fn force_password_update(
     State(state): State<AppState>,
@@ -200,6 +222,13 @@ pub async fn force_password_update(
     let Some(user_id) = user_id else {
         return Err(AppError::Unauthorized);
     };
+    if !is_force_password_update_pending(&session).await? {
+        tracing::warn!(
+            "User {} attempted a forced password update without one pending",
+            user_id
+        );
+        return Err(AppError::Forbidden);
+    }
     let password = normalize_password(&request.password);
     if !is_password_valid(password) {
         let template = templates::ForcePasswordUpdateFormTemplate {
@@ -241,7 +270,7 @@ pub async fn force_password_update(
             AppError::InternalError(anyhow::anyhow!("Failed to update password"))
         })?;
     session
-        .remove::<bool>("force_password_update")
+        .remove::<bool>(session::SESSION_FORCE_PASSWORD_UPDATE)
         .await
         .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
     if let Some(current_id) = session.id() {
@@ -985,7 +1014,7 @@ pub fn hash_password_blocking(password: &str) -> Result<String, argon2::password
 ///
 /// ### Returns
 /// - `true` if the password is valid, `false` otherwise (including on malformed hash)
-async fn verify_password(password: &str, password_hash: &str) -> bool {
+pub(crate) async fn verify_password(password: &str, password_hash: &str) -> bool {
     let password = password.to_owned();
     let password_hash = password_hash.to_owned();
     run_argon2(move || verify_password_blocking(&password, &password_hash)).await

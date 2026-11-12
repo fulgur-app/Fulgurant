@@ -91,6 +91,45 @@ impl Mailer {
             .await
     }
 
+    /// Notifies the previous address of an account that its email was changed
+    ///
+    /// ### Arguments
+    /// - `previous_email`: The address the account used before the change (recipient)
+    /// - `new_email`: The address the account now uses
+    ///
+    /// ### Returns
+    /// - `Ok(())`: The email was sent successfully
+    /// - `Err(anyhow::Error)`: The error that occurred while sending the email
+    pub async fn send_email_changed_notification(
+        &self,
+        previous_email: String,
+        new_email: String,
+    ) -> Result<(), anyhow::Error> {
+        let html_body = format!(
+            r#"<!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Your Fulgur email address was changed</title>
+            </head>
+            <body>
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                    <h2 style="font-family: Arial, Helvetica, sans-serif;">Your Fulgur email address was changed</h2>
+                    <p style="font-family: Arial, Helvetica, sans-serif;">The email address of your Fulgur account is now <strong>{new_email}</strong>.</p>
+                    <p style="font-family: Arial, Helvetica, sans-serif;">If you did not make this change, contact your server administrator immediately.</p>
+                </div>
+            </body>
+            </html>"#
+        );
+        let text_body = format!(
+            "Hello from Fulgur!\n\nThe email address of your Fulgur account is now {new_email}.\n\nIf you did not make this change, contact your server administrator immediately."
+        );
+        let subject = "Your Fulgur email address was changed".to_string();
+        self.send_email(previous_email, subject, text_body, html_body)
+            .await
+    }
+
     /// Sends an email
     ///
     /// ### Arguments

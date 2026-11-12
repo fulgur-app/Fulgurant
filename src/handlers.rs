@@ -16,6 +16,7 @@ use tower_sessions::Session;
 use crate::{
     api::sse::{ChannelTag, ShareNotification, SseChannelManager, SseConnectionLimiter},
     api_key::{self},
+    auth::handlers::verify_password,
     devices::{
         self, CreateDevice, Device, DeviceRepository, MAX_DEVICE_NAME_LEN, MAX_DEVICE_TYPE_LEN,
         UpdateDevice,
@@ -27,7 +28,7 @@ use crate::{
     shares::{CreateShare, DisplayShare, ShareRepository},
     templates::{self},
     users::{MAX_NAME_LEN, UserRepository},
-    utils::{is_valid_email, is_valid_file_name, normalize_email},
+    utils::{is_valid_email, is_valid_file_name, normalize_email, normalize_password},
     verification_code::{self, VerificationCodeRepository},
 };
 
@@ -733,9 +734,30 @@ pub async fn update_name(
 #[derive(serde::Deserialize)]
 pub struct UpdateEmailRequest {
     email: String,
+    current_password: String,
+}
+
+/// Renders the email change step 1 form with an error message
+///
+/// ### Arguments
+/// - `email`: The email address to prefill
+/// - `error_message`: The error to display above the form
+///
+/// ### Returns
+/// - `Ok(Html<String>)`: The step 1 form as formatted HTML
+/// - `Err(AppError)`: Error that occurred while rendering the template
+fn email_change_step_1_error(email: String, error_message: &str) -> Result<Html<String>, AppError> {
+    let template = templates::EmailChangeStep1Template {
+        email,
+        error_message: error_message.to_string(),
+    };
+    Ok(Html(template.render()?))
 }
 
 /// POST /settings/update-email - Initiates email update process
+///
+/// Requires the current password so that a hijacked session alone cannot move the account
+/// to an attacker-controlled address.
 ///
 /// ### Arguments
 /// - `state`: The state of the application
@@ -743,7 +765,7 @@ pub struct UpdateEmailRequest {
 /// - `request`: The update email request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: Verification code form as formatted HTML
+/// - `Ok(Html<String>)`: Verification code form, or the step 1 form with an error, as formatted HTML
 /// - `Err(AppError)`: Error that occurred while initiating email update
 pub async fn update_email_step_1(
     State(state): State<AppState>,
@@ -753,18 +775,23 @@ pub async fn update_email_step_1(
     let user_id = session::get_session_user_id(&session).await?;
     let email = normalize_email(&request.email);
     if !is_valid_email(&email) {
-        let template = templates::EmailChangeStep2Template {
-            new_email: email,
-            error_message: "Invalid email format".to_string(),
-        };
-        return Ok(Html(template.render()?));
+        return email_change_step_1_error(email, "Invalid email format");
+    }
+    let user = state
+        .user_repository
+        .get_by_id(user_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    let current_password = normalize_password(&request.current_password);
+    if !verify_password(current_password, &user.password_hash).await {
+        tracing::warn!(
+            "User {} provided an incorrect password for an email change",
+            user_id
+        );
+        return email_change_step_1_error(email, "Current password is incorrect");
     }
     if let Ok(Some(_)) = state.user_repository.get_by_email(email.clone()).await {
-        let template = templates::EmailChangeStep2Template {
-            new_email: email,
-            error_message: "This email is already registered".to_string(),
-        };
-        return Ok(Html(template.render()?));
+        return email_change_step_1_error(email, "This email is already registered");
     }
     let code = verification_code::generate_code();
     state
@@ -787,6 +814,10 @@ pub async fn update_email_step_1(
             code
         );
     }
+    session
+        .insert(session::SESSION_PENDING_EMAIL_CHANGE, email.clone())
+        .await
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
     let template = templates::EmailChangeStep2Template {
         new_email: email,
         error_message: String::new(),
@@ -802,13 +833,17 @@ pub struct VerifyEmailChangeRequest {
 
 /// POST /settings/verify-email-change - Verifies email change code
 ///
+/// Verification codes are not bound to a user, so the submitted address must match the one
+/// authorized by a password-verified step 1 in this same session. Otherwise a code obtained
+/// through another account could be replayed through a hijacked session.
+///
 /// ### Arguments
 /// - `state`: The state of the application
 /// - `session`: The session
 /// - `request`: The verification request
 ///
 /// ### Returns
-/// - `Ok(Html<String>)`: Success message as formatted HTML
+/// - `Ok(Html<String>)`: Success message, or a form with an error, as formatted HTML
 /// - `Err(AppError)`: Error that occurred while verifying the code
 pub async fn update_email_step_2(
     State(state): State<AppState>,
@@ -817,6 +852,20 @@ pub async fn update_email_step_2(
 ) -> Result<Html<String>, AppError> {
     let user_id = session::get_session_user_id(&session).await?;
     let email = normalize_email(&request.email);
+    let pending_email: Option<String> = session
+        .get(session::SESSION_PENDING_EMAIL_CHANGE)
+        .await
+        .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
+    if pending_email.as_deref() != Some(email.as_str()) {
+        tracing::warn!(
+            "User {} submitted an email change code without a matching password-verified request",
+            user_id
+        );
+        return email_change_step_1_error(
+            email,
+            "Your email change request has expired. Please start again.",
+        );
+    }
     let result = state
         .verification_code_repository
         .verify_code(
@@ -835,11 +884,22 @@ pub async fn update_email_step_2(
                 };
                 return Ok(Html(template.render()?));
             }
+            let previous_email = state
+                .user_repository
+                .get_by_id(user_id)
+                .await?
+                .ok_or(AppError::Unauthorized)?
+                .email;
             state
                 .user_repository
                 .update_email(user_id, email.clone())
                 .await?;
+            session
+                .remove::<String>(session::SESSION_PENDING_EMAIL_CHANGE)
+                .await
+                .map_err(|_| AppError::InternalError(anyhow::anyhow!("Session error")))?;
             tracing::info!("User {} changed their email", user_id);
+            notify_previous_email(&state, user_id, previous_email, email.clone()).await;
             let template = templates::EmailChangeSuccessTemplate { email };
             Ok(Html(template.render()?))
         }
@@ -877,6 +937,43 @@ pub async fn update_email_step_2(
             };
             Ok(Html(template.render()?))
         }
+    }
+}
+
+/// Notifies the previous address of a completed email change
+///
+/// The change is already committed, so a delivery failure is logged rather than surfaced to the
+/// user.
+///
+/// ### Arguments
+/// - `state`: The state of the application
+/// - `user_id`: The ID of the user whose email changed
+/// - `previous_email`: The address to notify
+/// - `new_email`: The address the account now uses
+async fn notify_previous_email(
+    state: &AppState,
+    user_id: i32,
+    previous_email: String,
+    new_email: String,
+) {
+    if !state.is_prod {
+        tracing::info!(
+            "Not sending email change notification in non-production environment for user {}",
+            user_id
+        );
+        return;
+    }
+    match state
+        .mailer
+        .send_email_changed_notification(previous_email, new_email)
+        .await
+    {
+        Ok(()) => tracing::info!("Email change notification sent for user {}", user_id),
+        Err(e) => tracing::error!(
+            "Failed to send email change notification for user {}: {}",
+            user_id,
+            e
+        ),
     }
 }
 

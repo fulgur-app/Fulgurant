@@ -236,6 +236,14 @@ pub struct UpdateNameSuccessTemplate {
     pub last_name: String,
 }
 
+/// Email change step 1 template (new email and current password entry)
+#[derive(Template)]
+#[template(path = "partials/settings/email_change_step_1.html")]
+pub struct EmailChangeStep1Template {
+    pub email: String,
+    pub error_message: String,
+}
+
 /// Email change step 2 template (verification code entry)
 #[derive(Template)]
 #[template(path = "partials/settings/email_change_step_2.html")]

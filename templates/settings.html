@@ -44,27 +44,13 @@
 			<div class="mb-8">
 				<h3 class="text-lg font-semibold mb-4">Email Address</h3>
 				<p class="text-sm text-base-content/60 mb-4">
-					Changing your email will require verification. A 6-digit code will be sent to
-					your new email address.
+					Changing your email requires your current password and a verification. A 6-digit
+					code will be sent to your new email address, and your current address will be
+					notified once the change is complete.
 				</p>
 				<div id="email-update-container">
-					<form
-						hx-post="/settings/update-email"
-						hx-target="#email-update-container"
-						hx-swap="innerHTML"
-					>
-						<label class="label">Email</label>
-						<input
-							type="email"
-							name="email"
-							value="{{ email }}"
-							required
-							class="input input-bordered w-full"
-						/>
-						<div class="flex justify-end w-full">
-							<button type="submit" class="btn btn-primary mt-4">Update Email</button>
-						</div>
-					</form>
+					{% let error_message = "" %}
+					{% include "partials/settings/email_change_step_1.html" %}
 				</div>
 			</div>
 
