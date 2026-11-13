@@ -33,10 +33,7 @@ pub fn is_password_valid(password: &str) -> bool {
     let has_lowercase = password.chars().any(char::is_lowercase);
     let has_digit = password.chars().any(|c| c.is_ascii_digit());
     let has_special = password.chars().any(|c| !c.is_alphanumeric());
-    if !right_length || !has_uppercase || !has_lowercase || !has_digit || !has_special {
-        return false;
-    }
-    true
+    !(!right_length || !has_uppercase || !has_lowercase || !has_digit || !has_special)
 }
 
 /// Normalize a submitted password before validation, hashing, or verification.
