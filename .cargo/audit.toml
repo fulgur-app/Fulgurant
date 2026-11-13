@@ -1,0 +1,10 @@
+# cargo-audit configuration (also read by rustsec/audit-check in CI)
+# Keep the ignore list in sync with the [advisories] section of deny.toml.
+
+[advisories]
+ignore = [
+    # libsqlite3-sys bundled SQLite < 3.54.0. Blocked by sqlx-sqlite 0.9.0 capping
+    # libsqlite3-sys at < 0.38. Not reachable: Fulgurant never opens database files written
+    # by an untrusted party. Remove once sqlx 0.9.1 (launchbadge/sqlx#4502) is released.
+    "RUSTSEC-2026-0459",
+]
