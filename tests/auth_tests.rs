@@ -484,8 +484,14 @@ async fn test_register_full_flow_verifies_user_and_allows_login() {
         .await
         .assert_status_ok();
 
-    // The latest code wins, so this known code supersedes the random one sent at step 1.
-    VerificationCodeRepository::new(app.pool.clone())
+    // created_at has 1-second resolution, so replace the random step 1 code instead of
+    // relying on ordering to pick this known one.
+    let verification_codes = VerificationCodeRepository::new(app.pool.clone());
+    verification_codes
+        .delete_for("complete@test.com".to_string(), "registration".to_string())
+        .await
+        .unwrap();
+    verification_codes
         .create(
             "complete@test.com".to_string(),
             "123456".to_string(),
