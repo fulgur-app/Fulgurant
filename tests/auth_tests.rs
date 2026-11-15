@@ -465,6 +465,179 @@ async fn test_register_step2_invalid_code_shows_error_step2() {
     assert!(!step2_response.text().contains("Congratulations"));
 }
 
+#[tokio::test]
+async fn test_register_full_flow_verifies_user_and_allows_login() {
+    let app = TestApp::new().await;
+
+    let page = app.server.get("/register").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    app.server
+        .post("/auth/register")
+        .add_header(name.clone(), value.clone())
+        .form(&RegisterFormData {
+            email: "complete@test.com",
+            first_name: "Complete",
+            last_name: "User",
+            password: "Password123!",
+        })
+        .await
+        .assert_status_ok();
+
+    // created_at has 1-second resolution, so replace the random step 1 code instead of
+    // relying on ordering to pick this known one.
+    let verification_codes = VerificationCodeRepository::new(app.pool.clone());
+    verification_codes
+        .delete_for("complete@test.com".to_string(), "registration".to_string())
+        .await
+        .unwrap();
+    verification_codes
+        .create(
+            "complete@test.com".to_string(),
+            "123456".to_string(),
+            "registration".to_string(),
+        )
+        .await
+        .unwrap();
+
+    let step2_response = app
+        .server
+        .post("/auth/register/step2")
+        .add_header(name.clone(), value.clone())
+        .form(&RegisterStep2FormData {
+            email: "complete@test.com",
+            code: "123456",
+        })
+        .await;
+
+    step2_response.assert_status_ok();
+    assert!(
+        step2_response
+            .text()
+            .contains("Congratulations, Complete! You're registered!")
+    );
+
+    let user = UserRepository::new(app.pool.clone())
+        .get_by_email("complete@test.com".to_string())
+        .await
+        .unwrap()
+        .expect("registered user should exist");
+    assert!(user.email_verified);
+
+    let login_response = app
+        .server
+        .post("/login")
+        .add_header(name, value)
+        .form(&LoginFormData {
+            email: "complete@test.com",
+            password: "Password123!",
+        })
+        .await;
+
+    login_response.assert_status_ok();
+    assert_eq!(login_response.header("HX-Redirect"), "/");
+}
+
+#[tokio::test]
+async fn test_register_step2_unknown_email_is_unauthorized() {
+    let app = TestApp::new().await;
+
+    let page = app.server.get("/register").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post("/auth/register/step2")
+        .add_header(name, value)
+        .form(&RegisterStep2FormData {
+            email: "nobody@test.com",
+            code: "123456",
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::UNAUTHORIZED);
+}
+
+/// Submit registration step 1 with the given names and email and return the response body
+async fn register_step1_body(
+    app: &TestApp,
+    email: &str,
+    first_name: &str,
+    last_name: &str,
+) -> String {
+    let page = app.server.get("/register").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post("/auth/register")
+        .add_header(name, value)
+        .form(&RegisterFormData {
+            email,
+            first_name,
+            last_name,
+            password: "Password123!",
+        })
+        .await;
+
+    response.assert_status_ok();
+    response.text()
+}
+
+#[tokio::test]
+async fn test_register_empty_last_name() {
+    let app = TestApp::new().await;
+
+    let body = register_step1_body(&app, "new@test.com", "Test", "").await;
+
+    assert!(body.contains("Last name cannot be empty"));
+}
+
+#[tokio::test]
+async fn test_register_last_name_too_long() {
+    let app = TestApp::new().await;
+    let long_last_name = "a".repeat(51);
+
+    let body = register_step1_body(&app, "new@test.com", "Test", &long_last_name).await;
+
+    assert!(body.contains("Names cannot exceed 50 characters"));
+}
+
+#[tokio::test]
+async fn test_register_invalid_email() {
+    let app = TestApp::new().await;
+
+    let body = register_step1_body(&app, "not-an-email", "Test", "User").await;
+
+    assert!(body.contains("Invalid email"));
+}
+
+#[tokio::test]
+async fn test_register_verification_code_limit_creates_no_user() {
+    let app = TestApp::new().await;
+    let code_repository = VerificationCodeRepository::new(app.pool.clone());
+    for code in ["111111", "222222", "333333"] {
+        code_repository
+            .create(
+                "limited@test.com".to_string(),
+                code.to_string(),
+                "registration".to_string(),
+            )
+            .await
+            .unwrap();
+    }
+
+    let body = register_step1_body(&app, "limited@test.com", "Test", "User").await;
+
+    assert!(body.contains("maximum number of verification codes"));
+    let user = UserRepository::new(app.pool.clone())
+        .get_by_email("limited@test.com".to_string())
+        .await
+        .unwrap();
+    assert!(user.is_none());
+}
+
 // ─────────────────────────────────────────────
 // POST /logout
 // ─────────────────────────────────────────────
