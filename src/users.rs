@@ -756,6 +756,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_admin_rejects_second_admin() {
+        let repository = setup_test_repository().await;
+        repository
+            .create_admin(
+                "first@example.com".to_string(),
+                "First".to_string(),
+                "Admin".to_string(),
+                "hash".to_string(),
+            )
+            .await
+            .expect("first admin creation should succeed");
+
+        let second = repository
+            .create_admin(
+                "second@example.com".to_string(),
+                "Second".to_string(),
+                "Admin".to_string(),
+                "hash".to_string(),
+            )
+            .await;
+
+        assert!(matches!(second, Err(sqlx::Error::RowNotFound)));
+        let (admin_count,) = db_fetch_one!(
+            repository.pool,
+            "SELECT COUNT(*) FROM users WHERE role = 'Admin'",
+            (i64,)
+        )
+        .expect("count query failed");
+        assert_eq!(admin_count, 1);
+    }
+
+    #[tokio::test]
     async fn test_delete_user_owning_devices_succeeds() {
         let repository = setup_test_repository().await;
         let user_id = repository
