@@ -14,7 +14,7 @@ use fulgur_common::api::{
 };
 use fulgurant::access_token;
 use fulgurant::api::sse::MAX_SSE_CONNECTIONS_PER_DEVICE;
-use fulgurant::db_execute_dual;
+use fulgurant::{db_execute, db_execute_dual};
 use std::time::Duration as StdDuration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -178,6 +178,105 @@ async fn test_ping_expired_device_rejected() {
     assert!(body.error.contains("Device has expired"));
 }
 
+/// Send `GET /api/ping` with a raw `Authorization` header value, expecting a rejection
+async fn ping_expecting_failure(
+    server: &axum_test::TestServer,
+    authorization: &str,
+) -> ErrorResponse {
+    let response = server
+        .get("/api/ping")
+        .add_header(AUTHORIZATION, HeaderValue::from_str(authorization).unwrap())
+        .expect_failure()
+        .await;
+    response.assert_status_unauthorized();
+    response.json()
+}
+
+#[tokio::test]
+async fn test_ping_non_bearer_scheme_rejected() {
+    let app = TestApp::new().await;
+    let (_user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+
+    let body = ping_expecting_failure(&app.server, &format!("Basic {jwt}")).await;
+
+    assert!(body.error.contains("Invalid Authorization header format"));
+}
+
+#[tokio::test]
+async fn test_ping_non_numeric_sub_rejected() {
+    let app = TestApp::new().await;
+    let (_user_id, device_id, _jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let claims = access_token::AccessTokenClaims {
+        sub: "not-a-number".to_string(),
+        device_id,
+        device_name: "Test Device".to_string(),
+        exp: now + 900,
+        iat: now,
+        iss: "fulgurant".to_string(),
+    };
+    let forged_jwt = jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(app.jwt_secret.as_bytes()),
+    )
+    .unwrap();
+
+    let body = ping_expecting_failure(&app.server, &format!("Bearer {forged_jwt}")).await;
+
+    assert!(body.error.contains("Invalid token claims"));
+}
+
+#[tokio::test]
+async fn test_ping_deleted_user_rejected() {
+    let app = TestApp::new().await;
+    let (user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+    fulgurant::users::UserRepository::new(app.pool.clone())
+        .delete(user_id)
+        .await
+        .unwrap();
+
+    let body = ping_expecting_failure(&app.server, &format!("Bearer {jwt}")).await;
+
+    assert!(body.error.contains("User not found"));
+}
+
+#[tokio::test]
+async fn test_ping_unverified_user_rejected() {
+    let app = TestApp::new().await;
+    let (user_id, _device_id, jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+    db_execute!(
+        app.pool,
+        "UPDATE users SET email_verified = FALSE WHERE id = ?",
+        user_id
+    )
+    .unwrap();
+
+    let body = ping_expecting_failure(&app.server, &format!("Bearer {jwt}")).await;
+
+    assert!(body.error.contains("Email not verified"));
+}
+
+#[tokio::test]
+async fn test_ping_device_of_other_user_rejected() {
+    let app = TestApp::new().await;
+    let (_owner_id, owner_device_id, _jwt) = setup_api_user(&app.pool, &app.jwt_secret).await;
+    let other_user_id =
+        create_verified_user(&app.pool, "other_user@test.com", "TestPassword1!").await;
+    let mismatched_jwt = access_token::generate_access_token(
+        other_user_id,
+        owner_device_id,
+        "Test Device".to_string(),
+        &app.jwt_secret,
+        900,
+    )
+    .unwrap();
+
+    let body = ping_expecting_failure(&app.server, &format!("Bearer {mismatched_jwt}")).await;
+
+    assert!(body.error.contains("Invalid token claims"));
+}
+
 // ─────────────────────────────────────────────
 // POST /api/token
 // ─────────────────────────────────────────────
@@ -339,6 +438,105 @@ async fn test_token_unverified_email() {
     response.assert_status_unauthorized();
     let body: ErrorResponse = response.json();
     assert!(body.error.contains("not verified"));
+}
+
+/// Clear `device_key_fast_hash` for every device, mimicking migration 20260928000000
+async fn reset_all_fast_hashes(pool: &fulgurant::db::DbPool) {
+    db_execute!(pool, "UPDATE devices SET device_key_fast_hash = NULL").unwrap();
+}
+
+/// Send `POST /api/token` with the given email and raw `Authorization` header value
+async fn request_token(
+    server: &axum_test::TestServer,
+    email: &str,
+    authorization: &str,
+) -> axum_test::TestResponse {
+    let (header_name, header_value) = x_user_email(email);
+    server
+        .post("/api/token")
+        .add_header(header_name, header_value)
+        .add_header(AUTHORIZATION, HeaderValue::from_str(authorization).unwrap())
+        .expect_failure()
+        .await
+}
+
+#[tokio::test]
+async fn test_token_slow_path_populates_fast_hash() {
+    let app = TestApp::new().await;
+    let email = "legacy_device@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (device_id, api_key) = create_device_for_user(&app.pool, user_id, "Legacy").await;
+    reset_all_fast_hashes(&app.pool).await;
+
+    let first_jwt = get_jwt_token(&app.server, email, &api_key).await;
+    assert_ne!(first_jwt, "");
+
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
+    let device = device_repo.get_by_device_id(&device_id).await.unwrap();
+    assert_eq!(
+        device.device_key_fast_hash,
+        Some(fulgurant::api_key::hash_api_key_fast(&api_key))
+    );
+
+    let second_jwt = get_jwt_token(&app.server, email, &api_key).await;
+    let response = app
+        .server
+        .get("/api/ping")
+        .add_header(AUTHORIZATION, bearer(&second_jwt))
+        .await;
+    response.assert_status_ok();
+}
+
+#[tokio::test]
+async fn test_token_slow_path_rejects_wrong_key() {
+    let app = TestApp::new().await;
+    let email = "legacy_wrong_key@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (device_id, _api_key) = create_device_for_user(&app.pool, user_id, "Legacy").await;
+    reset_all_fast_hashes(&app.pool).await;
+
+    let response = request_token(
+        &app.server,
+        email,
+        "Bearer fulgur_wrong_key_for_a_legacy_device",
+    )
+    .await;
+
+    response.assert_status_unauthorized();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("Invalid credentials"));
+    let device_repo = fulgurant::devices::DeviceRepository::new(app.pool.clone());
+    let device = device_repo.get_by_device_id(&device_id).await.unwrap();
+    assert_eq!(device.device_key_fast_hash, None);
+}
+
+#[tokio::test]
+async fn test_token_rejects_other_users_device_key() {
+    let app = TestApp::new().await;
+    let owner_id = create_verified_user(&app.pool, "key_owner@test.com", "TestPassword1!").await;
+    let (_device_id, owner_key) = create_device_for_user(&app.pool, owner_id, "Owner").await;
+    let other_email = "key_thief@test.com";
+    create_verified_user(&app.pool, other_email, "TestPassword1!").await;
+
+    let response = request_token(&app.server, other_email, &format!("Bearer {owner_key}")).await;
+
+    response.assert_status_unauthorized();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("Invalid credentials"));
+}
+
+#[tokio::test]
+async fn test_token_rejects_non_bearer_scheme() {
+    let app = TestApp::new().await;
+    let email = "basic_scheme@test.com";
+    let user_id = create_verified_user(&app.pool, email, "TestPassword1!").await;
+    let (_device_id, api_key) = create_device_for_user(&app.pool, user_id, "Device").await;
+
+    let response = request_token(&app.server, email, &format!("Basic {api_key}")).await;
+
+    response.assert_status_unauthorized();
+    let body: ErrorResponse = response.json();
+    assert!(body.error.contains("Invalid Authorization header format"));
 }
 
 // ─────────────────────────────────────────────
