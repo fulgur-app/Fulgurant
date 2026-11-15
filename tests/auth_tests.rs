@@ -10,6 +10,7 @@ use common::{
     test_app::{TestApp, TestAppOptions},
 };
 use fulgurant::db::DbPool;
+use fulgurant::session::{FulgurSessionStore, SESSION_USER_ID, SessionRepository};
 use fulgurant::users::UserRepository;
 use fulgurant::verification_code::VerificationCodeRepository;
 use fulgurant::{db_execute_dual, db_fetch_one_dual};
@@ -921,5 +922,316 @@ async fn test_reset_password_without_step2_is_rejected() {
     assert!(
         login_attempt.text().contains("Invalid email or password"),
         "the password must not have been changed"
+    );
+}
+
+// ─────────────────────────────────────────────
+// Forgot-password failure modes
+// ─────────────────────────────────────────────
+
+/// Marker rendered only by the step-3 (new password) form
+const RESET_FORM_MARKER: &str = "/auth/forgot-password/reset";
+
+/// Marker rendered only by the reset success partial
+const RESET_SUCCESS_MARKER: &str = "Password Reset Successful!";
+
+/// Load the forgot-password page and return its CSRF token (also starts the session)
+async fn forgot_password_csrf(app: &TestApp) -> String {
+    let page = app.server.get("/auth/forgot-password").await;
+    extract_csrf_token(&page.text())
+}
+
+/// Seed a known `password_reset` verification code for `email`
+async fn seed_reset_code(pool: &DbPool, email: &str, code: &str) {
+    VerificationCodeRepository::new(pool.clone())
+        .create(
+            email.to_string(),
+            code.to_string(),
+            "password_reset".to_string(),
+        )
+        .await
+        .unwrap();
+}
+
+/// Count the active `password_reset` verification codes for `email`
+async fn active_reset_codes(pool: &DbPool, email: &str) -> i32 {
+    VerificationCodeRepository::new(pool.clone())
+        .count_active_codes(email.to_string(), "password_reset".to_string())
+        .await
+        .unwrap()
+}
+
+/// Check whether the stored password hash of `email` matches `password`
+async fn password_matches(pool: &DbPool, email: &str, password: &str) -> bool {
+    use argon2::{Argon2, PasswordHash, PasswordVerifier};
+
+    let user = UserRepository::new(pool.clone())
+        .get_by_email(email.to_string())
+        .await
+        .unwrap()
+        .expect("user should exist");
+    let parsed = PasswordHash::new(&user.password_hash).unwrap();
+    Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok()
+}
+
+/// Submit forgot-password step 1 and return the response body
+async fn post_forgot_step1(app: &TestApp, csrf: &str, email: &str) -> String {
+    let (name, value) = csrf_header(csrf);
+    let response = app
+        .server
+        .post("/auth/forgot-password")
+        .add_header(name, value)
+        .form(&EmailFormData { email })
+        .await;
+    response.assert_status_ok();
+    response.text()
+}
+
+/// Submit forgot-password step 2 (code verification) and return the response body
+async fn post_forgot_verify(app: &TestApp, csrf: &str, email: &str, code: &str) -> String {
+    let (name, value) = csrf_header(csrf);
+    let response = app
+        .server
+        .post("/auth/forgot-password/verify")
+        .add_header(name, value)
+        .form(&VerifyCodeFormData { email, code })
+        .await;
+    response.assert_status_ok();
+    response.text()
+}
+
+/// Submit forgot-password step 3 (new password) and return the response body
+async fn post_forgot_reset(app: &TestApp, csrf: &str, email: &str, password: &str) -> String {
+    let (name, value) = csrf_header(csrf);
+    let response = app
+        .server
+        .post("/auth/forgot-password/reset")
+        .add_header(name, value)
+        .form(&ResetPasswordFormData { email, password })
+        .await;
+    response.assert_status_ok();
+    response.text()
+}
+
+/// Call the resend route for `email` and return the response body
+async fn get_forgot_resend(app: &TestApp, email: &str) -> String {
+    let response = app
+        .server
+        .get("/auth/forgot-password/resend")
+        .add_query_param("email", email)
+        .await;
+    response.assert_status_ok();
+    response.text()
+}
+
+#[tokio::test]
+async fn test_forgot_password_unknown_email_looks_like_known_email() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "known@test.com", "Password123!").await;
+    let csrf = forgot_password_csrf(&app).await;
+
+    let known_body = post_forgot_step1(&app, &csrf, "known@test.com").await;
+    let unknown_body = post_forgot_step1(&app, &csrf, "unknown@test.com").await;
+
+    assert_eq!(
+        known_body.replace("known@test.com", "EMAIL"),
+        unknown_body.replace("unknown@test.com", "EMAIL"),
+        "step 1 must not reveal whether an account exists"
+    );
+    assert_eq!(active_reset_codes(&app.pool, "known@test.com").await, 1);
+    assert_eq!(active_reset_codes(&app.pool, "unknown@test.com").await, 0);
+}
+
+#[tokio::test]
+async fn test_forgot_password_step1_respects_code_limit() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    for code in ["111111", "222222", "333333"] {
+        seed_reset_code(&app.pool, "user@test.com", code).await;
+    }
+    let csrf = forgot_password_csrf(&app).await;
+
+    let body = post_forgot_step1(&app, &csrf, "user@test.com").await;
+
+    assert!(body.contains("/auth/forgot-password/verify"));
+    assert_eq!(active_reset_codes(&app.pool, "user@test.com").await, 3);
+}
+
+#[tokio::test]
+async fn test_forgot_password_wrong_code_counts_down_then_locks() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    seed_reset_code(&app.pool, "user@test.com", "123456").await;
+    let csrf = forgot_password_csrf(&app).await;
+
+    let first = post_forgot_verify(&app, &csrf, "user@test.com", "000000").await;
+    assert!(first.contains("2 attempt(s) remaining"));
+    let second = post_forgot_verify(&app, &csrf, "user@test.com", "000000").await;
+    assert!(second.contains("1 attempt(s) remaining"));
+    let third = post_forgot_verify(&app, &csrf, "user@test.com", "000000").await;
+    assert!(third.contains("Too many failed attempts"));
+
+    let correct_after_lock = post_forgot_verify(&app, &csrf, "user@test.com", "123456").await;
+    assert!(correct_after_lock.contains("Too many failed attempts"));
+    assert!(
+        !correct_after_lock.contains(RESET_FORM_MARKER),
+        "a locked code must not unlock step 3"
+    );
+}
+
+#[tokio::test]
+async fn test_forgot_password_expired_code_is_refused() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    seed_reset_code(&app.pool, "user@test.com", "123456").await;
+    let past = time::OffsetDateTime::now_utc().unix_timestamp() - 60;
+    db_execute_dual!(
+        app.pool,
+        sqlite: "UPDATE verification_codes SET expires_at = ? WHERE email = ?",
+        postgres: "UPDATE verification_codes SET expires_at = to_timestamp($1) WHERE email = $2",
+        past,
+        "user@test.com"
+    )
+    .unwrap();
+    let csrf = forgot_password_csrf(&app).await;
+
+    let body = post_forgot_verify(&app, &csrf, "user@test.com", "123456").await;
+
+    assert!(body.contains("Verification code has expired"));
+    assert!(!body.contains(RESET_FORM_MARKER));
+}
+
+#[tokio::test]
+async fn test_forgot_password_missing_code_is_refused() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    let csrf = forgot_password_csrf(&app).await;
+
+    let body = post_forgot_verify(&app, &csrf, "user@test.com", "123456").await;
+
+    assert!(body.contains("No verification code found"));
+    assert!(!body.contains(RESET_FORM_MARKER));
+}
+
+#[tokio::test]
+async fn test_reset_password_weak_password_is_rejected() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    seed_reset_code(&app.pool, "user@test.com", "123456").await;
+    let csrf = forgot_password_csrf(&app).await;
+    post_forgot_verify(&app, &csrf, "user@test.com", "123456").await;
+
+    let body = post_forgot_reset(&app, &csrf, "user@test.com", "weak").await;
+
+    assert!(body.contains("Password must be 8-64 characters long"));
+    assert!(password_matches(&app.pool, "user@test.com", "Password123!").await);
+}
+
+#[tokio::test]
+async fn test_forgot_password_resend_creates_code_for_known_email_only() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "known@test.com", "Password123!").await;
+
+    let known_body = get_forgot_resend(&app, "known@test.com").await;
+    let unknown_body = get_forgot_resend(&app, "unknown@test.com").await;
+
+    assert!(known_body.contains("A new verification code has been sent"));
+    assert_eq!(
+        known_body.replace("known@test.com", "EMAIL"),
+        unknown_body.replace("unknown@test.com", "EMAIL"),
+        "resend must not reveal whether an account exists"
+    );
+    assert_eq!(active_reset_codes(&app.pool, "known@test.com").await, 1);
+    assert_eq!(active_reset_codes(&app.pool, "unknown@test.com").await, 0);
+}
+
+#[tokio::test]
+async fn test_forgot_password_resend_stops_at_code_limit() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    for code in ["111111", "222222", "333333"] {
+        seed_reset_code(&app.pool, "user@test.com", code).await;
+    }
+
+    let body = get_forgot_resend(&app, "user@test.com").await;
+
+    assert!(body.contains("A new verification code has been sent"));
+    assert_eq!(active_reset_codes(&app.pool, "user@test.com").await, 3);
+}
+
+#[tokio::test]
+async fn test_reset_authorization_is_bound_to_verified_email() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "a@test.com", "PasswordA1!").await;
+    create_verified_user(&app.pool, "b@test.com", "PasswordB1!").await;
+    seed_reset_code(&app.pool, "a@test.com", "123456").await;
+    let csrf = forgot_password_csrf(&app).await;
+
+    let verified = post_forgot_verify(&app, &csrf, "a@test.com", "123456").await;
+    assert!(verified.contains(RESET_FORM_MARKER));
+
+    let other_account = post_forgot_reset(&app, &csrf, "b@test.com", "Hijacked1!").await;
+    assert!(other_account.contains("expired or is invalid"));
+    assert!(password_matches(&app.pool, "b@test.com", "PasswordB1!").await);
+
+    let original_account = post_forgot_reset(&app, &csrf, "a@test.com", "NewPassword2!").await;
+    assert!(
+        original_account.contains("expired or is invalid"),
+        "a mismatched attempt must burn the authorization"
+    );
+    assert!(password_matches(&app.pool, "a@test.com", "PasswordA1!").await);
+}
+
+#[tokio::test]
+async fn test_reset_password_cannot_be_replayed() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    seed_reset_code(&app.pool, "user@test.com", "123456").await;
+    let csrf = forgot_password_csrf(&app).await;
+    post_forgot_verify(&app, &csrf, "user@test.com", "123456").await;
+
+    let first = post_forgot_reset(&app, &csrf, "user@test.com", "NewPassword2!").await;
+    assert!(first.contains(RESET_SUCCESS_MARKER));
+
+    let replay = post_forgot_reset(&app, &csrf, "user@test.com", "OtherPassword3!").await;
+    assert!(replay.contains("expired or is invalid"));
+    assert!(password_matches(&app.pool, "user@test.com", "NewPassword2!").await);
+    assert!(!password_matches(&app.pool, "user@test.com", "Password123!").await);
+}
+
+#[tokio::test]
+async fn test_reset_password_revokes_existing_sessions() {
+    use tower_sessions::SessionStore;
+    use tower_sessions::session::{Id, Record};
+
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    let session_repository = SessionRepository::new(app.pool.clone());
+    let mut other_device_session = Record {
+        id: Id::default(),
+        data: std::collections::HashMap::from([(
+            SESSION_USER_ID.to_string(),
+            serde_json::json!(user_id),
+        )]),
+        expiry_date: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+    };
+    FulgurSessionStore::new(session_repository.clone())
+        .create(&mut other_device_session)
+        .await
+        .unwrap();
+    assert_eq!(session_repository.count_for_user(user_id).await.unwrap(), 1);
+
+    seed_reset_code(&app.pool, "user@test.com", "123456").await;
+    let csrf = forgot_password_csrf(&app).await;
+    post_forgot_verify(&app, &csrf, "user@test.com", "123456").await;
+    let body = post_forgot_reset(&app, &csrf, "user@test.com", "NewPassword2!").await;
+
+    assert!(body.contains(RESET_SUCCESS_MARKER));
+    assert_eq!(
+        session_repository.count_for_user(user_id).await.unwrap(),
+        0,
+        "a password reset must log out every existing session"
     );
 }
