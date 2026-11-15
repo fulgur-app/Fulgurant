@@ -10,6 +10,7 @@ use common::{
     test_app::{TestApp, TestAppOptions},
 };
 use fulgurant::db::DbPool;
+use fulgurant::users::UserRepository;
 use fulgurant::verification_code::VerificationCodeRepository;
 use fulgurant::{db_execute_dual, db_fetch_one_dual};
 use serde::Serialize;
@@ -532,6 +533,100 @@ async fn test_force_password_weak() {
 
     response.assert_status_ok();
     assert!(response.text().contains("Password must be"));
+}
+
+#[tokio::test]
+async fn test_force_password_same_password_rejected() {
+    let app = TestApp::new().await;
+    let user_id =
+        create_user_with_force_update(&app.pool, "forced@test.com", "OldPassword1!").await;
+    login(&app.server, "forced@test.com", "OldPassword1!").await;
+
+    let page = app.server.get("/force-password-update").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post("/force-password-update")
+        .add_header(name, value)
+        .form(&PasswordFormData {
+            password: "OldPassword1!",
+        })
+        .await;
+
+    response.assert_status_ok();
+    assert!(
+        response
+            .text()
+            .contains("New password must be different from your current password.")
+    );
+    let user = UserRepository::new(app.pool.clone())
+        .get_by_id(user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(user.force_password_update);
+    let gated = app.server.get("/").expect_failure().await;
+    gated.assert_status(StatusCode::SEE_OTHER);
+    assert_eq!(gated.header("location"), "/force-password-update");
+}
+
+// ─────────────────────────────────────────────
+// require_auth force-password-update gate
+// ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_force_password_gate_redirects_protected_pages() {
+    let app = TestApp::new().await;
+    create_user_with_force_update(&app.pool, "forced@test.com", "OldPassword1!").await;
+    login(&app.server, "forced@test.com", "OldPassword1!").await;
+
+    for path in ["/", "/settings", "/admin"] {
+        let response = app.server.get(path).expect_failure().await;
+        response.assert_status(StatusCode::SEE_OTHER);
+        assert_eq!(
+            response.header("location"),
+            "/force-password-update",
+            "{path} should redirect to the forced password update"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_force_password_gate_allows_update_page_logout_and_assets() {
+    let app = TestApp::new().await;
+    create_user_with_force_update(&app.pool, "forced@test.com", "OldPassword1!").await;
+    login(&app.server, "forced@test.com", "OldPassword1!").await;
+
+    app.server
+        .get("/force-password-update")
+        .await
+        .assert_status_ok();
+    app.server
+        .get("/assets/favicon.svg")
+        .await
+        .assert_status_ok();
+    app.server.get("/logout").await.assert_status_ok();
+}
+
+#[tokio::test]
+async fn test_force_password_gate_lifted_after_update() {
+    let app = TestApp::new().await;
+    create_user_with_force_update(&app.pool, "forced@test.com", "OldPassword1!").await;
+    login(&app.server, "forced@test.com", "OldPassword1!").await;
+
+    let page = app.server.get("/force-password-update").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+    app.server
+        .post("/force-password-update")
+        .add_header(name, value)
+        .form(&PasswordFormData {
+            password: "NewPassword2!",
+        })
+        .await
+        .assert_status_ok();
+
+    app.server.get("/").await.assert_status_ok();
 }
 
 // ─────────────────────────────────────────────
