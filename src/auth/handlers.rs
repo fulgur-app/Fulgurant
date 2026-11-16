@@ -1026,3 +1026,62 @@ async fn dummy_verify_password() {
 fn dummy_verify_password_blocking() {
     let _ = verify_password_blocking("dummy-password", DUMMY_PASSWORD_HASH.as_str());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_verification_error_invalid_with_attempts_left() {
+        let message = format_verification_error(&VerificationResult::Invalid {
+            attempts_remaining: 2,
+        });
+        assert_eq!(
+            message,
+            "Invalid verification code. 2 attempt(s) remaining."
+        );
+    }
+
+    #[test]
+    fn format_verification_error_invalid_without_attempts_left() {
+        let message = format_verification_error(&VerificationResult::Invalid {
+            attempts_remaining: 0,
+        });
+        assert_eq!(
+            message,
+            "Too many failed attempts. Please request a new code."
+        );
+    }
+
+    #[test]
+    fn format_verification_error_too_many_attempts() {
+        assert_eq!(
+            format_verification_error(&VerificationResult::TooManyAttempts),
+            "Too many failed attempts. Please request a new code."
+        );
+    }
+
+    #[test]
+    fn format_verification_error_expired() {
+        assert_eq!(
+            format_verification_error(&VerificationResult::Expired),
+            "Verification code has expired. Please request a new code."
+        );
+    }
+
+    #[test]
+    fn format_verification_error_not_found() {
+        assert_eq!(
+            format_verification_error(&VerificationResult::NotFound),
+            "No verification code found. Please request a new code."
+        );
+    }
+
+    #[test]
+    fn format_verification_error_verified_is_generic_failure() {
+        assert_eq!(
+            format_verification_error(&VerificationResult::Verified),
+            "Verification failed"
+        );
+    }
+}
