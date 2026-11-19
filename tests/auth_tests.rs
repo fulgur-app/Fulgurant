@@ -5,7 +5,7 @@ use axum::http::header::{HeaderName, HeaderValue};
 use common::{
     auth_helpers::{
         create_unverified_user, create_user_with_force_update, create_verified_user,
-        extract_csrf_token, login,
+        extract_csrf_token, login, try_login,
     },
     test_app::{TestApp, TestAppOptions},
 };
@@ -878,8 +878,15 @@ async fn test_reset_password_success() {
         .await;
 
     response.assert_status_ok();
-    // Verify the new password now works
-    login(&app.server, "user@test.com", "NewPassword2!").await;
+    assert_eq!(
+        try_login(&app.server, "user@test.com", "Password123!").await,
+        None,
+        "the old password must no longer log in"
+    );
+    assert_eq!(
+        login(&app.server, "user@test.com", "NewPassword2!").await,
+        "/"
+    );
 }
 
 #[tokio::test]
