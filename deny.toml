@@ -54,6 +54,11 @@ ignore = [
     # written by an untrusted party. Remove once sqlx 0.9.1 (launchbadge/sqlx#4502) is released.
     # Keep in sync with .cargo/audit.toml.
     { id = "RUSTSEC-2026-0459", reason = "Not reachable: no untrusted database files; waiting for sqlx 0.9.1" },
+    # chrono unmaintained. Only pulled in by the axum-test dev-dependency (via expect-json,
+    # non-optional), never compiled into the server binary. No axum-test release drops it yet
+    # (checked up to 22.0.0-rc.1). Remove once expect-json/axum-test stop depending on chrono.
+    # Keep in sync with .cargo/audit.toml.
+    { id = "RUSTSEC-2026-0543", reason = "Dev-dependency only (axum-test -> expect-json); no upstream fix yet" },
 ]
 
 # Check unmaintained crates in transitive dependencies
