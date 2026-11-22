@@ -63,12 +63,12 @@ async-stream = "0.3.6"
 futures = "0.3.34"
 
 # Utilities
-uuid = { version = "1.29.2", features = ["v4", "serde"] }
+uuid = { version = "1.29.3", features = ["v4", "serde"] }
 dotenvy = "0.15.7"
-rand = "0.10.3"
+rand = "0.10.4"
 rand_core = "0.10.1"
 base64 = "0.23.1"
-lettre = "0.11.23"
+lettre = "0.11.24"
 regex = "1.13.1"
 time = { version = "0.3.55", features = ["serde", "formatting", "macros"] }
 

@@ -7,4 +7,7 @@ ignore = [
     # libsqlite3-sys at < 0.38. Not reachable: Fulgurant never opens database files written
     # by an untrusted party. Remove once sqlx 0.9.1 (launchbadge/sqlx#4502) is released.
     "RUSTSEC-2026-0459",
+    # chrono unmaintained. Dev-dependency only (axum-test -> expect-json, non-optional), not in
+    # the server binary. Remove once expect-json/axum-test stop depending on chrono.
+    "RUSTSEC-2026-0543",
 ]
