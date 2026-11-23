@@ -25,6 +25,9 @@ pub const SESSION_REMEMBER_ME: &str = "remember_me";
 /// Session key for the short-lived forgot-password authorization set after step 2
 pub const SESSION_PASSWORD_RESET_AUTHORIZED: &str = "password_reset_authorized";
 
+/// Session key for the new email address authorized by a password-verified email change step 1
+pub const SESSION_PENDING_EMAIL_CHANGE: &str = "pending_email_change";
+
 /// Session key for the unix timestamp of the last recorded activity
 pub const SESSION_LAST_SEEN: &str = "last_seen";
 

@@ -13,7 +13,7 @@ use fulgurant::db::DbPool;
 use fulgurant::session::{FulgurSessionStore, SESSION_USER_ID, SessionRepository};
 use fulgurant::users::UserRepository;
 use fulgurant::verification_code::VerificationCodeRepository;
-use fulgurant::{db_execute_dual, db_fetch_one_dual};
+use fulgurant::{db_execute_dual, db_fetch_one, db_fetch_one_dual};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -707,6 +707,69 @@ async fn test_force_password_weak() {
 
     response.assert_status_ok();
     assert!(response.text().contains("Password must be"));
+}
+
+#[tokio::test]
+async fn test_force_password_page_redirects_without_pending_update() {
+    let app = TestApp::new().await;
+    create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+
+    let response = app
+        .server
+        .get("/force-password-update")
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::SEE_OTHER);
+    assert_eq!(response.header("location"), "/");
+}
+
+#[tokio::test]
+async fn test_force_password_rejected_without_pending_update() {
+    let app = TestApp::new().await;
+    let user_id = create_verified_user(&app.pool, "user@test.com", "Password123!").await;
+    login(&app.server, "user@test.com", "Password123!").await;
+    let original_hash = password_hash_for(&app.pool, user_id).await;
+
+    let page = app.server.get("/settings").await;
+    let (name, value) = csrf_header(&extract_csrf_token(&page.text()));
+
+    let response = app
+        .server
+        .post("/force-password-update")
+        .add_header(name, value)
+        .form(&PasswordFormData {
+            password: "NewPassword2!",
+        })
+        .expect_failure()
+        .await;
+
+    response.assert_status(StatusCode::FORBIDDEN);
+    assert_eq!(
+        password_hash_for(&app.pool, user_id).await,
+        original_hash,
+        "password must not change without a pending forced update"
+    );
+}
+
+/// Read the stored password hash of a user
+///
+/// ### Arguments
+/// - `pool`: The test database pool
+/// - `user_id`: The user's ID
+///
+/// ### Returns
+/// - `String`: The stored Argon2 password hash
+async fn password_hash_for(pool: &DbPool, user_id: i32) -> String {
+    let (password_hash,) = db_fetch_one!(
+        pool,
+        "SELECT password_hash FROM users WHERE id = ?",
+        (String,),
+        user_id
+    )
+    .unwrap();
+    password_hash
 }
 
 #[tokio::test]
