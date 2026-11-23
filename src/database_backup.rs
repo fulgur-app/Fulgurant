@@ -18,14 +18,6 @@ pub fn get_backup_folder() -> PathBuf {
     PathBuf::from(backup_folder)
 }
 
-/// Check if daily database backups are enabled
-pub fn is_daily_backup_enabled() -> bool {
-    std::env::var("DAILY_DATABASE_BACKUP")
-        .unwrap_or_else(|_| "false".to_string())
-        .to_lowercase()
-        == "true"
-}
-
 /// Validate that a path contains only safe characters for SQL interpolation
 ///
 /// Since `SQLite`'s VACUUM INTO doesn't support parameterized queries, we must
@@ -123,6 +115,7 @@ pub async fn perform_backup(pool: &SqlitePool, backup_folder: &Path) -> anyhow::
 /// - `pool`: The database pool
 /// - `shutdown_token`: Token to signal graceful shutdown
 /// - `is_prod`: If true, performs final backup on shutdown (production). If false, skips final backup (development).
+/// - `enabled`: Value of the `DAILY_DATABASE_BACKUP` setting
 ///
 /// ### Returns
 /// - `Some(JoinHandle)`: Handle to pass to `wait_for_backup_task` once the server has stopped
@@ -131,12 +124,13 @@ pub fn make_daily_backup_task(
     pool: DbPool,
     shutdown_token: CancellationToken,
     is_prod: bool,
+    enabled: bool,
 ) -> Option<JoinHandle<()>> {
     if pool.backend() == DbBackend::Postgres {
         tracing::info!("PostgreSQL detected - built-in backup disabled (use pg_dump)");
         return None;
     }
-    if !is_daily_backup_enabled() {
+    if !enabled {
         tracing::info!("Daily database backups are disabled");
         return None;
     }

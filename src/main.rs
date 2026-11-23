@@ -28,6 +28,7 @@ const DEFAULT_MAX_DEVICES_PER_USER: i32 = 99;
 const MIN_MAX_DEVICES_PER_USER: i32 = 0;
 const MAX_MAX_DEVICES_PER_USER: i32 = 10_000;
 /// Runtime configuration loaded from environment variables with validation.
+#[allow(clippy::struct_excessive_bools)] // Each bool mirrors an independent env flag, not a state machine
 struct RuntimeConfig {
     is_prod: bool,
     database_url: String,
@@ -38,6 +39,7 @@ struct RuntimeConfig {
     trust_proxy_headers: bool,
     share_validity_days: i64,
     max_devices_per_user: i32,
+    daily_database_backup: bool,
     bind_host: String,
     bind_port: u16,
 }
@@ -152,6 +154,7 @@ fn load_runtime_config() -> anyhow::Result<RuntimeConfig> {
     let is_prod = parse_env_bool("IS_PROD", true)?;
     let can_register = parse_env_bool("CAN_REGISTER", false)?;
     let trust_proxy_headers = parse_env_bool("TRUST_PROXY_HEADERS", false)?;
+    let daily_database_backup = parse_env_bool("DAILY_DATABASE_BACKUP", false)?;
     let database_url =
         std::env::var("DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string());
     if database_url.trim().is_empty() {
@@ -204,6 +207,7 @@ fn load_runtime_config() -> anyhow::Result<RuntimeConfig> {
         trust_proxy_headers,
         share_validity_days,
         max_devices_per_user,
+        daily_database_backup,
         bind_host,
         bind_port,
     })
@@ -376,14 +380,18 @@ async fn main() -> anyhow::Result<()> {
             async move { repo.delete_expired().await }
         },
     );
-    let backup_task =
-        database_backup::make_daily_backup_task(pool.clone(), shutdown_token.clone(), is_prod);
-    let bind_host = config.bind_host.clone();
-    let bind_port = config.bind_port;
-    let addr = format!("{bind_host}:{bind_port}").parse::<SocketAddr>()?;
-    if bind_host == "0.0.0.0" {
-        tracing::warn!("Server is listening on all interfaces (0.0.0.0)");
-    } else if bind_host == "127.0.0.1" {
+    let backup_task = database_backup::make_daily_backup_task(
+        pool.clone(),
+        shutdown_token.clone(),
+        is_prod,
+        config.daily_database_backup,
+    );
+    let listener =
+        tokio::net::TcpListener::bind((config.bind_host.as_str(), config.bind_port)).await?;
+    let addr = listener.local_addr()?;
+    if addr.ip().is_unspecified() {
+        tracing::warn!("Server is listening on all interfaces ({})", addr.ip());
+    } else if addr.ip().is_loopback() {
         tracing::info!("Server is listening on localhost only");
     }
     let shutdown_token_handler = shutdown_token.clone();
@@ -398,7 +406,6 @@ async fn main() -> anyhow::Result<()> {
             "Production mode: use a reverse proxy (nginx/Caddy/Traefik) for HTTPS termination"
         );
     }
-    let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
