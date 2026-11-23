@@ -9,7 +9,7 @@ COPY templates ./templates
 RUN npm run tw:build && npm run js:build
 
 # Rust build stage
-FROM rust:1.96-alpine AS builder
+FROM rust:1.100-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache \

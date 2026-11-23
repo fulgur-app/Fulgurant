@@ -810,4 +810,99 @@ mod tests {
         assert_eq!(decoded.id, record.id);
         assert_eq!(decoded.data, record.data);
     }
+
+    /// Build an anonymous in-memory session for exercising session helpers.
+    ///
+    /// ### Returns
+    /// - `Session`: A fresh session backed by a `MemoryStore`
+    fn make_memory_session() -> Session {
+        Session::new(
+            None,
+            std::sync::Arc::new(tower_sessions::MemoryStore::default()),
+            None,
+        )
+    }
+
+    /// Store a password reset authorization with an arbitrary expiry.
+    ///
+    /// ### Arguments
+    /// - `session`: The session to store the authorization in
+    /// - `email`: The authorized email
+    /// - `expires_at`: The unix timestamp after which the authorization is stale
+    async fn insert_reset_authorization(session: &Session, email: &str, expires_at: i64) {
+        session
+            .insert(
+                SESSION_PASSWORD_RESET_AUTHORIZED,
+                PasswordResetAuthorization {
+                    email: email.to_string(),
+                    expires_at,
+                },
+            )
+            .await
+            .expect("insert authorization");
+    }
+
+    #[tokio::test]
+    async fn consume_reset_authorization_accepts_fresh_matching_email_once() {
+        let session = make_memory_session();
+        authorize_password_reset(&session, "user@test.com")
+            .await
+            .expect("authorize");
+
+        assert!(
+            consume_password_reset_authorization(&session, "User@Test.com")
+                .await
+                .expect("first consume")
+        );
+        assert!(
+            !consume_password_reset_authorization(&session, "user@test.com")
+                .await
+                .expect("second consume"),
+            "an authorization must not be replayable"
+        );
+    }
+
+    #[tokio::test]
+    async fn consume_reset_authorization_without_marker_is_refused() {
+        let session = make_memory_session();
+
+        assert!(
+            !consume_password_reset_authorization(&session, "user@test.com")
+                .await
+                .expect("consume")
+        );
+    }
+
+    #[tokio::test]
+    async fn consume_reset_authorization_for_other_email_is_refused_and_cleared() {
+        let session = make_memory_session();
+        authorize_password_reset(&session, "a@test.com")
+            .await
+            .expect("authorize");
+
+        assert!(
+            !consume_password_reset_authorization(&session, "b@test.com")
+                .await
+                .expect("consume for other email")
+        );
+        assert!(
+            !consume_password_reset_authorization(&session, "a@test.com")
+                .await
+                .expect("consume for original email"),
+            "a mismatched attempt must burn the authorization"
+        );
+    }
+
+    #[tokio::test]
+    async fn consume_reset_authorization_expired_is_refused() {
+        let session = make_memory_session();
+        let expired_at = OffsetDateTime::now_utc().unix_timestamp() - 1;
+        insert_reset_authorization(&session, "user@test.com", expired_at).await;
+
+        assert!(
+            !consume_password_reset_authorization(&session, "user@test.com")
+                .await
+                .expect("consume")
+        );
+    }
 }

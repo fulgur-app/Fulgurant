@@ -1,7 +1,7 @@
 name: CI
 
 # Trigger scopes:
-# - push to dev-*: fmt, clippy and test run in parallel (commit smoke).
+# - push to dev-*: fmt and clippy run in parallel (commit smoke).
 # - pull_request to main: test only (merge gate).
 # - push to main (post-merge): coverage + cache warm-up, no fmt/clippy/test.
 #
@@ -82,9 +82,7 @@ jobs:
 
   test:
     name: Test
-    if: >-
-      github.event_name == 'pull_request'
-      || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -127,9 +125,7 @@ jobs:
   # PostgreSQL arms of the dual-backend code are exercised before merge.
   test-postgres:
     name: Test (PostgreSQL)
-    if: >-
-      github.event_name == 'pull_request'
-      || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/dev-'))
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -258,7 +254,8 @@ jobs:
 
   # Aggregator job named "CI" so branch protection can require a single stable
   # status check instead of every individual job. Fails if any gate job failed;
-  # allows "skipped" so a PR (which skips fmt and clippy) still reports green.
+  # allows "skipped" so a PR (which skips fmt and clippy) and a dev-* push
+  # (which skips test and test-postgres) still report green.
   ci:
     name: CI
     needs: [fmt, clippy, test, test-postgres]

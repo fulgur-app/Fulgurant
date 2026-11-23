@@ -119,19 +119,24 @@ pub async fn create_user_with_force_update(pool: &DbPool, email: &str, password:
         .unwrap()
 }
 
-/// Log in as a user via the web UI (GET /login for CSRF, then POST /login)
+/// Attempt a web UI login (GET /login for CSRF, then POST /login) without asserting the outcome
 ///
-/// Persists the session cookie on the `TestServer` for subsequent authenticated requests.
+/// A failed login answers `200` with an error partial and no `HX-Redirect` header, so the
+/// presence of that header is the success signal. Use this for negative cases.
 ///
 /// ### Arguments
 /// - `server`: The test server instance (must have `save_cookies` enabled)
 /// - `email`: The user's email address
 /// - `password`: The user's plaintext password
+///
+/// ### Returns
+/// - `Some(String)`: The `HX-Redirect` target when the login succeeded
+/// - `None`: The login was rejected
 #[allow(dead_code)]
-pub async fn login(server: &TestServer, email: &str, password: &str) {
+pub async fn try_login(server: &TestServer, email: &str, password: &str) -> Option<String> {
     let page = server.get("/login").await;
     let csrf = extract_csrf_token(&page.text());
-    server
+    let response = server
         .post("/login")
         .add_header(
             HeaderName::from_static("x-csrf-token"),
@@ -139,6 +144,33 @@ pub async fn login(server: &TestServer, email: &str, password: &str) {
         )
         .form(&LoginFormData { email, password })
         .await;
+    response
+        .maybe_header("HX-Redirect")
+        .map(|value| value.to_str().unwrap().to_string())
+}
+
+/// Log in as a user via the web UI and assert the login succeeded
+///
+/// Persists the session cookie on the `TestServer` for subsequent authenticated requests.
+/// Panics if the login is rejected, so later assertions never run unauthenticated by accident.
+///
+/// ### Arguments
+/// - `server`: The test server instance (must have `save_cookies` enabled)
+/// - `email`: The user's email address
+/// - `password`: The user's plaintext password
+///
+/// ### Returns
+/// - `String`: The `HX-Redirect` target (`/` or `/force-password-update`)
+#[allow(dead_code)]
+pub async fn login(server: &TestServer, email: &str, password: &str) -> String {
+    let redirect = try_login(server, email, password)
+        .await
+        .unwrap_or_else(|| panic!("login as {email} was rejected"));
+    assert!(
+        redirect == "/" || redirect == "/force-password-update",
+        "unexpected login redirect target: {redirect}"
+    );
+    redirect
 }
 
 /// Create an admin user and immediately log in as that admin

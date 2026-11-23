@@ -63,6 +63,7 @@ pub async fn get_jwt_token(server: &TestServer, email: &str, api_key: &str) -> S
         )
         .await;
 
+    response.assert_status_ok();
     let body: AccessTokenResponse = response.json();
     body.access_token
 }
