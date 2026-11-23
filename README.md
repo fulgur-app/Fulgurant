@@ -86,12 +86,12 @@ Fulgurant uses:
 | `SHARE_VALIDITY_DAYS` | No | `3` | Share expiry in days (1-30) |
 | `MAX_DEVICES_PER_USER` | No | `99` | Max devices per user (0-10000) |
 | `SSE_HEARTBEAT_SECONDS` | No | `30` | SSE heartbeat interval in seconds (5-300) |
-| `BIND_HOST` | No | `127.0.0.1` | Bind address (`0.0.0.0` for external access) |
+| `BIND_HOST` | No | `127.0.0.1` | Bind address: IP or hostname (`0.0.0.0` for external access) |
 | `BIND_PORT` | No | `3000` | Bind port |
 | `TRUST_PROXY_HEADERS` | No | `false` | Key rate limiters on `X-Forwarded-For` (rightmost entry) / `X-Real-Ip` instead of the peer address. Enable only behind a reverse proxy that sets these headers, with Fulgurant unreachable directly |
 | `RUST_LOG` | No | `debug` (dev), `info` (prod) | Log filter |
 | `LOG_FOLDER` | No | `logs` | Log directory |
-| `DAILY_DATABASE_BACKUP` | No | `false` | Enable daily SQLite backup task |
+| `DAILY_DATABASE_BACKUP` | No | `false` | Enable daily SQLite backup task (true/false, 1/0, yes/no, on/off) |
 | `BACKUP_FOLDER` | No | `backups` | Backup output directory |
 | `SMTP_HOST` | Yes if `IS_PROD=true` | - | SMTP host |
 | `SMTP_LOGIN` | Yes if `IS_PROD=true` | - | SMTP username/login |
